@@ -263,8 +263,20 @@ class EntityRepository
             if ($value === null) {
                 $conditions[] = sprintf('e.%s IS NULL', $property);
             } elseif (is_array($value)) {
-                $conditions[] = sprintf('e.%s IN (:%s)', $property, $paramName);
-                $params[$paramName] = $value;
+                // Separate nulls from non-null values
+                $hasNull = in_array(null, $value, true);
+                $nonNullValues = array_values(array_filter($value, fn($v) => $v !== null));
+
+                if ($hasNull && empty($nonNullValues)) {
+                    $conditions[] = sprintf('e.%s IS NULL', $property);
+                } elseif ($hasNull && !empty($nonNullValues)) {
+                    // Mix of null and non-null → (prop IS NULL OR prop IN (:param))
+                    $conditions[] = sprintf('(e.%s IS NULL OR e.%s IN (:%s))', $property, $property, $paramName);
+                    $params[$paramName] = $nonNullValues;
+                } else {
+                    $conditions[] = sprintf('e.%s IN (:%s)', $property, $paramName);
+                    $params[$paramName] = $nonNullValues;
+                }
             } else {
                 $conditions[] = sprintf('e.%s = :%s', $property, $paramName);
                 $params[$paramName] = $value;

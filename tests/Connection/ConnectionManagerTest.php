@@ -148,7 +148,8 @@ class ConnectionManagerTest extends TestCase
         $mockStmt = $this->createMock(\PDOStatement::class);
 
         $mockPdo->method('prepare')->with('SELECT * FROM users WHERE id = ?')->willReturn($mockStmt);
-        $mockStmt->expects($this->once())->method('execute')->with([1]);
+        $mockStmt->expects($this->once())->method('bindValue')->with(1, 1, \PDO::PARAM_INT);
+        $mockStmt->expects($this->once())->method('execute');
 
         $manager->setMockPdo($mockPdo);
         $result = $manager->executeQuery('SELECT * FROM users WHERE id = ?', [1]);
@@ -399,18 +400,19 @@ class ConnectionManagerTest extends TestCase
         $mockPdo = $this->createMockPdo();
         $mockStmt = $this->createMock(\PDOStatement::class);
 
-        $capturedParams = null;
+        $boundValues = [];
         $mockPdo->method('prepare')->willReturn($mockStmt);
-        $mockStmt->method('execute')->willReturnCallback(function (array $params) use (&$capturedParams) {
-            $capturedParams = $params;
+        $mockStmt->method('bindValue')->willReturnCallback(function (int $pos, mixed $val, int $type) use (&$boundValues) {
+            $boundValues[$pos] = $val;
             return true;
         });
+        $mockStmt->method('execute')->willReturn(true);
 
         $manager->setMockPdo($mockPdo);
         $manager->executeQuery('SELECT * FROM t WHERE name = ?', ['café']);
 
         // Without charset_conversion, the string should pass through unchanged (UTF-8)
-        $this->assertSame(['café'], $capturedParams);
+        $this->assertSame('café', $boundValues[1]);
     }
 
     public function testCharsetConversionDisabledPassesStringsThrough(): void
@@ -419,17 +421,18 @@ class ConnectionManagerTest extends TestCase
         $mockPdo = $this->createMockPdo();
         $mockStmt = $this->createMock(\PDOStatement::class);
 
-        $capturedParams = null;
+        $boundValues = [];
         $mockPdo->method('prepare')->willReturn($mockStmt);
-        $mockStmt->method('execute')->willReturnCallback(function (array $params) use (&$capturedParams) {
-            $capturedParams = $params;
+        $mockStmt->method('bindValue')->willReturnCallback(function (int $pos, mixed $val, int $type) use (&$boundValues) {
+            $boundValues[$pos] = $val;
             return true;
         });
+        $mockStmt->method('execute')->willReturn(true);
 
         $manager->setMockPdo($mockPdo);
         $manager->executeQuery('SELECT * FROM t WHERE name = ?', ['café']);
 
-        $this->assertSame(['café'], $capturedParams);
+        $this->assertSame('café', $boundValues[1]);
     }
 
     public function testCharsetConversionEnabledConvertsUtf8ToIso88591Outbound(): void
@@ -438,12 +441,13 @@ class ConnectionManagerTest extends TestCase
         $mockPdo = $this->createMockPdo();
         $mockStmt = $this->createMock(\PDOStatement::class);
 
-        $capturedParams = null;
+        $boundValues = [];
         $mockPdo->method('prepare')->willReturn($mockStmt);
-        $mockStmt->method('execute')->willReturnCallback(function (array $params) use (&$capturedParams) {
-            $capturedParams = $params;
+        $mockStmt->method('bindValue')->willReturnCallback(function (int $pos, mixed $val, int $type) use (&$boundValues) {
+            $boundValues[$pos] = $val;
             return true;
         });
+        $mockStmt->method('execute')->willReturn(true);
 
         $manager->setMockPdo($mockPdo);
 
@@ -453,7 +457,7 @@ class ConnectionManagerTest extends TestCase
 
         // After conversion, 'é' should be ISO-8859-1 single byte 0xE9
         $expected = iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $utf8String);
-        $this->assertSame([$expected], $capturedParams);
+        $this->assertSame($expected, $boundValues[1]);
     }
 
     public function testCharsetConversionEnabledConvertsIso88591ToUtf8Inbound(): void
@@ -487,21 +491,25 @@ class ConnectionManagerTest extends TestCase
         $mockPdo = $this->createMockPdo();
         $mockStmt = $this->createMock(\PDOStatement::class);
 
-        $capturedParams = null;
+        $boundValues = [];
+        $boundTypes = [];
         $mockPdo->method('prepare')->willReturn($mockStmt);
-        $mockStmt->method('execute')->willReturnCallback(function (array $params) use (&$capturedParams) {
-            $capturedParams = $params;
+        $mockStmt->method('bindValue')->willReturnCallback(function (int $pos, mixed $val, int $type) use (&$boundValues, &$boundTypes) {
+            $boundValues[$pos] = $val;
+            $boundTypes[$pos] = $type;
             return true;
         });
+        $mockStmt->method('execute')->willReturn(true);
         $mockStmt->method('rowCount')->willReturn(1);
         $mockStmt->method('closeCursor')->willReturn(true);
 
         $manager->setMockPdo($mockPdo);
         $manager->executeStatement('UPDATE t SET val = ? WHERE id = ?', ['text', 42]);
 
-        // String should be converted, int should pass through
-        $this->assertSame(iconv('UTF-8', 'ISO-8859-1//TRANSLIT', 'text'), $capturedParams[0]);
-        $this->assertSame(42, $capturedParams[1]);
+        // String should be converted, int should pass through with PARAM_INT
+        $this->assertSame(iconv('UTF-8', 'ISO-8859-1//TRANSLIT', 'text'), $boundValues[1]);
+        $this->assertSame(42, $boundValues[2]);
+        $this->assertSame(\PDO::PARAM_INT, $boundTypes[2]);
     }
 
     public function testCharsetConversionPreservesOriginalOnIconvFailure(): void

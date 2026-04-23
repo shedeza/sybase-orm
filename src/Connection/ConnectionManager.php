@@ -109,7 +109,8 @@ class ConnectionManager implements ConnectionManagerInterface
         try {
             $pdo = $this->getConnection();
             $stmt = $pdo->prepare($sql);
-            $stmt->execute($this->convertParams($params));
+            $this->bindParams($stmt, $this->convertParams($params));
+            $stmt->execute();
 
             return $stmt;
         } catch (\PDOException $e) {
@@ -122,7 +123,8 @@ class ConnectionManager implements ConnectionManagerInterface
         try {
             $pdo = $this->getConnection();
             $stmt = $pdo->prepare($sql);
-            $stmt->execute($this->convertParams($params));
+            $this->bindParams($stmt, $this->convertParams($params));
+            $stmt->execute();
             $rowCount = $stmt->rowCount();
             $stmt->closeCursor();
             unset($stmt);
@@ -195,6 +197,28 @@ class ConnectionManager implements ConnectionManagerInterface
     public function isInTransaction(): bool
     {
         return $this->inTransaction;
+    }
+
+    /**
+     * Binds parameters to a PDOStatement with proper PDO types.
+     * Integers use PDO::PARAM_INT, nulls use PDO::PARAM_NULL, booleans use PDO::PARAM_BOOL,
+     * everything else uses PDO::PARAM_STR. This prevents Sybase implicit conversion errors.
+     */
+    private function bindParams(\PDOStatement $stmt, array $params): void
+    {
+        foreach ($params as $index => $value) {
+            $position = $index + 1; // PDO positional params are 1-based
+
+            if ($value === null) {
+                $stmt->bindValue($position, null, \PDO::PARAM_NULL);
+            } elseif (is_int($value)) {
+                $stmt->bindValue($position, $value, \PDO::PARAM_INT);
+            } elseif (is_bool($value)) {
+                $stmt->bindValue($position, $value ? 1 : 0, \PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue($position, $value, \PDO::PARAM_STR);
+            }
+        }
     }
 
     /**
