@@ -48,6 +48,9 @@ interface QueryBuilderInterface
     /** Agrega una condición HAVING a la consulta. */
     public function having(string $condition, array $params = []): static;
 
+    /** Resets all query state for reuse. */
+    public function reset(): static;
+
     /** Genera la consulta SQL parametrizada. */
     public function getSQL(): string;
 

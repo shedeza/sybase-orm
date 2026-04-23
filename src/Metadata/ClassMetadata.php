@@ -134,4 +134,15 @@ final class ClassMetadata
 
         return null;
     }
+
+    public function __toString(): string
+    {
+        return sprintf(
+            'ClassMetadata(%s → %s, %d columns, %d relationships)',
+            $this->entityClass,
+            $this->getQualifiedTableName(),
+            count($this->columns),
+            count($this->relationships),
+        );
+    }
 }

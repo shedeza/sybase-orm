@@ -50,6 +50,25 @@ final class QueryBuilder implements QueryBuilderInterface
     ) {
     }
 
+    public function reset(): static
+    {
+        $this->selectColumns = [];
+        $this->fromTable = null;
+        $this->fromAlias = null;
+        $this->whereClauses = [];
+        $this->parameters = [];
+        $this->joins = [];
+        $this->orderByClauses = [];
+        $this->groupByColumns = [];
+        $this->limitValue = null;
+        $this->offsetValue = null;
+        $this->eagerRelations = [];
+        $this->havingCondition = null;
+        $this->havingParameters = [];
+
+        return $this;
+    }
+
     public function select(string ...$columns): static
     {
         $this->selectColumns = $columns;

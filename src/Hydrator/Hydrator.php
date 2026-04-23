@@ -21,6 +21,9 @@ final class Hydrator implements HydratorInterface
     /** @var array<string, ReflectionClass<object>> Caché de ReflectionClass por nombre de clase */
     private array $reflectionClassCache = [];
 
+    /** @var array<string, array<string, \ReflectionProperty>> Caché de ReflectionProperty por clase y propiedad */
+    private array $reflectionPropertyCache = [];
+
     public function __construct(
         private readonly MetadataReaderInterface $metadataReader,
         private readonly TypeCasterInterface $typeCaster,
@@ -229,12 +232,11 @@ final class Hydrator implements HydratorInterface
         mixed $value,
         ReflectionClass $reflectionClass,
     ): void {
-        if (!$reflectionClass->hasProperty($propertyName)) {
+        $property = $this->getReflectionProperty($reflectionClass->getName(), $propertyName);
+        if ($property === null) {
             return;
         }
 
-        $property = $reflectionClass->getProperty($propertyName);
-        $property->setAccessible(true);
         $property->setValue($entity, $value);
     }
 
@@ -248,14 +250,30 @@ final class Hydrator implements HydratorInterface
         string $propertyName,
         ReflectionClass $reflectionClass,
     ): mixed {
-        if (!$reflectionClass->hasProperty($propertyName)) {
+        $property = $this->getReflectionProperty($reflectionClass->getName(), $propertyName);
+        if ($property === null) {
             return null;
         }
 
-        $property = $reflectionClass->getProperty($propertyName);
-        $property->setAccessible(true);
-
         return $property->getValue($entity);
+    }
+
+    /**
+     * Obtiene un ReflectionProperty cacheado para evitar recrearlo en cada hidratación.
+     */
+    private function getReflectionProperty(string $className, string $propertyName): ?\ReflectionProperty
+    {
+        if (!isset($this->reflectionPropertyCache[$className][$propertyName])) {
+            $reflectionClass = $this->getReflectionClass($className);
+            if (!$reflectionClass->hasProperty($propertyName)) {
+                return null;
+            }
+            $prop = $reflectionClass->getProperty($propertyName);
+            $prop->setAccessible(true);
+            $this->reflectionPropertyCache[$className][$propertyName] = $prop;
+        }
+
+        return $this->reflectionPropertyCache[$className][$propertyName];
     }
 
     /**

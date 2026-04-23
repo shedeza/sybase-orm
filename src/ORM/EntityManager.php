@@ -36,6 +36,9 @@ final class EntityManager implements EntityManagerInterface
     /** @var OqlParser Instancia reutilizable del parser OQL */
     private OqlParser $oqlParser;
 
+    /** @var OqlToSqlTranslator|null Instancia reutilizable del traductor OQL→SQL */
+    private ?OqlToSqlTranslator $oqlTranslator = null;
+
     public function __construct(
         private readonly ConnectionManagerInterface $connectionManager,
         private readonly MetadataReaderInterface $metadataReader,
@@ -60,6 +63,7 @@ final class EntityManager implements EntityManagerInterface
     {
         $this->entityClasses = $entityClasses;
         $this->entityShortNameMap = [];
+        $this->oqlTranslator = null;
         foreach ($entityClasses as $fqcn) {
             $shortName = (new \ReflectionClass($fqcn))->getShortName();
             $this->entityShortNameMap[$shortName] = $fqcn;
@@ -300,13 +304,15 @@ final class EntityManager implements EntityManagerInterface
     {
         $ast = $this->oqlParser->parse($oql);
 
-        $translator = new OqlToSqlTranslator(
-            $this->dialect,
-            $this->metadataReader,
-            $this->entityClasses,
-        );
+        if ($this->oqlTranslator === null) {
+            $this->oqlTranslator = new OqlToSqlTranslator(
+                $this->dialect,
+                $this->metadataReader,
+                $this->entityClasses,
+            );
+        }
 
-        $result = $translator->translate($ast);
+        $result = $this->oqlTranslator->translate($ast);
         $sql = $result['sql'];
         $parameterNames = $result['parameters'];
 
@@ -464,6 +470,50 @@ final class EntityManager implements EntityManagerInterface
         }
 
         return $this->repositories[$entityClass];
+    }
+
+    public function getDialect(): DialectInterface
+    {
+        return $this->dialect;
+    }
+
+    public function getConnection(): ConnectionManagerInterface
+    {
+        return $this->connectionManager;
+    }
+
+    public function isManaged(object $entity): bool
+    {
+        return $this->unitOfWork->isManaged($entity);
+    }
+
+    public function detach(object $entity): void
+    {
+        $metadata = $this->metadataReader->getClassMetadata($entity::class);
+        $idColumns = $metadata->getIdColumns();
+
+        if (!empty($idColumns)) {
+            $reflectionClass = new \ReflectionClass($entity::class);
+            if (count($idColumns) === 1) {
+                $idProp = $reflectionClass->getProperty($idColumns[0]->propertyName);
+                $id = $idProp->getValue($entity);
+                if ($id !== null) {
+                    $this->identityMap->remove($entity::class, $id);
+                }
+            } else {
+                $compositeId = [];
+                foreach ($idColumns as $idCol) {
+                    $prop = $reflectionClass->getProperty($idCol->propertyName);
+                    $compositeId[$idCol->propertyName] = $prop->getValue($entity);
+                }
+                $this->identityMap->remove($entity::class, $compositeId);
+            }
+        }
+    }
+
+    public function getMetadataReader(): MetadataReaderInterface
+    {
+        return $this->metadataReader;
     }
 
     /**

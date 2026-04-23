@@ -132,11 +132,14 @@ class EntityRepository
      * Busca entidades que coincidan con los criterios dados.
      *
      * @param array<string, mixed> $criteria Nombre de propiedad => valor
+     * @param array<string, string>|null $orderBy Nombre de propiedad => 'ASC'|'DESC'
+     * @param int|null $limit Número máximo de resultados
+     * @param int|null $offset Desplazamiento para paginación
      * @return object[]
      */
-    public function findBy(array $criteria): array
+    public function findBy(array $criteria, ?array $orderBy = null, ?int $limit = null, ?int $offset = null): array
     {
-        if (empty($criteria)) {
+        if (empty($criteria) && $orderBy === null && $limit === null) {
             return $this->findAll();
         }
 
@@ -151,13 +154,29 @@ class EntityRepository
             $i++;
         }
 
-        $oql = sprintf(
-            'SELECT e FROM %s e WHERE %s',
-            $this->entityShortName,
-            implode(' AND ', $conditions),
-        );
+        $oql = sprintf('SELECT e FROM %s e', $this->entityShortName);
 
-        return $this->entityManager->query($oql, $params);
+        if (!empty($conditions)) {
+            $oql .= ' WHERE ' . implode(' AND ', $conditions);
+        }
+
+        if ($orderBy !== null && !empty($orderBy)) {
+            $orderParts = [];
+            foreach ($orderBy as $property => $direction) {
+                $orderParts[] = sprintf('e.%s %s', $property, strtoupper($direction));
+            }
+            $oql .= ' ORDER BY ' . implode(', ', $orderParts);
+        }
+
+        $results = $this->entityManager->query($oql, $params);
+
+        if ($limit !== null) {
+            $results = array_slice($results, $offset ?? 0, $limit);
+        } elseif ($offset !== null) {
+            $results = array_slice($results, $offset);
+        }
+
+        return $results;
     }
 
     /**
@@ -314,6 +333,24 @@ class EntityRepository
     public function getEntityClass(): string
     {
         return $this->entityClass;
+    }
+
+    /**
+     * Returns the database table name for this entity.
+     */
+    public function getTableName(): string
+    {
+        $metadata = $this->entityManager->getMetadataReader()->getClassMetadata($this->entityClass);
+
+        return $metadata->getQualifiedTableName();
+    }
+
+    /**
+     * Returns the short class name used in OQL queries.
+     */
+    public function getEntityShortName(): string
+    {
+        return $this->entityShortName;
     }
 
     /**

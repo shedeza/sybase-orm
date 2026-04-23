@@ -58,4 +58,19 @@ interface EntityManagerInterface
 
     /** Obtiene la referencia al repositorio de una entidad. */
     public function getRepository(string $entityClass): EntityRepository;
+
+    /** Returns the SQL dialect used by this EntityManager. */
+    public function getDialect(): \SybaseORM\Dialect\DialectInterface;
+
+    /** Returns the connection manager for raw SQL access. */
+    public function getConnection(): \SybaseORM\Connection\ConnectionManagerInterface;
+
+    /** Checks if an entity is managed by the UnitOfWork. */
+    public function isManaged(object $entity): bool;
+
+    /** Detaches an entity from the persistence context. */
+    public function detach(object $entity): void;
+
+    /** Returns the metadata reader. */
+    public function getMetadataReader(): \SybaseORM\Metadata\MetadataReaderInterface;
 }
