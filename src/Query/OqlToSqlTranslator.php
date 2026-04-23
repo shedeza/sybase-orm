@@ -1,0 +1,293 @@
+<?php
+
+declare(strict_types=1);
+
+namespace SybaseORM\Query;
+
+use SybaseORM\Dialect\DialectInterface;
+use SybaseORM\Metadata\MetadataReaderInterface;
+use SybaseORM\Query\AST\Comparison;
+use SybaseORM\Query\AST\FromClause;
+use SybaseORM\Query\AST\GroupByClause;
+use SybaseORM\Query\AST\JoinClause;
+use SybaseORM\Query\AST\Literal;
+use SybaseORM\Query\AST\LogicalExpression;
+use SybaseORM\Query\AST\OrderByClause;
+use SybaseORM\Query\AST\OrderByItem;
+use SybaseORM\Query\AST\Parameter;
+use SybaseORM\Query\AST\PropertyAccess;
+use SybaseORM\Query\AST\SelectExpression;
+use SybaseORM\Query\AST\SelectStatement;
+
+/**
+ * Translates an OQL AST into SQL compatible with Sybase ASE via the DialectInterface.
+ *
+ * Resolves entity names to table names and property names to column names
+ * using MetadataReaderInterface. User values are parameterized.
+ */
+final class OqlToSqlTranslator
+{
+    /**
+     * Maps OQL alias → fully qualified entity class name.
+     * @var array<string, string>
+     */
+    private array $aliasToEntity = [];
+
+    /**
+     * Maps OQL alias → SQL table alias.
+     * @var array<string, string>
+     */
+    private array $aliasToTable = [];
+
+    /**
+     * Maps entity short name → fully qualified class name.
+     * @var array<string, string>
+     */
+    private array $entityMap;
+
+    public function __construct(
+        private readonly DialectInterface $dialect,
+        private readonly MetadataReaderInterface $metadataReader,
+        private readonly array $entityClasses = [],
+    ) {
+        $this->entityMap = [];
+        foreach ($this->entityClasses as $fqcn) {
+            $shortName = (new \ReflectionClass($fqcn))->getShortName();
+            $this->entityMap[$shortName] = $fqcn;
+        }
+    }
+
+    /**
+     * Translates a SelectStatement AST into a SQL string.
+     *
+     * @return array{sql: string, parameters: string[]} SQL and parameter names
+     */
+    public function translate(SelectStatement $statement): array
+    {
+        $this->aliasToEntity = [];
+        $this->aliasToTable = [];
+        $parameters = [];
+
+        // Resolve FROM
+        $fromSql = $this->resolveFrom($statement->from);
+
+        // Resolve JOINs
+        $joinsSql = '';
+        foreach ($statement->joins as $join) {
+            $joinsSql .= ' ' . $this->resolveJoin($join);
+        }
+
+        // Resolve SELECT
+        $selectSql = $this->resolveSelect($statement->selectExpressions);
+
+        // Build base SQL
+        $sql = 'SELECT ' . $selectSql . ' FROM ' . $fromSql . $joinsSql;
+
+        // WHERE
+        if ($statement->where !== null) {
+            $whereSql = $this->resolveCondition($statement->where->condition, $parameters);
+            $sql .= ' WHERE ' . $whereSql;
+        }
+
+        // GROUP BY
+        if ($statement->groupBy !== null) {
+            $sql .= ' GROUP BY ' . $this->resolveGroupBy($statement->groupBy);
+        }
+
+        // ORDER BY
+        if ($statement->orderBy !== null) {
+            $sql .= ' ORDER BY ' . $this->resolveOrderBy($statement->orderBy);
+        }
+
+        return ['sql' => $sql, 'parameters' => $parameters];
+    }
+
+    private function resolveFrom(FromClause $from): string
+    {
+        $entityClass = $this->resolveEntityName($from->entityName);
+        $metadata = $this->metadataReader->getClassMetadata($entityClass);
+
+        $this->aliasToEntity[$from->alias] = $entityClass;
+        $this->aliasToTable[$from->alias] = $from->alias;
+
+        return $this->dialect->quoteIdentifier($metadata->tableName)
+            . ' ' . $this->dialect->quoteIdentifier($from->alias);
+    }
+
+    private function resolveJoin(JoinClause $join): string
+    {
+        $ownerAlias = $join->property->alias;
+        $relationProperty = $join->property->property;
+
+        $ownerEntity = $this->aliasToEntity[$ownerAlias]
+            ?? throw new \RuntimeException(sprintf('Unknown alias "%s" in JOIN.', $ownerAlias));
+
+        $ownerMeta = $this->metadataReader->getClassMetadata($ownerEntity);
+        $relation = $ownerMeta->getRelationship($relationProperty);
+
+        if ($relation === null) {
+            throw new \RuntimeException(sprintf(
+                'No relationship "%s" found on entity "%s".',
+                $relationProperty,
+                $ownerEntity,
+            ));
+        }
+
+        $targetEntity = $relation->targetEntity;
+        $targetMeta = $this->metadataReader->getClassMetadata($targetEntity);
+
+        $this->aliasToEntity[$join->alias] = $targetEntity;
+        $this->aliasToTable[$join->alias] = $join->alias;
+
+        $joinColumn = $relation->joinColumn ?? ($relationProperty . '_id');
+        $referencedColumn = $relation->referencedColumnName ?? 'id';
+
+        $ownerIdCol = $ownerMeta->getIdColumn();
+        $targetIdCol = $targetMeta->getIdColumn();
+
+        // Determine ON condition based on relationship type
+        if ($relation->type === 'ManyToOne' || $relation->type === 'OneToOne') {
+            $onCondition = sprintf(
+                '%s.%s = %s.%s',
+                $this->dialect->quoteIdentifier($ownerAlias),
+                $this->dialect->quoteIdentifier($joinColumn),
+                $this->dialect->quoteIdentifier($join->alias),
+                $this->dialect->quoteIdentifier($referencedColumn),
+            );
+        } else {
+            // OneToMany / ManyToMany: target has FK to owner
+            $onCondition = sprintf(
+                '%s.%s = %s.%s',
+                $this->dialect->quoteIdentifier($ownerAlias),
+                $this->dialect->quoteIdentifier($ownerIdCol?->columnName ?? 'id'),
+                $this->dialect->quoteIdentifier($join->alias),
+                $this->dialect->quoteIdentifier($joinColumn),
+            );
+        }
+
+        return sprintf(
+            '%s %s %s ON %s',
+            $join->joinType,
+            $this->dialect->quoteIdentifier($targetMeta->tableName),
+            $this->dialect->quoteIdentifier($join->alias),
+            $onCondition,
+        );
+    }
+
+    /**
+     * @param SelectExpression[] $expressions
+     */
+    private function resolveSelect(array $expressions): string
+    {
+        $parts = [];
+
+        foreach ($expressions as $expr) {
+            if (str_contains($expr->expression, '.')) {
+                // Property access: alias.property
+                $dotParts = explode('.', $expr->expression);
+                $parts[] = $this->resolvePropertyToColumn($dotParts[0], $dotParts[1]);
+            } elseif (isset($this->aliasToEntity[$expr->expression])) {
+                // Alias only: select all columns for that alias
+                $parts[] = $this->dialect->quoteIdentifier($expr->expression) . '.*';
+            } else {
+                $parts[] = $expr->expression;
+            }
+        }
+
+        return implode(', ', $parts);
+    }
+
+    private function resolveCondition(Comparison|LogicalExpression $condition, array &$parameters): string
+    {
+        if ($condition instanceof Comparison) {
+            return $this->resolveComparison($condition, $parameters);
+        }
+
+        $left = $this->resolveCondition($condition->left, $parameters);
+        $right = $this->resolveCondition($condition->right, $parameters);
+
+        return $left . ' ' . $condition->operator . ' ' . $right;
+    }
+
+    private function resolveComparison(Comparison $comparison, array &$parameters): string
+    {
+        $left = $this->resolveOperand($comparison->left, $parameters);
+        $right = $this->resolveOperand($comparison->right, $parameters);
+
+        return $left . ' ' . $comparison->operator . ' ' . $right;
+    }
+
+    private function resolveOperand(PropertyAccess|Literal|Parameter $operand, array &$parameters): string
+    {
+        if ($operand instanceof PropertyAccess) {
+            return $this->resolvePropertyToColumn($operand->alias, $operand->property);
+        }
+
+        if ($operand instanceof Parameter) {
+            $parameters[] = $operand->name;
+            return ':' . $operand->name;
+        }
+
+        if ($operand instanceof Literal) {
+            if ($operand->type === 'string') {
+                return "'" . str_replace("'", "''", (string) $operand->value) . "'";
+            }
+            return (string) $operand->value;
+        }
+
+        return '';
+    }
+
+    private function resolveOrderBy(OrderByClause $orderBy): string
+    {
+        return implode(', ', array_map(
+            fn(OrderByItem $item) => $this->resolvePropertyToColumn(
+                $item->property->alias,
+                $item->property->property,
+            ) . ' ' . $item->direction,
+            $orderBy->items,
+        ));
+    }
+
+    private function resolveGroupBy(GroupByClause $groupBy): string
+    {
+        return implode(', ', array_map(
+            fn(PropertyAccess $p) => $this->resolvePropertyToColumn($p->alias, $p->property),
+            $groupBy->properties,
+        ));
+    }
+
+    private function resolvePropertyToColumn(string $alias, string $property): string
+    {
+        $entityClass = $this->aliasToEntity[$alias] ?? null;
+
+        if ($entityClass === null) {
+            // Fallback: use as-is
+            return $this->dialect->quoteIdentifier($alias) . '.' . $this->dialect->quoteIdentifier($property);
+        }
+
+        $metadata = $this->metadataReader->getClassMetadata($entityClass);
+        $column = $metadata->getColumn($property);
+
+        $columnName = $column !== null ? $column->columnName : $property;
+
+        return $this->dialect->quoteIdentifier($alias) . '.' . $this->dialect->quoteIdentifier($columnName);
+    }
+
+    private function resolveEntityName(string $shortName): string
+    {
+        if (isset($this->entityMap[$shortName])) {
+            return $this->entityMap[$shortName];
+        }
+
+        // If it looks like a FQCN, use directly
+        if (str_contains($shortName, '\\')) {
+            return $shortName;
+        }
+
+        throw new \RuntimeException(sprintf(
+            'Cannot resolve entity name "%s". Register it in the entityClasses array.',
+            $shortName,
+        ));
+    }
+}

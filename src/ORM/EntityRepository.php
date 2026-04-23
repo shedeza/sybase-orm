@@ -1,0 +1,231 @@
+<?php
+
+declare(strict_types=1);
+
+namespace SybaseORM\ORM;
+
+use SybaseORM\Query\QueryBuilderInterface;
+
+/**
+ * Repositorio base para operaciones de persistencia y consulta sobre una entidad.
+ *
+ * Cada entidad trabaja a través de su propio repositorio, que delega
+ * internamente al EntityManager. Los desarrolladores no necesitan
+ * interactuar con el EntityManager directamente.
+ *
+ * Uso típico:
+ *
+ *     $repo = $this->em->getRepository(Producto::class);
+ *     $repo->save($producto);
+ *     $repo->delete($producto);
+ *     $producto = $repo->find(1);
+ *     $todos = $repo->findAll();
+ */
+class EntityRepository
+{
+    /** @var string Cached short class name for OQL queries */
+    private readonly string $entityShortName;
+
+    public function __construct(
+        private readonly EntityManagerInterface $entityManager,
+        private readonly string $entityClass,
+    ) {
+        $this->entityShortName = (new \ReflectionClass($this->entityClass))->getShortName();
+    }
+
+    // ── Persistencia ────────────────────────────────────────────────
+
+    /**
+     * Persiste una entidad y sincroniza con la base de datos.
+     *
+     * Si la entidad es nueva (sin ID), la registra para INSERT.
+     * Si la entidad ya existe (con ID y managed), solo ejecuta flush
+     * para que el dirty checking genere el UPDATE.
+     */
+    public function save(object $entity): void
+    {
+        $this->entityManager->persist($entity);
+        $this->entityManager->flush();
+    }
+
+    /**
+     * Persiste múltiples entidades en una sola transacción.
+     *
+     * @param object[] $entities
+     */
+    public function saveMany(array $entities): void
+    {
+        foreach ($entities as $entity) {
+            $this->entityManager->persist($entity);
+        }
+
+        $this->entityManager->flush();
+    }
+
+    /**
+     * Elimina una entidad y sincroniza con la base de datos.
+     *
+     * Equivale a llamar remove() + flush() en el EntityManager.
+     */
+    public function delete(object $entity): void
+    {
+        $this->entityManager->remove($entity);
+        $this->entityManager->flush();
+    }
+
+    /**
+     * Elimina múltiples entidades en una sola transacción.
+     *
+     * @param object[] $entities
+     */
+    public function deleteMany(array $entities): void
+    {
+        foreach ($entities as $entity) {
+            $this->entityManager->remove($entity);
+        }
+
+        $this->entityManager->flush();
+    }
+
+    /**
+     * Re-asocia una entidad detached al contexto de persistencia.
+     * Retorna la instancia managed con los valores copiados.
+     */
+    public function merge(object $entity): object
+    {
+        return $this->entityManager->merge($entity);
+    }
+
+    // ── Consultas ───────────────────────────────────────────────────
+
+    /**
+     * Busca una entidad por su identificador primario.
+     */
+    public function find(mixed $id): ?object
+    {
+        return $this->entityManager->find($this->entityClass, $id);
+    }
+
+    /**
+     * Busca todas las entidades de este tipo.
+     *
+     * @return object[]
+     */
+    public function findAll(): array
+    {
+        $oql = sprintf('SELECT e FROM %s e', $this->entityShortName);
+
+        return $this->entityManager->query($oql);
+    }
+
+    /**
+     * Busca entidades que coincidan con los criterios dados.
+     *
+     * @param array<string, mixed> $criteria Nombre de propiedad => valor
+     * @return object[]
+     */
+    public function findBy(array $criteria): array
+    {
+        if (empty($criteria)) {
+            return $this->findAll();
+        }
+
+        $conditions = [];
+        $params = [];
+        $i = 0;
+
+        foreach ($criteria as $property => $value) {
+            $paramName = 'p' . $i;
+            $conditions[] = sprintf('e.%s = :%s', $property, $paramName);
+            $params[$paramName] = $value;
+            $i++;
+        }
+
+        $oql = sprintf(
+            'SELECT e FROM %s e WHERE %s',
+            $this->entityShortName,
+            implode(' AND ', $conditions),
+        );
+
+        return $this->entityManager->query($oql, $params);
+    }
+
+    /**
+     * Busca una sola entidad que coincida con los criterios, o null si no existe.
+     *
+     * @param array<string, mixed> $criteria Nombre de propiedad => valor
+     */
+    public function findOneBy(array $criteria): ?object
+    {
+        $results = $this->findBy($criteria);
+
+        return $results[0] ?? null;
+    }
+
+    /**
+     * Ejecuta una consulta OQL personalizada.
+     *
+     * @param array<string, mixed> $params Parámetros de la consulta
+     * @return object[]
+     */
+    public function query(string $oql, array $params = []): array
+    {
+        return $this->entityManager->query($oql, $params);
+    }
+
+    // ── QueryBuilder ────────────────────────────────────────────────
+
+    /**
+     * Crea un QueryBuilder pre-configurado con FROM para esta entidad.
+     *
+     * El alias por defecto es 'e'.
+     */
+    public function createQueryBuilder(): QueryBuilderInterface
+    {
+        return $this->entityManager->createQueryBuilder($this->entityClass);
+    }
+
+    // ── Transacciones ───────────────────────────────────────────────
+
+    /**
+     * Inicia una transacción explícita.
+     */
+    public function beginTransaction(): void
+    {
+        $this->entityManager->beginTransaction();
+    }
+
+    /**
+     * Confirma la transacción activa.
+     */
+    public function commit(): void
+    {
+        $this->entityManager->commit();
+    }
+
+    /**
+     * Revierte la transacción activa.
+     */
+    public function rollback(): void
+    {
+        $this->entityManager->rollback();
+    }
+
+    // ── Utilidades ──────────────────────────────────────────────────
+
+    /**
+     * Retorna la clase de entidad gestionada por este repositorio.
+     */
+    public function getEntityClass(): string
+    {
+        return $this->entityClass;
+    }
+
+    /**
+     * Acceso protegido al EntityManager para repositorios personalizados.
+     */
+    protected function getEntityManager(): EntityManagerInterface
+    {
+        return $this->entityManager;
+    }
+}

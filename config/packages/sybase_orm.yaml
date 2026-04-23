@@ -1,0 +1,27 @@
+# Configuración por defecto del SybaseORM Bundle
+# Documentación: ver README.md del bundle
+sybase_orm:
+    connection:
+        # Opción 1 (recomendada): URL de conexión única
+        url: '%env(DATABASE_URL)%'
+
+        # Opción 2: Parámetros individuales (descomentar y comentar url)
+        # host: '%env(SYBASE_HOST)%'
+        # port: '%env(int:SYBASE_PORT)%'
+        # database: '%env(SYBASE_DATABASE)%'
+        # username: '%env(SYBASE_USERNAME)%'
+        # password: '%env(SYBASE_PASSWORD)%'
+        # charset: UTF-8
+        # persistent: false
+
+    entity_directories:
+        - '%kernel.project_dir%/src/Entity'
+
+    proxy_directory: '%kernel.cache_dir%/sybase_orm/proxies'
+    migrations_directory: '%kernel.project_dir%/sybase_ase/migrations'
+
+    cache:
+        enabled: false
+        # adapter: redis
+        # dsn: '%env(REDIS_URL)%'
+        # default_ttl: 3600
