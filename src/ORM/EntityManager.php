@@ -201,6 +201,63 @@ final class EntityManager implements EntityManagerInterface
         return $this->hydrator->hydrateAll($rows, $entityClass);
     }
 
+    public function queryOne(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): mixed
+    {
+        $prepared = $this->prepareQueryExecution($oql, $params);
+        $sql = $prepared['sql'];
+        $orderedParams = $prepared['params'];
+        $ast = $prepared['ast'];
+
+        // Limit to 1 result
+        $sql = $this->dialect->applyPagination($sql, 1);
+
+        $stmt = $this->connectionManager->executeQuery($sql, $orderedParams);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        $stmt->closeCursor();
+
+        if ($row === false) {
+            return null;
+        }
+
+        // Auto-detect hydration mode
+        $effectiveMode = $hydrationMode;
+        if ($hydrationMode === HydrationMode::HYDRATE_OBJECT && $this->shouldAutoDetectArrayMode($ast)) {
+            $effectiveMode = HydrationMode::HYDRATE_ARRAY;
+        }
+
+        if ($effectiveMode === HydrationMode::HYDRATE_ARRAY) {
+            return $row;
+        }
+
+        $entityClass = $this->resolveEntityFromAst($ast);
+
+        if ($entityClass === null) {
+            return $row;
+        }
+
+        return $this->hydrator->hydrate($row, $entityClass);
+    }
+
+    public function queryScalar(string $oql, array $params = []): mixed
+    {
+        $prepared = $this->prepareQueryExecution($oql, $params);
+        $sql = $prepared['sql'];
+        $orderedParams = $prepared['params'];
+
+        // Limit to 1 result
+        $sql = $this->dialect->applyPagination($sql, 1);
+
+        $stmt = $this->connectionManager->executeQuery($sql, $orderedParams);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        $stmt->closeCursor();
+
+        if ($row === false) {
+            return null;
+        }
+
+        return reset($row) !== false ? reset($row) : null;
+    }
+
     public function queryIterator(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): \Generator
     {
         $prepared = $this->prepareQueryExecution($oql, $params);

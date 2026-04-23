@@ -881,4 +881,242 @@ final class EntityManagerTest extends TestCase
             HydrationMode::HYDRATE_ARRAY,
         );
     }
+
+    // ── queryOne() ───────────────────────────────────────────────
+
+    public function testQueryOneReturnsHydratedEntity(): void
+    {
+        $row = ['id' => 1, 'name' => 'Alice'];
+
+        $entity = new Fixtures\CustomerEntity();
+        $entity->setId(1);
+        $entity->setName('Alice');
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn($row);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $this->dialect->expects($this->once())
+            ->method('applyPagination')
+            ->with($this->isType('string'), 1)
+            ->willReturnCallback(fn(string $sql, int $limit) => preg_replace('/^(\s*SELECT\s)/i', '$1TOP 1 ', $sql, 1));
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->willReturn($stmt);
+
+        $this->hydrator->expects($this->once())
+            ->method('hydrate')
+            ->with($row, Fixtures\CustomerEntity::class)
+            ->willReturn($entity);
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $result = $this->em->queryOne(
+            'SELECT c FROM CustomerEntity c WHERE c.id = :id',
+            ['id' => 1],
+        );
+
+        $this->assertSame($entity, $result);
+    }
+
+    public function testQueryOneReturnsNullWhenNoResults(): void
+    {
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn(false);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $this->dialect->method('applyPagination')
+            ->willReturnCallback(fn(string $sql, int $limit) => preg_replace('/^(\s*SELECT\s)/i', '$1TOP 1 ', $sql, 1));
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->willReturn($stmt);
+
+        $this->hydrator->expects($this->never())->method('hydrate');
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $result = $this->em->queryOne(
+            'SELECT c FROM CustomerEntity c WHERE c.id = :id',
+            ['id' => 999],
+        );
+
+        $this->assertNull($result);
+    }
+
+    public function testQueryOneWithHydrateArrayReturnsRawRow(): void
+    {
+        $row = ['id' => 1, 'name' => 'Alice'];
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn($row);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $this->dialect->method('applyPagination')
+            ->willReturnCallback(fn(string $sql, int $limit) => preg_replace('/^(\s*SELECT\s)/i', '$1TOP 1 ', $sql, 1));
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->willReturn($stmt);
+
+        $this->hydrator->expects($this->never())->method('hydrate');
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $result = $this->em->queryOne(
+            'SELECT c.id, c.name FROM CustomerEntity c WHERE c.id = :id',
+            ['id' => 1],
+            HydrationMode::HYDRATE_ARRAY,
+        );
+
+        $this->assertSame($row, $result);
+    }
+
+    public function testQueryOneAutoDetectsArrayModeForAggregates(): void
+    {
+        $row = ['cnt' => 5];
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn($row);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $this->dialect->method('applyPagination')
+            ->willReturnCallback(fn(string $sql, int $limit) => preg_replace('/^(\s*SELECT\s)/i', '$1TOP 1 ', $sql, 1));
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->willReturn($stmt);
+
+        $this->hydrator->expects($this->never())->method('hydrate');
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $result = $this->em->queryOne(
+            'SELECT COUNT(c.id) AS cnt FROM CustomerEntity c',
+        );
+
+        $this->assertSame($row, $result);
+    }
+
+    // ── queryScalar() ────────────────────────────────────────────
+
+    public function testQueryScalarReturnsFirstColumnValue(): void
+    {
+        $row = ['cnt' => 42];
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn($row);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $this->dialect->method('applyPagination')
+            ->willReturnCallback(fn(string $sql, int $limit) => preg_replace('/^(\s*SELECT\s)/i', '$1TOP 1 ', $sql, 1));
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->willReturn($stmt);
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $result = $this->em->queryScalar(
+            'SELECT COUNT(*) FROM CustomerEntity c',
+        );
+
+        $this->assertSame(42, $result);
+    }
+
+    public function testQueryScalarReturnsNullWhenNoResults(): void
+    {
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn(false);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $this->dialect->method('applyPagination')
+            ->willReturnCallback(fn(string $sql, int $limit) => preg_replace('/^(\s*SELECT\s)/i', '$1TOP 1 ', $sql, 1));
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->willReturn($stmt);
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $result = $this->em->queryScalar(
+            'SELECT COUNT(*) FROM CustomerEntity c WHERE c.id = :id',
+            ['id' => 999],
+        );
+
+        $this->assertNull($result);
+    }
+
+    public function testQueryScalarReturnsStringValue(): void
+    {
+        $row = ['name' => 'Alice'];
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn($row);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $this->dialect->method('applyPagination')
+            ->willReturnCallback(fn(string $sql, int $limit) => preg_replace('/^(\s*SELECT\s)/i', '$1TOP 1 ', $sql, 1));
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->willReturn($stmt);
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $result = $this->em->queryScalar(
+            'SELECT c.name FROM CustomerEntity c WHERE c.id = :id',
+            ['id' => 1],
+        );
+
+        $this->assertSame('Alice', $result);
+    }
+
+    public function testQueryScalarAppliesPaginationLimit(): void
+    {
+        $row = ['cnt' => 10];
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn($row);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        // Verify applyPagination is called with limit=1
+        $this->dialect->expects($this->once())
+            ->method('applyPagination')
+            ->with($this->isType('string'), 1)
+            ->willReturnCallback(fn(string $sql, int $limit) => preg_replace('/^(\s*SELECT\s)/i', '$1TOP 1 ', $sql, 1));
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->willReturn($stmt);
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $this->em->queryScalar('SELECT COUNT(*) FROM CustomerEntity c');
+    }
 }

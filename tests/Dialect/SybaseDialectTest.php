@@ -204,4 +204,56 @@ final class SybaseDialectTest extends TestCase
 
         $this->assertSame('SELECT [id], [name] FROM [users] AS [u]', $sql);
     }
+
+    // ── applyPagination: ORDER BY inside subquery ───────────────────
+
+    public function testPaginationDoesNotMatchOrderByInsideSubquery(): void
+    {
+        $sql = 'SELECT [id], [name] FROM [users] WHERE [id] IN (SELECT [id] FROM [scores] ORDER BY [score] DESC)';
+        $result = $this->dialect->applyPagination($sql, 10, 5);
+
+        // The ORDER BY inside the subquery should NOT be extracted
+        $this->assertStringContainsString('ROW_NUMBER()', $result);
+        $this->assertStringContainsString('ORDER BY (SELECT 1)', $result);
+        // The subquery ORDER BY should remain in the inner query
+        $this->assertStringContainsString('ORDER BY [score] DESC', $result);
+    }
+
+    public function testPaginationExtractsTopLevelOrderByNotSubquery(): void
+    {
+        $sql = 'SELECT [id], [name] FROM [users] WHERE [id] IN (SELECT [id] FROM [scores] ORDER BY [score]) ORDER BY [name]';
+        $result = $this->dialect->applyPagination($sql, 10, 20);
+
+        // Should extract the top-level ORDER BY [name], not the subquery one
+        $this->assertStringContainsString('ROW_NUMBER() OVER (ORDER BY [name])', $result);
+        $this->assertStringContainsString('BETWEEN 21 AND 30', $result);
+    }
+
+    public function testPaginationHandlesNestedParentheses(): void
+    {
+        $sql = 'SELECT [id] FROM [users] WHERE [id] IN (SELECT [id] FROM (SELECT [id] FROM [scores] ORDER BY [score]) AS sub) ORDER BY [id] ASC';
+        $result = $this->dialect->applyPagination($sql, 5, 10);
+
+        $this->assertStringContainsString('ROW_NUMBER() OVER (ORDER BY [id] ASC)', $result);
+        $this->assertStringContainsString('BETWEEN 11 AND 15', $result);
+    }
+
+    public function testPaginationWithMultipleTopLevelOrderByUsesLast(): void
+    {
+        // This is unusual SQL but tests that the parser picks the LAST top-level ORDER BY
+        $sql = 'SELECT [id], [name] FROM [users] ORDER BY [id]';
+        $result = $this->dialect->applyPagination($sql, 10, 0);
+
+        // offset=0 uses TOP, not ROW_NUMBER
+        $this->assertSame('SELECT TOP 10 [id], [name] FROM [users] ORDER BY [id]', $result);
+    }
+
+    public function testPaginationWithOrderByContainingMultipleColumns(): void
+    {
+        $sql = 'SELECT [id], [name] FROM [users] ORDER BY [name] ASC, [id] DESC';
+        $result = $this->dialect->applyPagination($sql, 10, 20);
+
+        $this->assertStringContainsString('ROW_NUMBER() OVER (ORDER BY [name] ASC, [id] DESC)', $result);
+        $this->assertStringContainsString('BETWEEN 21 AND 30', $result);
+    }
 }

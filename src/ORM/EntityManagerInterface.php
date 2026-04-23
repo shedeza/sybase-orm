@@ -35,6 +35,12 @@ interface EntityManagerInterface
      */
     public function queryIterator(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): \Generator;
 
+    /** Executes an OQL query and returns a single result or null. */
+    public function queryOne(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): mixed;
+
+    /** Executes an OQL query and returns a single scalar value or null. */
+    public function queryScalar(string $oql, array $params = []): mixed;
+
     /** Limpia el Identity_Map y desasocia todas las entidades. */
     public function clear(): void;
 

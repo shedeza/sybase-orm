@@ -34,12 +34,13 @@ final class SybaseDialect implements DialectInterface
             );
         }
 
-        // Extract ORDER BY clause from the original SQL (required for ROW_NUMBER)
+        // Extract the last top-level ORDER BY clause (not inside parentheses)
         $orderBy = 'ORDER BY (SELECT 1)';
-        if (preg_match('/\bORDER\s+BY\s+(.+?)$/is', $sql, $matches)) {
-            $orderBy = 'ORDER BY ' . trim($matches[1]);
-            // Remove ORDER BY from original SQL — it moves into ROW_NUMBER()
-            $sql = preg_replace('/\s*\bORDER\s+BY\s+.+?$/is', '', $sql);
+        $orderByPos = $this->findTopLevelOrderBy($sql);
+
+        if ($orderByPos !== false) {
+            $orderBy = trim(substr($sql, $orderByPos));
+            $sql = rtrim(substr($sql, 0, $orderByPos));
         }
 
         $start = $offset + 1;
@@ -52,6 +53,36 @@ final class SybaseDialect implements DialectInterface
             $start,
             $end
         );
+    }
+
+    /**
+     * Finds the position of the last top-level ORDER BY clause (not inside parentheses).
+     * Returns false if no top-level ORDER BY is found.
+     */
+    private function findTopLevelOrderBy(string $sql): int|false
+    {
+        $depth = 0;
+        $lastOrderByPos = false;
+        $upper = strtoupper($sql);
+        $len = strlen($sql);
+
+        for ($i = 0; $i < $len; $i++) {
+            if ($sql[$i] === '(') {
+                $depth++;
+            } elseif ($sql[$i] === ')') {
+                $depth--;
+            } elseif ($depth === 0 && $i + 8 <= $len) {
+                // Check for "ORDER BY" at top level
+                if (substr($upper, $i, 8) === 'ORDER BY') {
+                    // Verify it's a word boundary (preceded by whitespace or start)
+                    if ($i === 0 || ctype_space($sql[$i - 1])) {
+                        $lastOrderByPos = $i;
+                    }
+                }
+            }
+        }
+
+        return $lastOrderByPos;
     }
 
     /**

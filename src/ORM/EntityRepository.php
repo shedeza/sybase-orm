@@ -167,9 +167,29 @@ class EntityRepository
      */
     public function findOneBy(array $criteria): ?object
     {
-        $results = $this->findBy($criteria);
+        if (empty($criteria)) {
+            $oql = sprintf('SELECT e FROM %s e', $this->entityShortName);
+            return $this->entityManager->queryOne($oql);
+        }
 
-        return $results[0] ?? null;
+        $conditions = [];
+        $params = [];
+        $i = 0;
+
+        foreach ($criteria as $property => $value) {
+            $paramName = 'p' . $i;
+            $conditions[] = sprintf('e.%s = :%s', $property, $paramName);
+            $params[$paramName] = $value;
+            $i++;
+        }
+
+        $oql = sprintf(
+            'SELECT e FROM %s e WHERE %s',
+            $this->entityShortName,
+            implode(' AND ', $conditions),
+        );
+
+        return $this->entityManager->queryOne($oql, $params);
     }
 
     /**
@@ -227,7 +247,25 @@ class EntityRepository
      */
     public function exists(array $criteria): bool
     {
-        return $this->count($criteria) > 0;
+        $conditions = [];
+        $params = [];
+        $i = 0;
+
+        foreach ($criteria as $property => $value) {
+            $paramName = 'e' . $i;
+            $conditions[] = sprintf('e.%s = :%s', $property, $paramName);
+            $params[$paramName] = $value;
+            $i++;
+        }
+
+        $oql = sprintf('SELECT COUNT(*) FROM %s e', $this->entityShortName);
+        if (!empty($conditions)) {
+            $oql .= ' WHERE ' . implode(' AND ', $conditions);
+        }
+
+        $count = $this->entityManager->queryScalar($oql, $params);
+
+        return ((int) ($count ?? 0)) > 0;
     }
 
     // ── QueryBuilder ────────────────────────────────────────────────

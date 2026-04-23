@@ -145,10 +145,10 @@ final class EntityRepositoryTest extends TestCase
         $this->em->expects($this->never())
             ->method('find');
 
-        // Debe delegar a query() vía findBy → findOneBy
+        // Debe delegar a queryOne() vía findOneBy
         $this->em->expects($this->once())
-            ->method('query')
-            ->willReturn([$entity]);
+            ->method('queryOne')
+            ->willReturn($entity);
 
         $result = $this->repo->find($compositeKey);
         $this->assertSame($entity, $result);
@@ -162,8 +162,8 @@ final class EntityRepositoryTest extends TestCase
             ->method('find');
 
         $this->em->expects($this->once())
-            ->method('query')
-            ->willReturn([]);
+            ->method('queryOne')
+            ->willReturn(null);
 
         $result = $this->repo->find($compositeKey);
         $this->assertNull($result);
@@ -238,5 +238,128 @@ final class EntityRepositoryTest extends TestCase
         };
 
         $this->assertSame($this->em, $customRepo->exposeEntityManager());
+    }
+
+    // ── findOneBy() ─────────────────────────────────────────────────
+
+    public function testFindOneByDelegatesToQueryOne(): void
+    {
+        $entity = new CustomerEntity();
+        $entity->setId(1);
+        $entity->setName('Alice');
+
+        $this->em->expects($this->once())
+            ->method('queryOne')
+            ->with(
+                $this->callback(fn(string $oql) => str_contains($oql, 'WHERE') && str_contains($oql, 'e.name')),
+                $this->callback(fn(array $params) => $params['p0'] === 'Alice'),
+            )
+            ->willReturn($entity);
+
+        $result = $this->repo->findOneBy(['name' => 'Alice']);
+        $this->assertSame($entity, $result);
+    }
+
+    public function testFindOneByReturnsNullWhenNotFound(): void
+    {
+        $this->em->expects($this->once())
+            ->method('queryOne')
+            ->willReturn(null);
+
+        $result = $this->repo->findOneBy(['name' => 'Nobody']);
+        $this->assertNull($result);
+    }
+
+    public function testFindOneByWithEmptyCriteriaQueriesAll(): void
+    {
+        $entity = new CustomerEntity();
+        $entity->setId(1);
+
+        $this->em->expects($this->once())
+            ->method('queryOne')
+            ->with(
+                $this->callback(fn(string $oql) => str_contains($oql, 'SELECT e FROM') && !str_contains($oql, 'WHERE')),
+            )
+            ->willReturn($entity);
+
+        $result = $this->repo->findOneBy([]);
+        $this->assertSame($entity, $result);
+    }
+
+    public function testFindOneByWithMultipleCriteria(): void
+    {
+        $entity = new CustomerEntity();
+        $entity->setId(1);
+        $entity->setName('Alice');
+
+        $this->em->expects($this->once())
+            ->method('queryOne')
+            ->with(
+                $this->callback(fn(string $oql) => str_contains($oql, 'e.id = :p0') && str_contains($oql, 'e.name = :p1')),
+                $this->callback(fn(array $params) => $params['p0'] === 1 && $params['p1'] === 'Alice'),
+            )
+            ->willReturn($entity);
+
+        $result = $this->repo->findOneBy(['id' => 1, 'name' => 'Alice']);
+        $this->assertSame($entity, $result);
+    }
+
+    // ── exists() ────────────────────────────────────────────────────
+
+    public function testExistsReturnsTrueWhenEntityFound(): void
+    {
+        $this->em->expects($this->once())
+            ->method('queryScalar')
+            ->with(
+                $this->callback(fn(string $oql) => str_contains($oql, 'COUNT(*)') && str_contains($oql, 'WHERE')),
+                $this->callback(fn(array $params) => $params['e0'] === 'Alice'),
+            )
+            ->willReturn(1);
+
+        $this->assertTrue($this->repo->exists(['name' => 'Alice']));
+    }
+
+    public function testExistsReturnsFalseWhenNotFound(): void
+    {
+        $this->em->expects($this->once())
+            ->method('queryScalar')
+            ->willReturn(0);
+
+        $this->assertFalse($this->repo->exists(['name' => 'Nobody']));
+    }
+
+    public function testExistsReturnsFalseWhenScalarReturnsNull(): void
+    {
+        $this->em->expects($this->once())
+            ->method('queryScalar')
+            ->willReturn(null);
+
+        $this->assertFalse($this->repo->exists(['name' => 'Nobody']));
+    }
+
+    public function testExistsWithEmptyCriteriaChecksAll(): void
+    {
+        $this->em->expects($this->once())
+            ->method('queryScalar')
+            ->with(
+                $this->callback(fn(string $oql) => str_contains($oql, 'COUNT(*)') && !str_contains($oql, 'WHERE')),
+                [],
+            )
+            ->willReturn(5);
+
+        $this->assertTrue($this->repo->exists([]));
+    }
+
+    public function testExistsWithMultipleCriteria(): void
+    {
+        $this->em->expects($this->once())
+            ->method('queryScalar')
+            ->with(
+                $this->callback(fn(string $oql) => str_contains($oql, 'e.id = :e0') && str_contains($oql, 'e.name = :e1')),
+                $this->callback(fn(array $params) => $params['e0'] === 1 && $params['e1'] === 'Alice'),
+            )
+            ->willReturn(1);
+
+        $this->assertTrue($this->repo->exists(['id' => 1, 'name' => 'Alice']));
     }
 }
