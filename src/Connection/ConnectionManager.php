@@ -109,7 +109,7 @@ class ConnectionManager implements ConnectionManagerInterface
         try {
             $pdo = $this->getConnection();
             $stmt = $pdo->prepare($sql);
-            $stmt->execute($this->convertParams($this->flattenParams($params)));
+            $stmt->execute($this->convertParams($params));
 
             return $stmt;
         } catch (\PDOException $e) {
@@ -122,7 +122,7 @@ class ConnectionManager implements ConnectionManagerInterface
         try {
             $pdo = $this->getConnection();
             $stmt = $pdo->prepare($sql);
-            $stmt->execute($this->convertParams($this->flattenParams($params)));
+            $stmt->execute($this->convertParams($params));
             $rowCount = $stmt->rowCount();
             $stmt->closeCursor();
             unset($stmt);
@@ -195,26 +195,6 @@ class ConnectionManager implements ConnectionManagerInterface
     public function isInTransaction(): bool
     {
         return $this->inTransaction;
-    }
-
-    /**
-     * Flattens any array values in the params list into individual scalar values.
-     * This is a safety net — array params should already be expanded by the OQL layer,
-     * but if they reach here unexpanded, flatten them to avoid PDO "Array to string" errors.
-     */
-    private function flattenParams(array $params): array
-    {
-        $flat = [];
-        foreach ($params as $value) {
-            if (is_array($value)) {
-                foreach ($value as $item) {
-                    $flat[] = $item;
-                }
-            } else {
-                $flat[] = $value;
-            }
-        }
-        return $flat;
     }
 
     /**

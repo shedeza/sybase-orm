@@ -426,6 +426,23 @@ final class EntityManager implements EntityManagerInterface
             }
         }
 
+        // Safety: expand any remaining named params not reported by the translator
+        foreach ($params as $name => $value) {
+            if (in_array($name, $parameterNames, true)) {
+                continue;
+            }
+            if (is_array($value) && str_contains($sql, ':' . $name)) {
+                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
+                foreach ($value as $item) {
+                    $orderedParams[] = $item;
+                }
+            } elseif (str_contains($sql, ':' . $name)) {
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', '?', $sql, 1);
+                $orderedParams[] = $value;
+            }
+        }
+
         return $this->connectionManager->executeStatement($sql, $orderedParams);
     }
 
@@ -497,6 +514,24 @@ final class EntityManager implements EntityManagerInterface
                 }
             } else {
                 // Replace named parameter with positional placeholder
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', '?', $sql, 1);
+                $orderedParams[] = $value;
+            }
+        }
+
+        // Safety: expand any remaining named params not reported by the translator
+        // This handles edge cases where params exist in SQL but weren't tracked
+        foreach ($params as $name => $value) {
+            if (in_array($name, $parameterNames, true)) {
+                continue; // Already processed above
+            }
+            if (is_array($value) && str_contains($sql, ':' . $name)) {
+                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
+                foreach ($value as $item) {
+                    $orderedParams[] = $item;
+                }
+            } elseif (str_contains($sql, ':' . $name)) {
                 $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', '?', $sql, 1);
                 $orderedParams[] = $value;
             }
