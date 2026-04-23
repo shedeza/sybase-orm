@@ -90,7 +90,7 @@ final class SybaseORMExtension extends Extension
             // Parámetros individuales
             $connConfig = [
                 'host' => $connectionConfig['host'],
-                'port' => (int) $connectionConfig['port'],
+                'port' => $connectionConfig['port'],
                 'dbname' => $connectionConfig['database'],
                 'username' => $connectionConfig['username'],
                 'password' => $connectionConfig['password'],
