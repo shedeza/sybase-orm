@@ -142,7 +142,14 @@ final class CacheManager implements CacheManagerInterface
 
     private function entityKey(string $entityClass, mixed $id): string
     {
-        return 'entity:' . $entityClass . ':' . (string) $id;
+        if (is_array($id)) {
+            ksort($id);
+            $idStr = implode('|', array_map('strval', $id));
+        } else {
+            $idStr = (string) $id;
+        }
+
+        return 'entity:' . $entityClass . ':' . $idStr;
     }
 
     private function queryKey(string $queryKey): string

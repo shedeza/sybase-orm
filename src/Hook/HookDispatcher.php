@@ -36,6 +36,14 @@ final class HookDispatcher
         $methods = $metadata->lifecycleHooks[$hookType] ?? [];
 
         foreach ($methods as $method) {
+            if (!method_exists($entity, $method)) {
+                throw new \RuntimeException(sprintf(
+                    'Lifecycle hook method "%s::%s" for hook "%s" does not exist.',
+                    $entity::class,
+                    $method,
+                    $hookType,
+                ));
+            }
             $entity->$method();
         }
     }

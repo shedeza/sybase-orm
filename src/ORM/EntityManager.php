@@ -171,33 +171,10 @@ final class EntityManager implements EntityManagerInterface
 
     public function query(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): array
     {
-        $ast = $this->oqlParser->parse($oql);
-
-        $translator = new OqlToSqlTranslator(
-            $this->dialect,
-            $this->metadataReader,
-            $this->entityClasses,
-        );
-
-        $result = $translator->translate($ast);
-        $sql = $result['sql'];
-        $parameterNames = $result['parameters'];
-
-        // Map named parameters to ordered values, expanding array params for IN clauses
-        $orderedParams = [];
-        foreach ($parameterNames as $name) {
-            $value = $params[$name] ?? null;
-            if (is_array($value)) {
-                // IN parameter expansion: replace single named placeholder with N positional placeholders
-                $placeholders = implode(', ', array_fill(0, count($value), '?'));
-                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($value as $item) {
-                    $orderedParams[] = $item;
-                }
-            } else {
-                $orderedParams[] = $value;
-            }
-        }
+        $prepared = $this->prepareQueryExecution($oql, $params);
+        $sql = $prepared['sql'];
+        $orderedParams = $prepared['params'];
+        $ast = $prepared['ast'];
 
         $stmt = $this->connectionManager->executeQuery($sql, $orderedParams);
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
@@ -226,32 +203,10 @@ final class EntityManager implements EntityManagerInterface
 
     public function queryIterator(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): \Generator
     {
-        $ast = $this->oqlParser->parse($oql);
-
-        $translator = new OqlToSqlTranslator(
-            $this->dialect,
-            $this->metadataReader,
-            $this->entityClasses,
-        );
-
-        $result = $translator->translate($ast);
-        $sql = $result['sql'];
-        $parameterNames = $result['parameters'];
-
-        // Map named parameters to ordered values, expanding array params for IN clauses
-        $orderedParams = [];
-        foreach ($parameterNames as $name) {
-            $value = $params[$name] ?? null;
-            if (is_array($value)) {
-                $placeholders = implode(', ', array_fill(0, count($value), '?'));
-                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($value as $item) {
-                    $orderedParams[] = $item;
-                }
-            } else {
-                $orderedParams[] = $value;
-            }
-        }
+        $prepared = $this->prepareQueryExecution($oql, $params);
+        $sql = $prepared['sql'];
+        $orderedParams = $prepared['params'];
+        $ast = $prepared['ast'];
 
         $stmt = $this->connectionManager->executeQuery($sql, $orderedParams);
 
@@ -277,6 +232,45 @@ final class EntityManager implements EntityManagerInterface
         } finally {
             $stmt->closeCursor();
         }
+    }
+
+    /**
+     * Prepares OQL for execution: parses, translates, and maps parameters.
+     *
+     * @return array{sql: string, params: list<mixed>, ast: object}
+     */
+    private function prepareQueryExecution(string $oql, array $params): array
+    {
+        $ast = $this->oqlParser->parse($oql);
+
+        $translator = new OqlToSqlTranslator(
+            $this->dialect,
+            $this->metadataReader,
+            $this->entityClasses,
+        );
+
+        $result = $translator->translate($ast);
+        $sql = $result['sql'];
+        $parameterNames = $result['parameters'];
+
+        // Map named parameters to ordered values, expanding array params for IN clauses
+        $orderedParams = [];
+        foreach ($parameterNames as $name) {
+            $value = $params[$name] ?? null;
+            if (is_array($value)) {
+                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
+                foreach ($value as $item) {
+                    $orderedParams[] = $item;
+                }
+            } else {
+                // Replace named parameter with positional placeholder
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', '?', $sql, 1);
+                $orderedParams[] = $value;
+            }
+        }
+
+        return ['sql' => $sql, 'params' => $orderedParams, 'ast' => $ast];
     }
 
     /**
@@ -334,19 +328,36 @@ final class EntityManager implements EntityManagerInterface
     {
         $entityClass = $entity::class;
         $metadata = $this->metadataReader->getClassMetadata($entityClass);
-        $idColumn = $metadata->getIdColumn();
+        $idColumns = $metadata->getIdColumns();
 
-        if ($idColumn === null) {
+        if (empty($idColumns)) {
             throw new PersistenceException(
                 sprintf('Cannot merge entity "%s": no ID column defined.', $entityClass),
             );
         }
 
         $reflectionClass = new \ReflectionClass($entityClass);
-        $idProp = $reflectionClass->getProperty($idColumn->propertyName);
-        $id = $idProp->getValue($entity);
 
-        if ($id === null) {
+        if (count($idColumns) === 1) {
+            // Single key
+            $idProp = $reflectionClass->getProperty($idColumns[0]->propertyName);
+            $id = $idProp->getValue($entity);
+        } else {
+            // Composite key
+            $id = [];
+            foreach ($idColumns as $idCol) {
+                $prop = $reflectionClass->getProperty($idCol->propertyName);
+                $val = $prop->getValue($entity);
+                if ($val === null) {
+                    throw new PersistenceException(
+                        sprintf('Cannot merge entity "%s": composite key field "%s" is null.', $entityClass, $idCol->propertyName),
+                    );
+                }
+                $id[$idCol->propertyName] = $val;
+            }
+        }
+
+        if ($id === null || (is_array($id) && empty($id))) {
             throw new PersistenceException(
                 sprintf('Cannot merge entity "%s": ID value is null.', $entityClass),
             );

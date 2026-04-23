@@ -287,7 +287,10 @@ final class MetadataReader implements MetadataReaderInterface
             return null;
         }
 
-        $data = @unserialize(file_get_contents($path));
+        $data = @unserialize(
+            file_get_contents($path),
+            ['allowed_classes' => [ClassMetadata::class, ColumnMetadata::class, RelationshipMetadata::class]],
+        );
         if ($data instanceof ClassMetadata) {
             return $data;
         }

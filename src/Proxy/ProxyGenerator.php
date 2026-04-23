@@ -210,7 +210,11 @@ final class ProxyGenerator
     private function isGetter(ReflectionMethod $method): bool
     {
         $name = $method->getName();
-        $isGetterName = str_starts_with($name, 'get') || str_starts_with($name, 'is');
+        $isGetterName = str_starts_with($name, 'get')
+            || str_starts_with($name, 'is')
+            || str_starts_with($name, 'has')
+            || str_starts_with($name, 'can')
+            || str_starts_with($name, 'should');
 
         if (!$isGetterName) {
             return false;
