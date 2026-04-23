@@ -35,62 +35,36 @@ class EntityRepository
 
     // ── Persistencia ────────────────────────────────────────────────
 
-    /**
-     * Persiste una entidad y sincroniza con la base de datos.
-     *
-     * Si la entidad es nueva (sin ID), la registra para INSERT.
-     * Si la entidad ya existe (con ID y managed), solo ejecuta flush
-     * para que el dirty checking genere el UPDATE.
-     */
     public function save(object $entity): void
     {
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
     }
 
-    /**
-     * Persiste múltiples entidades en una sola transacción.
-     *
-     * @param object[] $entities
-     */
+    /** @param object[] $entities */
     public function saveMany(array $entities): void
     {
         foreach ($entities as $entity) {
             $this->entityManager->persist($entity);
         }
-
         $this->entityManager->flush();
     }
 
-    /**
-     * Elimina una entidad y sincroniza con la base de datos.
-     *
-     * Equivale a llamar remove() + flush() en el EntityManager.
-     */
     public function delete(object $entity): void
     {
         $this->entityManager->remove($entity);
         $this->entityManager->flush();
     }
 
-    /**
-     * Elimina múltiples entidades en una sola transacción.
-     *
-     * @param object[] $entities
-     */
+    /** @param object[] $entities */
     public function deleteMany(array $entities): void
     {
         foreach ($entities as $entity) {
             $this->entityManager->remove($entity);
         }
-
         $this->entityManager->flush();
     }
 
-    /**
-     * Re-asocia una entidad detached al contexto de persistencia.
-     * Retorna la instancia managed con los valores copiados.
-     */
     public function merge(object $entity): object
     {
         return $this->entityManager->merge($entity);
@@ -98,43 +72,25 @@ class EntityRepository
 
     // ── Consultas ───────────────────────────────────────────────────
 
-    /**
-     * Busca una entidad por su identificador primario.
-     *
-     * Para llaves compuestas, pasar un array asociativo con los campos
-     * que componen la llave: find(['campo1' => valor1, 'campo2' => valor2]).
-     * Internamente delega a findOneBy() en ese caso.
-     *
-     * @param mixed $id Valor escalar para llave simple, o array asociativo para llave compuesta
-     */
     public function find(mixed $id): ?object
     {
         if (is_array($id)) {
             return $this->findOneBy($id);
         }
-
         return $this->entityManager->find($this->entityClass, $id);
     }
 
-    /**
-     * Busca todas las entidades de este tipo.
-     *
-     * @return object[]
-     */
+    /** @return object[] */
     public function findAll(): array
     {
-        $oql = sprintf('SELECT e FROM %s e', $this->entityShortName);
-
-        return $this->entityManager->query($oql);
+        return $this->entityManager->query(
+            sprintf('SELECT e FROM %s e', $this->entityShortName),
+        );
     }
 
     /**
-     * Busca entidades que coincidan con los criterios dados.
-     *
-     * @param array<string, mixed> $criteria Nombre de propiedad => valor
-     * @param array<string, string>|null $orderBy Nombre de propiedad => 'ASC'|'DESC'
-     * @param int|null $limit Número máximo de resultados
-     * @param int|null $offset Desplazamiento para paginación
+     * @param array<string, mixed> $criteria
+     * @param array<string, string>|null $orderBy
      * @return object[]
      */
     public function findBy(array $criteria, ?array $orderBy = null, ?int $limit = null, ?int $offset = null): array
@@ -143,16 +99,7 @@ class EntityRepository
             return $this->findAll();
         }
 
-        $conditions = [];
-        $params = [];
-        $i = 0;
-
-        foreach ($criteria as $property => $value) {
-            $paramName = 'p' . $i;
-            $conditions[] = sprintf('e.%s = :%s', $property, $paramName);
-            $params[$paramName] = $value;
-            $i++;
-        }
+        [$conditions, $params] = $this->buildCriteriaConditions($criteria, 'p');
 
         $oql = sprintf('SELECT e FROM %s e', $this->entityShortName);
 
@@ -179,28 +126,16 @@ class EntityRepository
         return $results;
     }
 
-    /**
-     * Busca una sola entidad que coincida con los criterios, o null si no existe.
-     *
-     * @param array<string, mixed> $criteria Nombre de propiedad => valor
-     */
+    /** @param array<string, mixed> $criteria */
     public function findOneBy(array $criteria): ?object
     {
         if (empty($criteria)) {
-            $oql = sprintf('SELECT e FROM %s e', $this->entityShortName);
-            return $this->entityManager->queryOne($oql);
+            return $this->entityManager->queryOne(
+                sprintf('SELECT e FROM %s e', $this->entityShortName),
+            );
         }
 
-        $conditions = [];
-        $params = [];
-        $i = 0;
-
-        foreach ($criteria as $property => $value) {
-            $paramName = 'p' . $i;
-            $conditions[] = sprintf('e.%s = :%s', $property, $paramName);
-            $params[$paramName] = $value;
-            $i++;
-        }
+        [$conditions, $params] = $this->buildCriteriaConditions($criteria, 'p');
 
         $oql = sprintf(
             'SELECT e FROM %s e WHERE %s',
@@ -211,12 +146,7 @@ class EntityRepository
         return $this->entityManager->queryOne($oql, $params);
     }
 
-    /**
-     * Ejecuta una consulta OQL personalizada.
-     *
-     * @param array<string, mixed> $params Parámetros de la consulta
-     * @return object[]
-     */
+    /** @return object[] */
     public function query(string $oql, array $params = []): array
     {
         return $this->entityManager->query($oql, $params);
@@ -224,23 +154,10 @@ class EntityRepository
 
     // ── Conteo y existencia ────────────────────────────────────────
 
-    /**
-     * Cuenta las entidades que coincidan con los criterios dados.
-     *
-     * @param array<string, mixed> $criteria Nombre de propiedad => valor
-     */
+    /** @param array<string, mixed> $criteria */
     public function count(array $criteria = []): int
     {
-        $conditions = [];
-        $params = [];
-        $i = 0;
-
-        foreach ($criteria as $property => $value) {
-            $paramName = 'c' . $i;
-            $conditions[] = sprintf('e.%s = :%s', $property, $paramName);
-            $params[$paramName] = $value;
-            $i++;
-        }
+        [$conditions, $params] = $this->buildCriteriaConditions($criteria, 'c');
 
         $oql = sprintf('SELECT COUNT(*) FROM %s e', $this->entityShortName);
 
@@ -254,30 +171,16 @@ class EntityRepository
             return 0;
         }
 
-        $row = $result[0];
-
-        return (int) reset($row);
+        return (int) reset($result[0]);
     }
 
-    /**
-     * Verifica si existe al menos una entidad que coincida con los criterios.
-     *
-     * @param array<string, mixed> $criteria Nombre de propiedad => valor
-     */
+    /** @param array<string, mixed> $criteria */
     public function exists(array $criteria): bool
     {
-        $conditions = [];
-        $params = [];
-        $i = 0;
-
-        foreach ($criteria as $property => $value) {
-            $paramName = 'e' . $i;
-            $conditions[] = sprintf('e.%s = :%s', $property, $paramName);
-            $params[$paramName] = $value;
-            $i++;
-        }
+        [$conditions, $params] = $this->buildCriteriaConditions($criteria, 'e');
 
         $oql = sprintf('SELECT COUNT(*) FROM %s e', $this->entityShortName);
+
         if (!empty($conditions)) {
             $oql .= ' WHERE ' . implode(' AND ', $conditions);
         }
@@ -289,11 +192,6 @@ class EntityRepository
 
     // ── QueryBuilder ────────────────────────────────────────────────
 
-    /**
-     * Crea un QueryBuilder pre-configurado con FROM para esta entidad.
-     *
-     * El alias por defecto es 'e'.
-     */
     public function createQueryBuilder(): QueryBuilderInterface
     {
         return $this->entityManager->createQueryBuilder($this->entityClass);
@@ -301,25 +199,16 @@ class EntityRepository
 
     // ── Transacciones ───────────────────────────────────────────────
 
-    /**
-     * Inicia una transacción explícita.
-     */
     public function beginTransaction(): void
     {
         $this->entityManager->beginTransaction();
     }
 
-    /**
-     * Confirma la transacción activa.
-     */
     public function commit(): void
     {
         $this->entityManager->commit();
     }
 
-    /**
-     * Revierte la transacción activa.
-     */
     public function rollback(): void
     {
         $this->entityManager->rollback();
@@ -327,37 +216,63 @@ class EntityRepository
 
     // ── Utilidades ──────────────────────────────────────────────────
 
-    /**
-     * Retorna la clase de entidad gestionada por este repositorio.
-     */
     public function getEntityClass(): string
     {
         return $this->entityClass;
     }
 
-    /**
-     * Returns the database table name for this entity.
-     */
     public function getTableName(): string
     {
         $metadata = $this->entityManager->getMetadataReader()->getClassMetadata($this->entityClass);
-
         return $metadata->getQualifiedTableName();
     }
 
-    /**
-     * Returns the short class name used in OQL queries.
-     */
     public function getEntityShortName(): string
     {
         return $this->entityShortName;
     }
 
-    /**
-     * Acceso protegido al EntityManager para repositorios personalizados.
-     */
     protected function getEntityManager(): EntityManagerInterface
     {
         return $this->entityManager;
+    }
+
+    // ── Helpers privados ────────────────────────────────────────────
+
+    /**
+     * Builds OQL WHERE conditions and parameter array from criteria.
+     *
+     * Handles three value types:
+     * - null → IS NULL (no parameter)
+     * - array → IN (:param) with automatic expansion
+     * - scalar → = :param
+     *
+     * @param array<string, mixed> $criteria
+     * @param string $prefix Parameter name prefix to avoid collisions
+     * @return array{0: string[], 1: array<string, mixed>}
+     */
+    private function buildCriteriaConditions(array $criteria, string $prefix): array
+    {
+        $conditions = [];
+        $params = [];
+        $i = 0;
+
+        foreach ($criteria as $property => $value) {
+            $paramName = $prefix . $i;
+
+            if ($value === null) {
+                $conditions[] = sprintf('e.%s IS NULL', $property);
+            } elseif (is_array($value)) {
+                $conditions[] = sprintf('e.%s IN (:%s)', $property, $paramName);
+                $params[$paramName] = $value;
+            } else {
+                $conditions[] = sprintf('e.%s = :%s', $property, $paramName);
+                $params[$paramName] = $value;
+            }
+
+            $i++;
+        }
+
+        return [$conditions, $params];
     }
 }
