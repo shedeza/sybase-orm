@@ -40,6 +40,12 @@ final class EntityManager implements EntityManagerInterface
     /** @var OqlToSqlTranslator|null Instancia reutilizable del traductor OQL→SQL */
     private ?OqlToSqlTranslator $oqlTranslator = null;
 
+    /** @var bool Whether entity classes have been auto-discovered */
+    private bool $entitiesDiscovered = false;
+
+    /** @var string[] Directories to scan for entity classes */
+    private array $entityDirectories = [];
+
     public function __construct(
         private readonly ConnectionManagerInterface $connectionManager,
         private readonly MetadataReaderInterface $metadataReader,
@@ -65,10 +71,129 @@ final class EntityManager implements EntityManagerInterface
         $this->entityClasses = $entityClasses;
         $this->entityShortNameMap = [];
         $this->oqlTranslator = null;
+        $this->entitiesDiscovered = true;
         foreach ($entityClasses as $fqcn) {
             $shortName = (new \ReflectionClass($fqcn))->getShortName();
             $this->entityShortNameMap[$shortName] = $fqcn;
         }
+    }
+
+    /**
+     * Sets directories to scan for entity classes.
+     * Entity discovery happens lazily on first OQL query.
+     *
+     * @param string[] $directories
+     */
+    public function setEntityDirectories(array $directories): void
+    {
+        $this->entityDirectories = $directories;
+        $this->entitiesDiscovered = false;
+    }
+
+    /**
+     * Discovers entity classes from configured directories if not already done.
+     */
+    private function ensureEntitiesDiscovered(): void
+    {
+        if ($this->entitiesDiscovered) {
+            return;
+        }
+
+        $this->entitiesDiscovered = true;
+
+        if (empty($this->entityDirectories)) {
+            return;
+        }
+
+        $discovered = [];
+        foreach ($this->entityDirectories as $directory) {
+            if (!is_dir($directory)) {
+                continue;
+            }
+
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS),
+            );
+
+            foreach ($iterator as $file) {
+                if (!$file instanceof \SplFileInfo || $file->getExtension() !== 'php') {
+                    continue;
+                }
+
+                $className = $this->resolveClassNameFromFile($file->getPathname());
+                if ($className !== null && $this->metadataReader->isEntity($className)) {
+                    $discovered[] = $className;
+                }
+            }
+        }
+
+        if (!empty($discovered)) {
+            $merged = array_unique(array_merge($this->entityClasses, $discovered));
+            $this->setEntityClasses($merged);
+        }
+    }
+
+    /**
+     * Extracts the FQCN from a PHP file by reading its namespace and class declarations.
+     */
+    private function resolveClassNameFromFile(string $filePath): ?string
+    {
+        $contents = file_get_contents($filePath);
+        if ($contents === false) {
+            return null;
+        }
+
+        $namespace = null;
+        $class = null;
+
+        $tokens = token_get_all($contents);
+        $count = count($tokens);
+
+        for ($i = 0; $i < $count; $i++) {
+            if (!is_array($tokens[$i])) {
+                continue;
+            }
+
+            // PHP 8.0+ uses T_NAMESPACE and T_NAME_QUALIFIED
+            if ($tokens[$i][0] === T_NAMESPACE) {
+                $ns = '';
+                for ($j = $i + 1; $j < $count; $j++) {
+                    if (is_array($tokens[$j]) && in_array($tokens[$j][0], [T_NAME_QUALIFIED, T_STRING, T_NS_SEPARATOR], true)) {
+                        $ns .= $tokens[$j][1];
+                    } elseif (is_string($tokens[$j]) && $tokens[$j] === ';') {
+                        break;
+                    } elseif (!is_array($tokens[$j]) || $tokens[$j][0] !== T_WHITESPACE) {
+                        break;
+                    }
+                }
+                $namespace = trim($ns);
+            }
+
+            if ($tokens[$i][0] === T_CLASS) {
+                // Skip anonymous classes and ::class
+                if ($i > 0 && is_array($tokens[$i - 1]) && $tokens[$i - 1][0] === T_DOUBLE_COLON) {
+                    continue;
+                }
+                // Next non-whitespace token is the class name
+                for ($j = $i + 1; $j < $count; $j++) {
+                    if (is_array($tokens[$j]) && $tokens[$j][0] === T_STRING) {
+                        $class = $tokens[$j][1];
+                        break 2;
+                    }
+                    if (is_array($tokens[$j]) && $tokens[$j][0] !== T_WHITESPACE) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if ($class === null) {
+            return null;
+        }
+
+        $fqcn = $namespace !== null ? $namespace . '\\' . $class : $class;
+
+        return class_exists($fqcn) ? $fqcn : null;
     }
 
     public function persist(object $entity): void
@@ -265,6 +390,8 @@ final class EntityManager implements EntityManagerInterface
 
     public function executeUpdate(string $oql, array $params = []): int
     {
+        $this->ensureEntitiesDiscovered();
+
         $ast = $this->oqlParser->parse($oql);
 
         if ($ast instanceof \SybaseORM\Query\AST\SelectStatement) {
@@ -342,6 +469,8 @@ final class EntityManager implements EntityManagerInterface
      */
     private function prepareQueryExecution(string $oql, array $params): array
     {
+        $this->ensureEntitiesDiscovered();
+
         $ast = $this->oqlParser->parse($oql);
 
         if ($this->oqlTranslator === null) {

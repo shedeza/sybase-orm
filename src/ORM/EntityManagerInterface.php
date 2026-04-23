@@ -76,4 +76,12 @@ interface EntityManagerInterface
 
     /** Returns the metadata reader. */
     public function getMetadataReader(): \SybaseORM\Metadata\MetadataReaderInterface;
+
+    /**
+     * Sets directories to scan for entity classes.
+     * Entity discovery happens lazily on first OQL query.
+     *
+     * @param string[] $directories
+     */
+    public function setEntityDirectories(array $directories): void;
 }

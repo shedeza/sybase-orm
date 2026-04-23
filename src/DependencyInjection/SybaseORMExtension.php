@@ -248,6 +248,9 @@ final class SybaseORMExtension extends Extension
         $definition->setPublic(true);
         $definition->setAutowired(true);
 
+        // Auto-discover entities from configured directories
+        $definition->addMethodCall('setEntityDirectories', [$config['entity_directories']]);
+
         $container->setDefinition(EntityManager::class, $definition);
         $container->setAlias(EntityManagerInterface::class, EntityManager::class)
             ->setPublic(true);
