@@ -31,6 +31,9 @@ final class UnitOfWork implements UnitOfWorkInterface
     /** @var \SplObjectStorage<object, array<string, mixed>> */
     private \SplObjectStorage $entitySnapshots;
 
+    /** @var \SplObjectStorage<object, true> Entities that have been inserted in any commit — prevents re-insertion */
+    private \SplObjectStorage $insertedEntities;
+
     /** @var array<string, array<string, \ReflectionProperty>> Caché de ReflectionProperty por clase y propiedad */
     private array $reflectionCache = [];
 
@@ -45,12 +48,18 @@ final class UnitOfWork implements UnitOfWorkInterface
         $this->newEntities = new \SplObjectStorage();
         $this->deletedEntities = new \SplObjectStorage();
         $this->entitySnapshots = new \SplObjectStorage();
+        $this->insertedEntities = new \SplObjectStorage();
     }
 
     public function registerNew(object $entity): void
     {
         // No registrar como nueva si ya está managed (tiene snapshot)
         if ($this->entitySnapshots->contains($entity)) {
+            return;
+        }
+
+        // No registrar si ya fue insertada en un commit anterior
+        if ($this->insertedEntities->contains($entity)) {
             return;
         }
 
@@ -144,6 +153,7 @@ final class UnitOfWork implements UnitOfWorkInterface
         $this->newEntities = new \SplObjectStorage();
         $this->deletedEntities = new \SplObjectStorage();
         $this->entitySnapshots = new \SplObjectStorage();
+        $this->insertedEntities = new \SplObjectStorage();
         $this->identityMap->clear();
     }
 
@@ -284,7 +294,21 @@ final class UnitOfWork implements UnitOfWorkInterface
         // Order new entities respecting foreign key dependencies
         $ordered = $this->orderEntitiesForInsert();
 
+        // Guard: track inserted entities to prevent any possibility of double-insert
+        $inserted = new \SplObjectStorage();
+
         foreach ($ordered as $entity) {
+            // Skip if already inserted in this commit cycle
+            if ($inserted->contains($entity)) {
+                continue;
+            }
+
+            // Skip if already managed (was inserted in a previous commit)
+            if ($this->entitySnapshots->contains($entity)) {
+                $this->newEntities->detach($entity);
+                continue;
+            }
+
             $metadata = $this->metadataReader->getClassMetadata($entity::class);
             $idColumn = $metadata->getIdColumn();
 
@@ -339,8 +363,9 @@ final class UnitOfWork implements UnitOfWorkInterface
 
             $this->connectionManager->executeStatement($sql, $values);
 
-            // Remove from newEntities immediately after successful INSERT
-            // to prevent duplicate inserts if flush is called re-entrantly
+            // Mark as inserted and remove from newEntities immediately
+            $inserted->attach($entity);
+            $this->insertedEntities->attach($entity);
             $this->newEntities->detach($entity);
 
             // Retrieve @@identity and set on entity

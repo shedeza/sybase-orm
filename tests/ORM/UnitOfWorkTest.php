@@ -692,4 +692,61 @@ final class UnitOfWorkTest extends TestCase
         $this->assertCount(5, $inserts, 'Expected exactly 5 INSERTs');
         $this->assertCount(0, $updates, 'Expected 0 UPDATEs — no spurious updates for newly inserted entities');
     }
+
+    public function testPersistSameEntityTwiceThenFlushInsertsOnlyOnce(): void
+    {
+        $order = new OrderEntity();
+        $order->setDescription('Single Order');
+        $order->setTotal(99.0);
+
+        // Persist the same object twice
+        $this->unitOfWork->registerNew($order);
+        $this->unitOfWork->registerNew($order);
+
+        $this->unitOfWork->commit();
+
+        $inserts = array_filter($this->executedStatements, fn($s) => str_contains($s['sql'], 'INSERT'));
+        $this->assertCount(1, $inserts, 'Same entity persisted twice should produce exactly 1 INSERT');
+    }
+
+    public function testFlushTwiceDoesNotReInsertEntity(): void
+    {
+        $order = new OrderEntity();
+        $order->setDescription('Once Only');
+        $order->setTotal(50.0);
+
+        $this->unitOfWork->registerNew($order);
+        $this->unitOfWork->commit();
+
+        // Reset tracking to count second commit
+        $this->executedStatements = [];
+        $this->executedQueries = [];
+
+        // Second commit — entity is already managed, should NOT be re-inserted
+        $this->unitOfWork->commit();
+
+        $inserts = array_filter($this->executedStatements, fn($s) => str_contains($s['sql'], 'INSERT'));
+        $this->assertCount(0, $inserts, 'Second flush must not re-insert the entity');
+    }
+
+    public function testPersistAfterFlushDoesNotReInsertEntity(): void
+    {
+        $order = new OrderEntity();
+        $order->setDescription('No Duplicate');
+        $order->setTotal(75.0);
+
+        // First persist + flush
+        $this->unitOfWork->registerNew($order);
+        $this->unitOfWork->commit();
+
+        $this->executedStatements = [];
+        $this->executedQueries = [];
+
+        // Try to persist the same entity again
+        $this->unitOfWork->registerNew($order);
+        $this->unitOfWork->commit();
+
+        $inserts = array_filter($this->executedStatements, fn($s) => str_contains($s['sql'], 'INSERT'));
+        $this->assertCount(0, $inserts, 'Re-persisting after flush must not produce a second INSERT');
+    }
 }
