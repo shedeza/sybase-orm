@@ -9,6 +9,7 @@ use SybaseORM\Hydrator\Hydrator;
 use SybaseORM\Metadata\MetadataReader;
 use SybaseORM\ORM\IdentityMapInterface;
 use SybaseORM\Tests\Hydrator\Fixtures\CategoryEntity;
+use SybaseORM\Tests\Hydrator\Fixtures\CompositeProductEntity;
 use SybaseORM\Tests\Hydrator\Fixtures\ProductEntity;
 use SybaseORM\Type\TypeCaster;
 
@@ -285,5 +286,110 @@ final class HydratorTest extends TestCase
         // price and active keep their default values
         self::assertSame(0.0, $entity->getPrice());
         self::assertFalse($entity->isActive());
+    }
+
+    // ── Composite key IdentityMap integration (Req 3.4, 3.5) ───
+
+    public function testHydrateResolvesCompositeKeyEntityFromIdentityMap(): void
+    {
+        $existingEntity = (new \ReflectionClass(CompositeProductEntity::class))
+            ->newInstanceWithoutConstructor();
+        $refOrg = new \ReflectionProperty(CompositeProductEntity::class, 'orgId');
+        $refOrg->setValue($existingEntity, 10);
+        $refProd = new \ReflectionProperty(CompositeProductEntity::class, 'productId');
+        $refProd->setValue($existingEntity, 20);
+        $refName = new \ReflectionProperty(CompositeProductEntity::class, 'name');
+        $refName->setValue($existingEntity, 'Original');
+
+        $identityMap = $this->createMock(IdentityMapInterface::class);
+        $identityMap->method('get')
+            ->with(CompositeProductEntity::class, ['orgId' => 10, 'productId' => 20])
+            ->willReturn($existingEntity);
+
+        $hydrator = new Hydrator($this->metadataReader, $this->typeCaster, $identityMap);
+
+        $row = [
+            'org_id' => '10',
+            'product_id' => '20',
+            'name' => 'Updated',
+        ];
+
+        $entity = $hydrator->hydrate($row, CompositeProductEntity::class);
+
+        self::assertSame($existingEntity, $entity);
+        self::assertSame('Original', $entity->getName());
+    }
+
+    public function testHydrateStoresCompositeKeyEntityInIdentityMap(): void
+    {
+        $identityMap = $this->createMock(IdentityMapInterface::class);
+        $identityMap->method('get')->willReturn(null);
+        $identityMap->expects(self::once())
+            ->method('put')
+            ->with(
+                CompositeProductEntity::class,
+                ['orgId' => 10, 'productId' => 20],
+                self::isInstanceOf(CompositeProductEntity::class),
+            );
+
+        $hydrator = new Hydrator($this->metadataReader, $this->typeCaster, $identityMap);
+
+        $row = [
+            'org_id' => '10',
+            'product_id' => '20',
+            'name' => 'New',
+        ];
+
+        $hydrator->hydrate($row, CompositeProductEntity::class);
+    }
+
+    public function testHydrateCompositeKeyReturnsNullFromIdentityMapWhenPartialKeyNull(): void
+    {
+        $identityMap = $this->createMock(IdentityMapInterface::class);
+        // Should not call get() since one key column is null
+        $identityMap->expects(self::never())->method('get');
+        $identityMap->expects(self::never())->method('put');
+
+        $hydrator = new Hydrator($this->metadataReader, $this->typeCaster, $identityMap);
+
+        $row = [
+            'org_id' => '10',
+            'product_id' => null,
+            'name' => 'Partial',
+        ];
+
+        $entity = $hydrator->hydrate($row, CompositeProductEntity::class);
+
+        self::assertInstanceOf(CompositeProductEntity::class, $entity);
+        self::assertSame(10, $entity->getOrgId());
+        self::assertNull($entity->getProductId());
+    }
+
+    public function testHydrateSingleKeyFastPathPreservedWithIdentityMap(): void
+    {
+        $existingProduct = (new \ReflectionClass(ProductEntity::class))
+            ->newInstanceWithoutConstructor();
+        $refProp = new \ReflectionProperty(ProductEntity::class, 'id');
+        $refProp->setValue($existingProduct, 99);
+
+        $identityMap = $this->createMock(IdentityMapInterface::class);
+        // Single key: should pass scalar, not array
+        $identityMap->method('get')
+            ->with(ProductEntity::class, 99)
+            ->willReturn($existingProduct);
+
+        $hydrator = new Hydrator($this->metadataReader, $this->typeCaster, $identityMap);
+
+        $row = [
+            'id' => '99',
+            'name' => 'Test',
+            'price' => '5.0',
+            'active' => '1',
+            'created_at' => null,
+        ];
+
+        $entity = $hydrator->hydrate($row, ProductEntity::class);
+
+        self::assertSame($existingProduct, $entity);
     }
 }

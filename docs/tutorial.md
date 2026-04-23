@@ -19,6 +19,7 @@
 15. [Caché](#15-caché)
 16. [Manejo de errores](#16-manejo-de-errores)
 17. [Buenas prácticas](#17-buenas-prácticas)
+18. [Claves primarias compuestas](#18-claves-primarias-compuestas)
 
 ---
 
@@ -153,12 +154,36 @@ sybase_orm:
     # Directorio para archivos de migración
     migrations_directory: '%kernel.project_dir%/sybase_ase/migrations'
 
+    # Conversión transparente de charset UTF-8 ↔ ISO-8859-1 (por defecto: false)
+    charset_conversion: false
+
     # Caché de segundo nivel (opcional)
     cache:
         enabled: false
         adapter: redis
         dsn: '%env(REDIS_URL)%'
         default_ttl: 3600
+```
+
+### Conversión de charset
+
+Si tu servidor Sybase ASE usa ISO-8859-1 y tu aplicación PHP trabaja en UTF-8, habilita la conversión transparente:
+
+```yaml
+sybase_orm:
+    charset_conversion: true
+```
+
+Cuando está habilitado:
+- **Parámetros salientes** (PHP → Sybase): UTF-8 → ISO-8859-1 con `//TRANSLIT`
+- **Resultados entrantes** (Sybase → PHP): ISO-8859-1 → UTF-8
+
+Si la conversión falla para un valor, se preserva el string original sin lanzar excepción. Los valores no-string pasan sin modificación.
+
+El `ConnectionManager` acepta un parámetro opcional `?LoggerInterface $logger` (PSR-3). Cuando se proporciona, registra advertencias (`warning`) cada vez que una conversión de charset falla, facilitando la detección de problemas de codificación:
+
+```
+[WARNING] Charset conversion failed (UTF-8 → ISO-8859-1) for value: <primeros 100 caracteres>
 ```
 
 ---
@@ -462,6 +487,10 @@ $repo->deleteMany([$p1, $p2]);                       // Eliminar varios
 // --- QueryBuilder ---
 $qb = $repo->createQueryBuilder();                   // Pre-configurado con FROM
 
+// --- Conteo y existencia ---
+$totalActivos = $repo->count(['activo' => true]);    // int — cuenta entidades que coincidan
+$hayBaratos = $repo->exists(['precio' => 9.99]);     // bool — verifica si existe al menos una
+
 // --- OQL personalizado ---
 $resultados = $repo->query(
     'SELECT p FROM Producto p WHERE p.precio > :min',
@@ -697,6 +726,25 @@ $sql = $qb
     ->getSQL();
 ```
 
+### HAVING
+
+Filtra resultados agrupados con `having()`:
+
+```php
+$qb = $this->em->createQueryBuilder(Producto::class);
+
+$sql = $qb
+    ->select('e.categoria_id', 'COUNT(*) AS total')
+    ->groupBy('e.categoria_id')
+    ->having('COUNT(*) > ?', [10])
+    ->orderBy('total', 'DESC')
+    ->getSQL();
+
+$params = $qb->getParameters(); // [10]
+```
+
+`having()` emite la cláusula HAVING después de GROUP BY y antes de ORDER BY. Los parámetros de HAVING se combinan con los de WHERE en `getParameters()`. Funciona con o sin GROUP BY.
+
 ---
 
 ## 8. OQL - Object Query Language
@@ -767,7 +815,7 @@ $laptops = $this->em->query(
 
 ### Operadores soportados
 
-`=`, `!=`, `<`, `>`, `<=`, `>=`, `LIKE`, `AND`, `OR`
+`=`, `!=`, `<`, `>`, `<=`, `>=`, `LIKE`, `AND`, `OR`, `IS NULL`, `IS NOT NULL`, `IN`, `NOT IN`
 
 ```php
 $resultados = $this->em->query(
@@ -775,6 +823,158 @@ $resultados = $this->em->query(
     ['min' => 100, 'max' => 500, 'activo' => true]
 );
 ```
+
+### IS NULL / IS NOT NULL
+
+```php
+// Productos sin fecha de creación
+$sinFecha = $this->em->query(
+    'SELECT p FROM Producto p WHERE p.creadoEn IS NULL'
+);
+
+// Productos con email definido
+$conEmail = $this->em->query(
+    'SELECT u FROM Usuario u WHERE u.email IS NOT NULL'
+);
+```
+
+### IN / NOT IN
+
+```php
+// Con parámetro — el array se expande automáticamente en placeholders individuales
+$productos = $this->em->query(
+    'SELECT p FROM Producto p WHERE p.categoria IN (:categorias)',
+    ['categorias' => ['electrónica', 'hogar', 'deportes']]
+);
+
+// Con literales
+$excluidos = $this->em->query(
+    'SELECT p FROM Producto p WHERE p.id NOT IN (1, 2, 3)'
+);
+```
+
+### Funciones de agregación
+
+Funciones soportadas: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
+
+```php
+// COUNT simple
+$total = $this->em->query('SELECT COUNT(p.id) FROM Producto p');
+
+// COUNT(*)
+$total = $this->em->query('SELECT COUNT(*) FROM Producto p');
+
+// COUNT con DISTINCT
+$categorias = $this->em->query(
+    'SELECT COUNT(DISTINCT p.categoria) FROM Producto p'
+);
+
+// Múltiples agregaciones
+$stats = $this->em->query(
+    'SELECT SUM(p.precio) AS suma, AVG(p.precio) AS promedio, MIN(p.precio) AS minimo, MAX(p.precio) AS maximo FROM Producto p WHERE p.activo = :activo',
+    ['activo' => true]
+);
+```
+
+### HAVING
+
+Filtra grupos después de GROUP BY:
+
+```php
+$departamentos = $this->em->query(
+    'SELECT u.departamento, COUNT(u.id) AS total FROM Usuario u GROUP BY u.departamento HAVING COUNT(u.id) > 5'
+);
+```
+
+### queryIterator() — streaming de resultados grandes
+
+Para conjuntos de datos grandes que no caben en memoria, `queryIterator()` retorna un `Generator` que produce resultados uno a uno sin cargar todas las filas:
+
+```php
+// Procesar miles de registros sin consumir memoria excesiva
+$iterator = $this->em->queryIterator(
+    'SELECT p FROM Producto p WHERE p.activo = :activo',
+    ['activo' => true]
+);
+
+foreach ($iterator as $producto) {
+    // Cada entidad se hidrata bajo demanda
+    $this->procesarProducto($producto);
+}
+
+// También soporta HYDRATE_ARRAY para resultados con agregaciones
+use SybaseORM\ORM\HydrationMode;
+
+$iterator = $this->em->queryIterator(
+    'SELECT p.categoria, p.nombre, p.precio FROM Producto p ORDER BY p.precio DESC',
+    [],
+    HydrationMode::HYDRATE_ARRAY
+);
+
+foreach ($iterator as $fila) {
+    // $fila es un array asociativo: ['categoria' => '...', 'nombre' => '...', 'precio' => ...]
+}
+```
+
+### JOIN con entidad (WITH)
+
+Para JOINs que no se basan en relaciones mapeadas, usa la sintaxis `JOIN Entidad alias WITH condición`:
+
+```php
+// JOIN con entidad y condición WITH
+$resultados = $this->em->query(
+    'SELECT u FROM Usuario u JOIN Address a WITH a.userId = u.id WHERE a.ciudad = :ciudad',
+    ['ciudad' => 'Madrid']
+);
+
+// LEFT JOIN con entidad
+$resultados = $this->em->query(
+    'SELECT u FROM Usuario u LEFT JOIN Profile p WITH p.userId = u.id'
+);
+```
+
+### SELECT * (wildcard)
+
+```php
+$todos = $this->em->query('SELECT * FROM Producto p WHERE p.activo = :activo', ['activo' => true]);
+```
+
+### SELECT DISTINCT
+
+```php
+$nombres = $this->em->query('SELECT DISTINCT p.nombre FROM Producto p');
+```
+
+### Aliases de columna
+
+```php
+$datos = $this->em->query(
+    'SELECT p.nombre AS nombreProducto, COUNT(p.id) AS cantidad FROM Producto p GROUP BY p.nombre'
+);
+```
+
+### Modos de hidratación
+
+Por defecto, `query()` retorna instancias de entidad (`HYDRATE_OBJECT`). Para consultas con agregaciones, aliases o selecciones multi-entidad, se puede usar `HYDRATE_ARRAY`:
+
+```php
+use SybaseORM\ORM\HydrationMode;
+
+// Modo explícito: retorna arrays asociativos
+$filas = $this->em->query(
+    'SELECT p.nombre, COUNT(p.id) AS total FROM Producto p GROUP BY p.nombre',
+    [],
+    HydrationMode::HYDRATE_ARRAY
+);
+// $filas = [['nombre' => 'Laptop', 'total' => 5], ...]
+
+// Auto-detección: consultas con agregaciones o aliases usan HYDRATE_ARRAY automáticamente
+$stats = $this->em->query(
+    'SELECT p.categoria, AVG(p.precio) AS promedio FROM Producto p GROUP BY p.categoria'
+);
+```
+
+El tercer parámetro de `EntityManager::query()` es opcional. Si no se especifica, el ORM detecta automáticamente el modo apropiado según la consulta.
 
 
 ---
@@ -1507,6 +1707,93 @@ try {
 - Genera migraciones después de cada cambio en las entidades
 - Revisa el SQL generado antes de ejecutar en producción
 - Mantén los archivos de migración en control de versiones
+
+---
+
+## 18. Claves primarias compuestas
+
+El ORM soporta claves primarias compuestas usando múltiples anotaciones `#[Id]` en una misma entidad.
+
+### Definir una entidad con clave compuesta
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Entity;
+
+use SybaseORM\Attribute\Column;
+use SybaseORM\Attribute\Entity;
+use SybaseORM\Attribute\Id;
+
+#[Entity(table: 'inscripciones')]
+class Inscripcion
+{
+    #[Id]
+    #[Column(type: 'integer')]
+    private int $estudianteId;
+
+    #[Id]
+    #[Column(type: 'integer')]
+    private int $cursoId;
+
+    #[Column(type: 'datetime')]
+    private \DateTimeImmutable $fechaInscripcion;
+
+    #[Column(type: 'decimal', precision: 4, scale: 2, nullable: true)]
+    private ?float $calificacion = null;
+
+    public function getEstudianteId(): int { return $this->estudianteId; }
+    public function setEstudianteId(int $id): void { $this->estudianteId = $id; }
+
+    public function getCursoId(): int { return $this->cursoId; }
+    public function setCursoId(int $id): void { $this->cursoId = $id; }
+
+    public function getFechaInscripcion(): \DateTimeImmutable { return $this->fechaInscripcion; }
+    public function setFechaInscripcion(\DateTimeImmutable $fecha): void { $this->fechaInscripcion = $fecha; }
+
+    public function getCalificacion(): ?float { return $this->calificacion; }
+    public function setCalificacion(?float $cal): void { $this->calificacion = $cal; }
+}
+```
+
+### Buscar por clave compuesta
+
+`EntityManager::find()` acepta un array asociativo para claves compuestas:
+
+```php
+$inscripcion = $this->em->find(Inscripcion::class, [
+    'estudianteId' => 1,
+    'cursoId' => 42,
+]);
+```
+
+### Cómo funciona internamente
+
+- **ClassMetadata**: el array `$idFields` contiene los nombres de todas las propiedades marcadas con `#[Id]`. El método `getIdColumns()` retorna los `ColumnMetadata` correspondientes.
+- **IdentityMap**: genera una clave determinista a partir del array (ordena las claves alfabéticamente y une los valores con `|`), garantizando identidad de objeto.
+- **UnitOfWork**: genera cláusulas `WHERE` con `AND` para cada campo de la clave compuesta en operaciones UPDATE y DELETE.
+- **Hydrator**: resuelve y almacena claves compuestas en el IdentityMap al hidratar resultados.
+- Si se detecta una inconsistencia en el número de campos de la clave, se lanza `PersistenceException`.
+
+### Persistir y actualizar
+
+```php
+$repo = $this->em->getRepository(Inscripcion::class);
+
+$inscripcion = new Inscripcion();
+$inscripcion->setEstudianteId(1);
+$inscripcion->setCursoId(42);
+$inscripcion->setFechaInscripcion(new \DateTimeImmutable());
+
+$repo->save($inscripcion);
+// INSERT INTO [inscripciones] ([estudiante_id], [curso_id], [fecha_inscripcion]) VALUES (?, ?, ?)
+
+$inscripcion->setCalificacion(9.5);
+$repo->save($inscripcion);
+// UPDATE [inscripciones] SET [calificacion] = ? WHERE [estudiante_id] = ? AND [curso_id] = ?
+```
 
 ---
 

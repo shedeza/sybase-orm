@@ -120,6 +120,8 @@ sybase_orm:
     proxy_directory: '%kernel.cache_dir%/sybase_orm/proxies'
     migrations_directory: '%kernel.project_dir%/sybase_ase/migrations'
 
+    charset_conversion: false
+
     cache:
         enabled: false
         adapter: redis
@@ -246,6 +248,10 @@ $todos = $repo->findAll();
 $activos = $repo->findBy(['activo' => true]);
 $admin = $repo->findOneBy(['email' => '[email]']);
 
+// Conteo y existencia
+$totalActivos = $repo->count(['activo' => true]);   // int
+$existe = $repo->exists(['email' => '[email]']);     // bool
+
 // Persistencia
 $repo->save($usuario);
 $repo->saveMany([$u1, $u2, $u3]);
@@ -270,6 +276,21 @@ $sql = $qb
 // Genera paginación con TOP o ROW_NUMBER() según el offset
 ```
 
+### QueryBuilder: HAVING
+
+```php
+$qb = $this->em->createQueryBuilder(Usuario::class);
+
+$sql = $qb
+    ->select('e.departamento', 'COUNT(*)')
+    ->groupBy('e.departamento')
+    ->having('COUNT(*) > ?', [5])
+    ->orderBy('e.departamento')
+    ->getSQL();
+
+$params = $qb->getParameters(); // [5]
+```
+
 ### OQL (Object Query Language)
 
 ```php
@@ -278,6 +299,191 @@ $usuarios = $this->em->query(
     ['activo' => true]
 );
 ```
+
+### OQL: IS NULL / IS NOT NULL
+
+```php
+$sinEmail = $this->em->query(
+    'SELECT u FROM Usuario u WHERE u.email IS NULL'
+);
+
+$conEmail = $this->em->query(
+    'SELECT u FROM Usuario u WHERE u.email IS NOT NULL'
+);
+```
+
+### OQL: IN / NOT IN
+
+```php
+// Con parámetro (array expandido automáticamente)
+$usuarios = $this->em->query(
+    'SELECT u FROM Usuario u WHERE u.status IN (:estados)',
+    ['estados' => ['activo', 'pendiente']]
+);
+
+// Con literales
+$excluidos = $this->em->query(
+    'SELECT u FROM Usuario u WHERE u.id NOT IN (1, 2, 3)'
+);
+```
+
+### OQL: Funciones de agregación
+
+```php
+$resultado = $this->em->query(
+    'SELECT COUNT(u.id) FROM Usuario u WHERE u.activo = :activo',
+    ['activo' => true]
+);
+
+$stats = $this->em->query(
+    'SELECT COUNT(DISTINCT u.departamento), AVG(u.salario), MAX(u.salario) FROM Usuario u'
+);
+
+// COUNT(*)
+$total = $this->em->query('SELECT COUNT(*) FROM Usuario u');
+```
+
+### OQL: HAVING
+
+```php
+$departamentos = $this->em->query(
+    'SELECT u.departamento, COUNT(u.id) AS total FROM Usuario u GROUP BY u.departamento HAVING COUNT(u.id) > 5'
+);
+```
+
+### OQL: queryIterator() — streaming de resultados
+
+Para conjuntos de datos grandes que no caben en memoria, `queryIterator()` retorna un `Generator` que produce resultados uno a uno sin cargar todas las filas:
+
+```php
+$iterator = $this->em->queryIterator(
+    'SELECT u FROM Usuario u WHERE u.activo = :activo',
+    ['activo' => true]
+);
+
+foreach ($iterator as $usuario) {
+    // Cada $usuario se hidrata bajo demanda, sin acumular en memoria
+    $this->procesarUsuario($usuario);
+}
+```
+
+### OQL: JOIN con entidad (WITH)
+
+```php
+// JOIN basado en entidad con condición WITH (sin relación mapeada)
+$resultados = $this->em->query(
+    'SELECT u FROM Usuario u JOIN Address a WITH a.userId = u.id WHERE a.ciudad = :ciudad',
+    ['ciudad' => 'Madrid']
+);
+
+// LEFT JOIN con entidad
+$resultados = $this->em->query(
+    'SELECT u FROM Usuario u LEFT JOIN Profile p WITH p.userId = u.id'
+);
+```
+
+### OQL: SELECT *, DISTINCT y aliases
+
+```php
+// Wildcard
+$todos = $this->em->query('SELECT * FROM Usuario u');
+
+// DISTINCT
+$nombres = $this->em->query('SELECT DISTINCT u.nombre FROM Usuario u');
+
+// Aliases de columna
+$datos = $this->em->query(
+    'SELECT u.nombre AS nombreUsuario, COUNT(u.id) AS total FROM Usuario u GROUP BY u.nombre'
+);
+```
+
+### Modos de hidratación
+
+Por defecto, `EntityManager::query()` retorna instancias de entidad (`HYDRATE_OBJECT`). Para consultas con agregaciones, aliases o selecciones multi-entidad, se puede usar `HYDRATE_ARRAY`:
+
+```php
+use SybaseORM\ORM\HydrationMode;
+
+// Modo explícito: retorna arrays asociativos
+$filas = $this->em->query(
+    'SELECT u.nombre, COUNT(u.id) AS total FROM Usuario u GROUP BY u.nombre',
+    [],
+    HydrationMode::HYDRATE_ARRAY
+);
+// $filas = [['nombre' => 'Juan', 'total' => 5], ...]
+
+// Auto-detección: consultas con agregaciones o aliases usan HYDRATE_ARRAY automáticamente
+$stats = $this->em->query(
+    'SELECT u.departamento, AVG(u.salario) AS promedio FROM Usuario u GROUP BY u.departamento'
+);
+```
+
+## Claves primarias compuestas
+
+El ORM soporta claves primarias compuestas usando múltiples anotaciones `#[Id]` en una misma entidad:
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Entity;
+
+use SybaseORM\Attribute\Column;
+use SybaseORM\Attribute\Entity;
+use SybaseORM\Attribute\Id;
+
+#[Entity(table: 'inscripciones')]
+class Inscripcion
+{
+    #[Id]
+    #[Column(type: 'integer')]
+    private int $estudianteId;
+
+    #[Id]
+    #[Column(type: 'integer')]
+    private int $cursoId;
+
+    #[Column(type: 'datetime')]
+    private \DateTimeImmutable $fechaInscripcion;
+
+    // Getters y setters...
+}
+```
+
+### Buscar por clave compuesta
+
+`EntityManager::find()` acepta un array asociativo para claves compuestas:
+
+```php
+$inscripcion = $this->em->find(Inscripcion::class, [
+    'estudianteId' => 1,
+    'cursoId' => 42,
+]);
+```
+
+El `IdentityMap` genera una clave determinista a partir del array (ordena las claves y une los valores con `|`), garantizando identidad de objeto también para entidades con clave compuesta.
+
+El `UnitOfWork` genera cláusulas `WHERE` con `AND` para cada campo de la clave compuesta en operaciones UPDATE y DELETE.
+
+## Conversión de charset
+
+El ORM soporta conversión transparente de charset entre UTF-8 (PHP) e ISO-8859-1 (Sybase ASE):
+
+```yaml
+sybase_orm:
+    connection:
+        url: '%env(DATABASE_URL)%'
+    charset_conversion: true
+```
+
+Cuando `charset_conversion` está habilitado:
+- **Parámetros salientes**: UTF-8 → ISO-8859-1 (con `//TRANSLIT` para caracteres sin equivalencia)
+- **Resultados entrantes**: ISO-8859-1 → UTF-8
+
+Si la conversión falla para un valor, se preserva el string original sin lanzar excepción. Los valores no-string pasan sin modificación.
+
+Si se inyecta un `Psr\Log\LoggerInterface` en el `ConnectionManager`, se registran advertencias cuando la conversión de charset falla, facilitando la detección de problemas de codificación en producción.
 
 ## Relaciones
 
@@ -512,7 +718,7 @@ El `SybaseDialect` maneja las particularidades de Sybase ASE:
 vendor/bin/phpunit
 ```
 
-524 tests, 1130 assertions cubriendo todos los componentes.
+2076 tests, 9922 assertions cubriendo todos los componentes.
 
 ## Licencia
 

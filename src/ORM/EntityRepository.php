@@ -100,9 +100,19 @@ class EntityRepository
 
     /**
      * Busca una entidad por su identificador primario.
+     *
+     * Para llaves compuestas, pasar un array asociativo con los campos
+     * que componen la llave: find(['campo1' => valor1, 'campo2' => valor2]).
+     * Internamente delega a findOneBy() en ese caso.
+     *
+     * @param mixed $id Valor escalar para llave simple, o array asociativo para llave compuesta
      */
     public function find(mixed $id): ?object
     {
+        if (is_array($id)) {
+            return $this->findOneBy($id);
+        }
+
         return $this->entityManager->find($this->entityClass, $id);
     }
 
@@ -171,6 +181,53 @@ class EntityRepository
     public function query(string $oql, array $params = []): array
     {
         return $this->entityManager->query($oql, $params);
+    }
+
+    // ── Conteo y existencia ────────────────────────────────────────
+
+    /**
+     * Cuenta las entidades que coincidan con los criterios dados.
+     *
+     * @param array<string, mixed> $criteria Nombre de propiedad => valor
+     */
+    public function count(array $criteria = []): int
+    {
+        $conditions = [];
+        $params = [];
+        $i = 0;
+
+        foreach ($criteria as $property => $value) {
+            $paramName = 'c' . $i;
+            $conditions[] = sprintf('e.%s = :%s', $property, $paramName);
+            $params[$paramName] = $value;
+            $i++;
+        }
+
+        $oql = sprintf('SELECT COUNT(*) FROM %s e', $this->entityShortName);
+
+        if (!empty($conditions)) {
+            $oql .= ' WHERE ' . implode(' AND ', $conditions);
+        }
+
+        $result = $this->entityManager->query($oql, $params, HydrationMode::HYDRATE_ARRAY);
+
+        if (empty($result)) {
+            return 0;
+        }
+
+        $row = $result[0];
+
+        return (int) reset($row);
+    }
+
+    /**
+     * Verifica si existe al menos una entidad que coincida con los criterios.
+     *
+     * @param array<string, mixed> $criteria Nombre de propiedad => valor
+     */
+    public function exists(array $criteria): bool
+    {
+        return $this->count($criteria) > 0;
     }
 
     // ── QueryBuilder ────────────────────────────────────────────────

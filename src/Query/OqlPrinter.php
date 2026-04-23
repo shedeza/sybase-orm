@@ -6,7 +6,11 @@ namespace SybaseORM\Query;
 
 use SybaseORM\Query\AST\Comparison;
 use SybaseORM\Query\AST\FromClause;
+use SybaseORM\Query\AST\FunctionCall;
 use SybaseORM\Query\AST\GroupByClause;
+use SybaseORM\Query\AST\HavingClause;
+use SybaseORM\Query\AST\InExpression;
+use SybaseORM\Query\AST\IsNullExpression;
 use SybaseORM\Query\AST\JoinClause;
 use SybaseORM\Query\AST\Literal;
 use SybaseORM\Query\AST\LogicalExpression;
@@ -27,7 +31,13 @@ final class OqlPrinter
     {
         $parts = [];
 
-        $parts[] = 'SELECT ' . $this->printSelectExpressions($statement->selectExpressions);
+        $select = 'SELECT';
+        if ($statement->distinct) {
+            $select .= ' DISTINCT';
+        }
+        $select .= ' ' . $this->printSelectExpressions($statement->selectExpressions);
+        $parts[] = $select;
+
         $parts[] = 'FROM ' . $this->printFromClause($statement->from);
 
         foreach ($statement->joins as $join) {
@@ -40,6 +50,10 @@ final class OqlPrinter
 
         if ($statement->groupBy !== null) {
             $parts[] = 'GROUP BY ' . $this->printGroupByClause($statement->groupBy);
+        }
+
+        if ($statement->havingClause !== null) {
+            $parts[] = $this->printHavingClause($statement->havingClause);
         }
 
         if ($statement->orderBy !== null) {
@@ -55,11 +69,24 @@ final class OqlPrinter
     private function printSelectExpressions(array $expressions): string
     {
         return implode(', ', array_map(
-            fn(SelectExpression $e) => $e->alias !== null
-                ? $e->expression . ' AS ' . $e->alias
-                : $e->expression,
+            fn(SelectExpression $e) => $this->printSelectExpression($e),
             $expressions,
         ));
+    }
+
+    private function printSelectExpression(SelectExpression $expr): string
+    {
+        if ($expr->expression instanceof FunctionCall) {
+            $printed = $this->printFunctionCall($expr->expression);
+        } else {
+            $printed = $expr->expression;
+        }
+
+        if ($expr->alias !== null) {
+            return $printed . ' AS ' . $expr->alias;
+        }
+
+        return $printed;
     }
 
     private function printFromClause(FromClause $from): string
@@ -69,13 +96,32 @@ final class OqlPrinter
 
     private function printJoinClause(JoinClause $join): string
     {
+        // Entity-based join: JOIN EntityName alias WITH condition
+        if ($join->entityName !== null) {
+            $result = $join->joinType . ' ' . $join->entityName . ' ' . $join->alias;
+            if ($join->withCondition !== null) {
+                $result .= ' WITH ' . $this->printCondition($join->withCondition);
+            }
+
+            return $result;
+        }
+
+        // Relationship-based join: JOIN alias.property newAlias
         $property = $join->property->alias . '.' . $join->property->property;
 
         return $join->joinType . ' ' . $property . ' ' . $join->alias;
     }
 
-    private function printCondition(Comparison|LogicalExpression $condition): string
+    private function printCondition(Comparison|LogicalExpression|IsNullExpression|InExpression $condition): string
     {
+        if ($condition instanceof IsNullExpression) {
+            return $this->printIsNullExpression($condition);
+        }
+
+        if ($condition instanceof InExpression) {
+            return $this->printInExpression($condition);
+        }
+
         if ($condition instanceof Comparison) {
             return $this->printComparison($condition);
         }
@@ -85,8 +131,8 @@ final class OqlPrinter
 
     private function printComparison(Comparison $comparison): string
     {
-        $left = $this->printOperand($comparison->left);
-        $right = $this->printOperand($comparison->right);
+        $left = $this->printComparisonOperand($comparison->left);
+        $right = $this->printComparisonOperand($comparison->right);
 
         return $left . ' ' . $comparison->operator . ' ' . $right;
     }
@@ -97,6 +143,63 @@ final class OqlPrinter
         $right = $this->printCondition($expr->right);
 
         return $left . ' ' . $expr->operator . ' ' . $right;
+    }
+
+    private function printIsNullExpression(IsNullExpression $expr): string
+    {
+        $property = $expr->property->alias . '.' . $expr->property->property;
+
+        if ($expr->negated) {
+            return $property . ' IS NOT NULL';
+        }
+
+        return $property . ' IS NULL';
+    }
+
+    private function printInExpression(InExpression $expr): string
+    {
+        $property = $expr->property->alias . '.' . $expr->property->property;
+
+        $values = implode(', ', array_map(
+            fn(Parameter|Literal $v) => $this->printOperand($v),
+            $expr->values,
+        ));
+
+        if ($expr->negated) {
+            return $property . ' NOT IN (' . $values . ')';
+        }
+
+        return $property . ' IN (' . $values . ')';
+    }
+
+    private function printFunctionCall(FunctionCall $fc): string
+    {
+        $argument = $fc->argument instanceof PropertyAccess
+            ? $fc->argument->alias . '.' . $fc->argument->property
+            : $fc->argument;
+
+        if ($fc->distinct) {
+            return $fc->functionName . '(DISTINCT ' . $argument . ')';
+        }
+
+        return $fc->functionName . '(' . $argument . ')';
+    }
+
+    private function printHavingClause(HavingClause $hc): string
+    {
+        return 'HAVING ' . $this->printCondition($hc->condition);
+    }
+
+    /**
+     * Prints an operand that can appear in a Comparison (includes FunctionCall).
+     */
+    private function printComparisonOperand(PropertyAccess|Literal|Parameter|FunctionCall $operand): string
+    {
+        if ($operand instanceof FunctionCall) {
+            return $this->printFunctionCall($operand);
+        }
+
+        return $this->printOperand($operand);
     }
 
     private function printOperand(PropertyAccess|Literal|Parameter $operand): string

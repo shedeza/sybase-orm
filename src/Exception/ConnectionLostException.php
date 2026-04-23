@@ -7,7 +7,7 @@ namespace SybaseORM\Exception;
 /**
  * Lanzada cuando se pierde la conexión a Sybase ASE durante una operación.
  */
-class ConnectionLostException extends SybaseORMException
+final class ConnectionLostException extends SybaseORMException
 {
     public function __construct(
         string $message = 'Connection to Sybase ASE was lost.',

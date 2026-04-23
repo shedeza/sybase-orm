@@ -96,7 +96,7 @@ final class MetadataReader implements MetadataReaderInterface
         $schema = $entityAttr->schema;
 
         $columns = [];
-        $idField = null;
+        $idFields = [];
         $relationships = [];
 
         // Recorrer toda la jerarquía de clases para incluir propiedades privadas heredadas
@@ -120,7 +120,7 @@ final class MetadataReader implements MetadataReaderInterface
                 if ($columnMeta !== null) {
                     $columns[] = $columnMeta;
                     if ($columnMeta->isId) {
-                        $idField = $columnMeta->propertyName;
+                        $idFields[] = $columnMeta->propertyName;
                     }
                 }
 
@@ -139,12 +139,12 @@ final class MetadataReader implements MetadataReaderInterface
             tableName: $tableName,
             schema: $schema,
             columns: $columns,
-            idField: $idField,
             relationships: $relationships,
             inheritanceType: $inheritanceType,
             discriminatorColumn: $discriminatorColumn,
             discriminatorMap: $discriminatorMap,
             lifecycleHooks: $lifecycleHooks,
+            idFields: $idFields,
         );
 
         // Store in memory cache

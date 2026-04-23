@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace SybaseORM\DependencyInjection;
 
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\DependencyInjection\Extension;
@@ -75,12 +77,15 @@ final class SybaseORMExtension extends Extension
     {
         $connectionConfig = $config['connection'];
 
+        // Create a logger reference if the service exists
+        $loggerRef = new Reference(LoggerInterface::class, ContainerInterface::IGNORE_ON_INVALID_REFERENCE);
+
         if ($connectionConfig['url'] !== null) {
             // URL mode: registrar un factory que parsee la URL en runtime
             // para soportar %env(DATABASE_URL)% que se resuelve después del compile
             $definition = new Definition(ConnectionManager::class);
             $definition->setFactory([self::class, 'createConnectionManagerFromUrl']);
-            $definition->setArguments([$connectionConfig['url']]);
+            $definition->setArguments([$connectionConfig['url'], $loggerRef]);
         } else {
             // Parámetros individuales
             $connConfig = [
@@ -91,8 +96,9 @@ final class SybaseORMExtension extends Extension
                 'password' => $connectionConfig['password'],
                 'charset' => $connectionConfig['charset'],
                 'persistent' => $connectionConfig['persistent'],
+                'charset_conversion' => $connectionConfig['charset_conversion'],
             ];
-            $definition = new Definition(ConnectionManager::class, [$connConfig]);
+            $definition = new Definition(ConnectionManager::class, [$connConfig, $loggerRef]);
         }
 
         $definition->setPublic(false);
@@ -105,11 +111,11 @@ final class SybaseORMExtension extends Extension
      * Factory method para crear ConnectionManager desde una URL.
      * Se ejecuta en runtime, cuando las variables de entorno ya están resueltas.
      */
-    public static function createConnectionManagerFromUrl(string $url): ConnectionManager
+    public static function createConnectionManagerFromUrl(string $url, ?LoggerInterface $logger = null): ConnectionManager
     {
         $config = ConnectionUrlParser::parse($url);
 
-        return new ConnectionManager($config);
+        return new ConnectionManager($config, $logger);
     }
 
     private function registerDialect(ContainerBuilder $container): void

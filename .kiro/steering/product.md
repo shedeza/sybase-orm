@@ -19,12 +19,20 @@ SybaseORM is a Symfony Bundle that provides a custom ORM for Sybase ASE (Adaptiv
 - Connection management via PDO dblib with transaction support, isolation levels, dbname validation, and differentiated exception handling (ConnectionLostException vs PersistenceException), all inheriting from SybaseORMException base
 - Connection URL support: `sybase://user:pass@host:port/database?charset=UTF-8`, parsed at runtime via factory for full `%env()%` compatibility
 - Schema migration generation and execution with schema-qualified table name support
-- EntityRepository with `find()`, `findAll()`, `findBy()`, `findOneBy()` methods (cached shortName)
+- EntityRepository with `find()`, `findAll()`, `findBy()`, `findOneBy()`, `count()`, `exists()` methods (cached shortName)
 - ClassMetadata with O(1) column lookup via pre-computed indexed maps (`getColumn()`, `getColumnByName()`)
 - Hydrator with cached ReflectionClass instances, uses ClassMetadata indexed maps for efficient hydration
 - Symfony DI integration with bundle configuration under `sybase_orm` key, factory-based URL resolution
 - Symfony Flex recipe (`manifest.json`) + `sybase:install` command for automatic setup
 - Console commands: `sybase:install`, `sybase:migrations:generate`, `sybase:migrations:migrate`, `sybase:proxy:generate`, `sybase:cache:clear`
+- Composite primary key support: multiple `#[Id]` annotations per entity, `ClassMetadata.$idFields` array with `getIdColumns()`, `IdentityMap` composite key derivation, `UnitOfWork` AND-joined WHERE clauses, `EntityManager::find()` with associative arrays
+- OQL extensions: IS NULL / IS NOT NULL, IN / NOT IN (parameters and literal lists), aggregate functions (COUNT, SUM, AVG, MIN, MAX with DISTINCT), HAVING clause, entity-based JOIN WITH, SELECT * wildcard, SELECT DISTINCT, column aliases
+- Hydration modes: `HydrationMode::HYDRATE_OBJECT` (default) and `HydrationMode::HYDRATE_ARRAY` (raw arrays); auto-detection for queries with aggregates, aliases, GROUP BY, or multi-entity selects; IN parameter expansion for array parameters
+- QueryBuilder HAVING support: `having(string $condition, array $params = [])` emitted after GROUP BY and before ORDER BY
+- Transparent charset conversion: `charset_conversion` config option for UTF-8 ↔ ISO-8859-1 conversion via `iconv` with `//TRANSLIT`; `ConnectionManager::convertResultRow()` for inbound results; PSR `LoggerInterface` integration for logging warnings when charset conversion fails
+- `queryIterator()` on EntityManager: streaming query results via Generator, avoids loading all rows into memory
+- Empty IN list validation: OqlParser throws `OqlParseException` for empty `IN ()` lists
+- All exception classes and `TypeCaster` are `final`
 
 ## Target Database
 
@@ -32,4 +40,4 @@ Sybase ASE, connected via the `pdo_dblib` PHP extension. The dialect layer abstr
 
 ## Test Coverage
 
-510 tests, 1113 assertions — covering all components from attributes through Symfony integration.
+2076 tests, 9922 assertions — covering all components from attributes through Symfony integration, including property-based tests using `@dataProvider` with 100+ iterations.

@@ -16,8 +16,10 @@ use SybaseORM\Metadata\ColumnMetadata;
 use SybaseORM\Metadata\MetadataReaderInterface;
 use SybaseORM\ORM\EntityManager;
 use SybaseORM\ORM\EntityRepository;
+use SybaseORM\ORM\HydrationMode;
 use SybaseORM\ORM\IdentityMapInterface;
 use SybaseORM\ORM\UnitOfWorkInterface;
+use SybaseORM\Exception\PersistenceException;
 use SybaseORM\Type\TypeCasterInterface;
 
 final class EntityManagerTest extends TestCase
@@ -386,5 +388,497 @@ final class EntityManagerTest extends TestCase
         $this->em->persist($entity);
 
         $this->em->rollback();
+    }
+
+    // ── find() with composite keys ───────────────────────────────
+
+    public function testFindWithCompositeKeyQueriesDatabase(): void
+    {
+        $compositeMetadata = new ClassMetadata(
+            entityClass: Fixtures\CompositeKeyEntity::class,
+            tableName: 'composite_entities',
+            columns: [
+                new ColumnMetadata('orgId', 'org_id', 'integer', false, null, null, null, true),
+                new ColumnMetadata('userId', 'user_id', 'integer', false, null, null, null, true),
+                new ColumnMetadata('role', 'role', 'string', false, 100),
+            ],
+            idFields: ['orgId', 'userId'],
+        );
+
+        $metadataReader = $this->createMock(MetadataReaderInterface::class);
+        $metadataReader->method('getClassMetadata')->willReturn($compositeMetadata);
+
+        $identityMap = $this->createMock(IdentityMapInterface::class);
+        $identityMap->method('get')->willReturn(null);
+
+        $cacheManager = $this->createMock(CacheManagerInterface::class);
+        $cacheManager->method('get')->willReturn(null);
+
+        $dialect = $this->createMock(DialectInterface::class);
+        $dialect->method('generateSelect')
+            ->with(['*'], 'composite_entities')
+            ->willReturn('SELECT * FROM [composite_entities]');
+        $dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $typeCaster = $this->createMock(TypeCasterInterface::class);
+        $typeCaster->method('toDatabaseValue')
+            ->willReturnCallback(fn(mixed $value) => $value);
+
+        $row = ['org_id' => 1, 'user_id' => 42, 'role' => 'admin'];
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn($row);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $connectionManager = $this->createMock(ConnectionManagerInterface::class);
+        $connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->with(
+                'SELECT * FROM [composite_entities] WHERE [org_id] = ? AND [user_id] = ?',
+                [1, 42],
+            )
+            ->willReturn($stmt);
+
+        $entity = new Fixtures\CompositeKeyEntity();
+        $entity->setOrgId(1);
+        $entity->setUserId(42);
+        $entity->setRole('admin');
+
+        $hydrator = $this->createMock(HydratorInterface::class);
+        $hydrator->expects($this->once())
+            ->method('hydrate')
+            ->with($row, Fixtures\CompositeKeyEntity::class)
+            ->willReturn($entity);
+
+        $unitOfWork = $this->createMock(UnitOfWorkInterface::class);
+        $unitOfWork->expects($this->once())
+            ->method('registerClean')
+            ->with($entity);
+
+        $hookDispatcher = new HookDispatcher($metadataReader);
+
+        $em = new EntityManager(
+            $connectionManager,
+            $metadataReader,
+            $dialect,
+            $typeCaster,
+            $hydrator,
+            $unitOfWork,
+            $identityMap,
+            $hookDispatcher,
+            $cacheManager,
+        );
+
+        $compositeId = ['orgId' => 1, 'userId' => 42];
+        $result = $em->find(Fixtures\CompositeKeyEntity::class, $compositeId);
+
+        $this->assertSame($entity, $result);
+    }
+
+    public function testFindWithCompositeKeyReturnsNullWhenNotFound(): void
+    {
+        $compositeMetadata = new ClassMetadata(
+            entityClass: Fixtures\CompositeKeyEntity::class,
+            tableName: 'composite_entities',
+            columns: [
+                new ColumnMetadata('orgId', 'org_id', 'integer', false, null, null, null, true),
+                new ColumnMetadata('userId', 'user_id', 'integer', false, null, null, null, true),
+                new ColumnMetadata('role', 'role', 'string', false, 100),
+            ],
+            idFields: ['orgId', 'userId'],
+        );
+
+        $metadataReader = $this->createMock(MetadataReaderInterface::class);
+        $metadataReader->method('getClassMetadata')->willReturn($compositeMetadata);
+
+        $identityMap = $this->createMock(IdentityMapInterface::class);
+        $identityMap->method('get')->willReturn(null);
+
+        $cacheManager = $this->createMock(CacheManagerInterface::class);
+        $cacheManager->method('get')->willReturn(null);
+
+        $dialect = $this->createMock(DialectInterface::class);
+        $dialect->method('generateSelect')->willReturn('SELECT * FROM [composite_entities]');
+        $dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $typeCaster = $this->createMock(TypeCasterInterface::class);
+        $typeCaster->method('toDatabaseValue')
+            ->willReturnCallback(fn(mixed $value) => $value);
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn(false);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $connectionManager = $this->createMock(ConnectionManagerInterface::class);
+        $connectionManager->method('executeQuery')->willReturn($stmt);
+
+        $hydrator = $this->createMock(HydratorInterface::class);
+        $unitOfWork = $this->createMock(UnitOfWorkInterface::class);
+        $hookDispatcher = new HookDispatcher($metadataReader);
+
+        $em = new EntityManager(
+            $connectionManager,
+            $metadataReader,
+            $dialect,
+            $typeCaster,
+            $hydrator,
+            $unitOfWork,
+            $identityMap,
+            $hookDispatcher,
+            $cacheManager,
+        );
+
+        $result = $em->find(Fixtures\CompositeKeyEntity::class, ['orgId' => 1, 'userId' => 999]);
+        $this->assertNull($result);
+    }
+
+    public function testFindWithCompositeKeyThrowsOnKeyMismatch(): void
+    {
+        $compositeMetadata = new ClassMetadata(
+            entityClass: Fixtures\CompositeKeyEntity::class,
+            tableName: 'composite_entities',
+            columns: [
+                new ColumnMetadata('orgId', 'org_id', 'integer', false, null, null, null, true),
+                new ColumnMetadata('userId', 'user_id', 'integer', false, null, null, null, true),
+                new ColumnMetadata('role', 'role', 'string', false, 100),
+            ],
+            idFields: ['orgId', 'userId'],
+        );
+
+        $metadataReader = $this->createMock(MetadataReaderInterface::class);
+        $metadataReader->method('getClassMetadata')->willReturn($compositeMetadata);
+
+        $identityMap = $this->createMock(IdentityMapInterface::class);
+        $identityMap->method('get')->willReturn(null);
+
+        $cacheManager = $this->createMock(CacheManagerInterface::class);
+        $cacheManager->method('get')->willReturn(null);
+
+        $dialect = $this->createMock(DialectInterface::class);
+        $typeCaster = $this->createMock(TypeCasterInterface::class);
+        $hydrator = $this->createMock(HydratorInterface::class);
+        $unitOfWork = $this->createMock(UnitOfWorkInterface::class);
+        $connectionManager = $this->createMock(ConnectionManagerInterface::class);
+        $hookDispatcher = new HookDispatcher($metadataReader);
+
+        $em = new EntityManager(
+            $connectionManager,
+            $metadataReader,
+            $dialect,
+            $typeCaster,
+            $hydrator,
+            $unitOfWork,
+            $identityMap,
+            $hookDispatcher,
+            $cacheManager,
+        );
+
+        $this->expectException(PersistenceException::class);
+        $this->expectExceptionMessage('Key mismatch');
+
+        // Provide wrong keys: 'orgId' and 'wrongKey' instead of 'orgId' and 'userId'
+        $em->find(Fixtures\CompositeKeyEntity::class, ['orgId' => 1, 'wrongKey' => 42]);
+    }
+
+    public function testFindWithCompositeKeyReturnsEntityFromIdentityMap(): void
+    {
+        $compositeMetadata = new ClassMetadata(
+            entityClass: Fixtures\CompositeKeyEntity::class,
+            tableName: 'composite_entities',
+            columns: [
+                new ColumnMetadata('orgId', 'org_id', 'integer', false, null, null, null, true),
+                new ColumnMetadata('userId', 'user_id', 'integer', false, null, null, null, true),
+                new ColumnMetadata('role', 'role', 'string', false, 100),
+            ],
+            idFields: ['orgId', 'userId'],
+        );
+
+        $entity = new Fixtures\CompositeKeyEntity();
+        $entity->setOrgId(1);
+        $entity->setUserId(42);
+        $entity->setRole('admin');
+
+        $compositeId = ['orgId' => 1, 'userId' => 42];
+
+        $metadataReader = $this->createMock(MetadataReaderInterface::class);
+        $metadataReader->method('getClassMetadata')->willReturn($compositeMetadata);
+
+        $identityMap = $this->createMock(IdentityMapInterface::class);
+        $identityMap->expects($this->once())
+            ->method('get')
+            ->with(Fixtures\CompositeKeyEntity::class, $compositeId)
+            ->willReturn($entity);
+
+        $cacheManager = $this->createMock(CacheManagerInterface::class);
+        $cacheManager->expects($this->never())->method('get');
+
+        $connectionManager = $this->createMock(ConnectionManagerInterface::class);
+        $connectionManager->expects($this->never())->method('executeQuery');
+
+        $dialect = $this->createMock(DialectInterface::class);
+        $typeCaster = $this->createMock(TypeCasterInterface::class);
+        $hydrator = $this->createMock(HydratorInterface::class);
+        $unitOfWork = $this->createMock(UnitOfWorkInterface::class);
+        $hookDispatcher = new HookDispatcher($metadataReader);
+
+        $em = new EntityManager(
+            $connectionManager,
+            $metadataReader,
+            $dialect,
+            $typeCaster,
+            $hydrator,
+            $unitOfWork,
+            $identityMap,
+            $hookDispatcher,
+            $cacheManager,
+        );
+
+        $result = $em->find(Fixtures\CompositeKeyEntity::class, $compositeId);
+        $this->assertSame($entity, $result);
+    }
+
+    public function testFindWithScalarIdStillWorksAfterCompositeKeySupport(): void
+    {
+        // This test verifies backward compatibility — scalar find path is unchanged
+        $this->identityMap->method('get')->willReturn(null);
+        $this->cacheManager->method('get')->willReturn(null);
+
+        $this->dialect->method('generateSelect')
+            ->with(['*'], 'customers')
+            ->willReturn('SELECT * FROM [customers]');
+
+        $this->dialect->method('quoteIdentifier')
+            ->with('id')
+            ->willReturn('[id]');
+
+        $this->typeCaster->method('toDatabaseValue')
+            ->with(7, 'integer')
+            ->willReturn(7);
+
+        $row = ['id' => 7, 'name' => 'BackwardCompat'];
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn($row);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->with('SELECT * FROM [customers] WHERE [id] = ?', [7])
+            ->willReturn($stmt);
+
+        $entity = new Fixtures\CustomerEntity();
+        $entity->setId(7);
+        $entity->setName('BackwardCompat');
+
+        $this->hydrator->expects($this->once())
+            ->method('hydrate')
+            ->with($row, Fixtures\CustomerEntity::class)
+            ->willReturn($entity);
+
+        $result = $this->em->find(Fixtures\CustomerEntity::class, 7);
+        $this->assertSame($entity, $result);
+    }
+
+    // ── query() hydration mode ───────────────────────────────────
+
+    public function testQueryWithHydrateArrayReturnsRawRows(): void
+    {
+        $rows = [
+            ['id' => 1, 'name' => 'Alice'],
+            ['id' => 2, 'name' => 'Bob'],
+        ];
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetchAll')->willReturn($rows);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->willReturn($stmt);
+
+        $this->hydrator->expects($this->never())->method('hydrateAll');
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $result = $this->em->query(
+            'SELECT c.id, c.name FROM CustomerEntity c',
+            [],
+            HydrationMode::HYDRATE_ARRAY,
+        );
+
+        $this->assertSame($rows, $result);
+    }
+
+    public function testQueryWithHydrateObjectReturnsEntities(): void
+    {
+        $rows = [
+            ['id' => 1, 'name' => 'Alice'],
+        ];
+
+        $entity = new Fixtures\CustomerEntity();
+        $entity->setId(1);
+        $entity->setName('Alice');
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetchAll')->willReturn($rows);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->willReturn($stmt);
+
+        $this->hydrator->expects($this->once())
+            ->method('hydrateAll')
+            ->with($rows, Fixtures\CustomerEntity::class)
+            ->willReturn([$entity]);
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $result = $this->em->query(
+            'SELECT c.id, c.name FROM CustomerEntity c',
+            [],
+            HydrationMode::HYDRATE_OBJECT,
+        );
+
+        $this->assertCount(1, $result);
+        $this->assertSame($entity, $result[0]);
+    }
+
+    public function testQueryAutoDetectsArrayModeForAggregates(): void
+    {
+        $rows = [
+            ['cnt' => 5],
+        ];
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetchAll')->willReturn($rows);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->willReturn($stmt);
+
+        // Should NOT call hydrateAll because auto-detection triggers HYDRATE_ARRAY
+        $this->hydrator->expects($this->never())->method('hydrateAll');
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $result = $this->em->query(
+            'SELECT COUNT(c.id) AS cnt FROM CustomerEntity c',
+        );
+
+        $this->assertSame($rows, $result);
+    }
+
+    public function testQueryAutoDetectsArrayModeForAliases(): void
+    {
+        $rows = [
+            ['customer_name' => 'Alice'],
+        ];
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetchAll')->willReturn($rows);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->willReturn($stmt);
+
+        $this->hydrator->expects($this->never())->method('hydrateAll');
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $result = $this->em->query(
+            'SELECT c.name AS customer_name FROM CustomerEntity c',
+        );
+
+        $this->assertSame($rows, $result);
+    }
+
+    // ── query() IN parameter expansion ───────────────────────────
+
+    public function testQueryExpandsInArrayParameter(): void
+    {
+        $rows = [
+            ['id' => 1, 'name' => 'Alice'],
+            ['id' => 3, 'name' => 'Charlie'],
+        ];
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetchAll')->willReturn($rows);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        // Verify the expanded SQL has 3 positional placeholders and the flattened params
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->with(
+                $this->callback(function (string $sql): bool {
+                    // The SQL should contain 3 positional placeholders for the IN clause
+                    return str_contains($sql, '?, ?, ?');
+                }),
+                [1, 2, 3],
+            )
+            ->willReturn($stmt);
+
+        $this->hydrator->expects($this->never())->method('hydrateAll');
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $result = $this->em->query(
+            'SELECT c.id, c.name FROM CustomerEntity c WHERE c.id IN (:ids)',
+            ['ids' => [1, 2, 3]],
+            HydrationMode::HYDRATE_ARRAY,
+        );
+
+        $this->assertSame($rows, $result);
+    }
+
+    public function testQueryExpandsInArrayParameterWithCorrectPlaceholderCount(): void
+    {
+        $ids = [10, 20, 30, 40, 50];
+
+        $rows = [];
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetchAll')->willReturn($rows);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->with(
+                $this->callback(function (string $sql) use ($ids): bool {
+                    // Count the number of ? placeholders in the IN clause
+                    $expectedPlaceholders = implode(', ', array_fill(0, count($ids), '?'));
+                    return str_contains($sql, $expectedPlaceholders);
+                }),
+                $ids,
+            )
+            ->willReturn($stmt);
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $this->em->query(
+            'SELECT c.id, c.name FROM CustomerEntity c WHERE c.id IN (:ids)',
+            ['ids' => $ids],
+            HydrationMode::HYDRATE_ARRAY,
+        );
     }
 }

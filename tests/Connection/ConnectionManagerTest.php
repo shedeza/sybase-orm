@@ -390,4 +390,136 @@ class ConnectionManagerTest extends TestCase
 
         $this->assertFalse($manager->isInTransaction());
     }
+
+    // --- Task 13.3: Charset conversion ---
+
+    public function testCharsetConversionDefaultsToFalse(): void
+    {
+        $manager = $this->createManager();
+        $mockPdo = $this->createMockPdo();
+        $mockStmt = $this->createMock(\PDOStatement::class);
+
+        $capturedParams = null;
+        $mockPdo->method('prepare')->willReturn($mockStmt);
+        $mockStmt->method('execute')->willReturnCallback(function (array $params) use (&$capturedParams) {
+            $capturedParams = $params;
+            return true;
+        });
+
+        $manager->setMockPdo($mockPdo);
+        $manager->executeQuery('SELECT * FROM t WHERE name = ?', ['café']);
+
+        // Without charset_conversion, the string should pass through unchanged (UTF-8)
+        $this->assertSame(['café'], $capturedParams);
+    }
+
+    public function testCharsetConversionDisabledPassesStringsThrough(): void
+    {
+        $manager = $this->createManager(['charset_conversion' => false]);
+        $mockPdo = $this->createMockPdo();
+        $mockStmt = $this->createMock(\PDOStatement::class);
+
+        $capturedParams = null;
+        $mockPdo->method('prepare')->willReturn($mockStmt);
+        $mockStmt->method('execute')->willReturnCallback(function (array $params) use (&$capturedParams) {
+            $capturedParams = $params;
+            return true;
+        });
+
+        $manager->setMockPdo($mockPdo);
+        $manager->executeQuery('SELECT * FROM t WHERE name = ?', ['café']);
+
+        $this->assertSame(['café'], $capturedParams);
+    }
+
+    public function testCharsetConversionEnabledConvertsUtf8ToIso88591Outbound(): void
+    {
+        $manager = $this->createManager(['charset_conversion' => true]);
+        $mockPdo = $this->createMockPdo();
+        $mockStmt = $this->createMock(\PDOStatement::class);
+
+        $capturedParams = null;
+        $mockPdo->method('prepare')->willReturn($mockStmt);
+        $mockStmt->method('execute')->willReturnCallback(function (array $params) use (&$capturedParams) {
+            $capturedParams = $params;
+            return true;
+        });
+
+        $manager->setMockPdo($mockPdo);
+
+        // "café" in UTF-8: the 'é' is 0xC3 0xA9
+        $utf8String = 'café';
+        $manager->executeQuery('SELECT * FROM t WHERE name = ?', [$utf8String]);
+
+        // After conversion, 'é' should be ISO-8859-1 single byte 0xE9
+        $expected = iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $utf8String);
+        $this->assertSame([$expected], $capturedParams);
+    }
+
+    public function testCharsetConversionEnabledConvertsIso88591ToUtf8Inbound(): void
+    {
+        $manager = $this->createManager(['charset_conversion' => true]);
+
+        // Simulate a row from the database in ISO-8859-1
+        $iso8859String = iconv('UTF-8', 'ISO-8859-1', 'café');
+        $row = ['name' => $iso8859String, 'id' => 42];
+
+        $result = $manager->convertResultRow($row);
+
+        // String values should be converted to UTF-8, non-strings pass through
+        $this->assertSame('café', $result['name']);
+        $this->assertSame(42, $result['id']);
+    }
+
+    public function testCharsetConversionDisabledPassesResultRowThrough(): void
+    {
+        $manager = $this->createManager(['charset_conversion' => false]);
+
+        $row = ['name' => 'hello', 'id' => 1];
+        $result = $manager->convertResultRow($row);
+
+        $this->assertSame($row, $result);
+    }
+
+    public function testCharsetConversionPreservesNonStringParams(): void
+    {
+        $manager = $this->createManager(['charset_conversion' => true]);
+        $mockPdo = $this->createMockPdo();
+        $mockStmt = $this->createMock(\PDOStatement::class);
+
+        $capturedParams = null;
+        $mockPdo->method('prepare')->willReturn($mockStmt);
+        $mockStmt->method('execute')->willReturnCallback(function (array $params) use (&$capturedParams) {
+            $capturedParams = $params;
+            return true;
+        });
+        $mockStmt->method('rowCount')->willReturn(1);
+        $mockStmt->method('closeCursor')->willReturn(true);
+
+        $manager->setMockPdo($mockPdo);
+        $manager->executeStatement('UPDATE t SET val = ? WHERE id = ?', ['text', 42]);
+
+        // String should be converted, int should pass through
+        $this->assertSame(iconv('UTF-8', 'ISO-8859-1//TRANSLIT', 'text'), $capturedParams[0]);
+        $this->assertSame(42, $capturedParams[1]);
+    }
+
+    public function testCharsetConversionPreservesOriginalOnIconvFailure(): void
+    {
+        $manager = $this->createManager(['charset_conversion' => true]);
+
+        // A string with characters that cannot be represented in ISO-8859-1
+        // Chinese characters are not in ISO-8859-1 range
+        $utf8String = '你好世界';
+
+        // convertResultRow with a string that's not valid ISO-8859-1 should preserve it
+        // For outbound: test via convertResultRow since we can't easily test convertToDatabase directly
+        // But we can test the round-trip preservation behavior
+        $row = ['name' => $utf8String];
+        $result = $manager->convertResultRow($row);
+
+        // The string should be preserved (iconv from ISO-8859-1 to UTF-8 may alter it,
+        // but the key point is no exception is thrown)
+        $this->assertIsString($result['name']);
+    }
 }

@@ -59,6 +59,10 @@ final class Configuration implements ConfigurationInterface
                         ->booleanNode('persistent')
                             ->defaultFalse()
                         ->end()
+                        ->booleanNode('charset_conversion')
+                            ->defaultFalse()
+                            ->info('Habilita conversión transparente UTF-8 ↔ ISO-8859-1.')
+                        ->end()
                     ->end()
                     ->validate()
                         ->ifTrue(function (array $v) {

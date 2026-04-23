@@ -365,14 +365,11 @@ final class UnitOfWork implements UnitOfWorkInterface
             }
 
             $metadata = $this->metadataReader->getClassMetadata($entity::class);
-            $idColumn = $metadata->getIdColumn();
+            $idColumns = $metadata->getIdColumns();
 
-            if ($idColumn === null) {
+            if (empty($idColumns)) {
                 continue;
             }
-
-            $refIdProp = $this->getReflectionProperty($entity::class, $idColumn->propertyName);
-            $idValue = $refIdProp->getValue($entity);
 
             $updateColumns = [];
             $updateValues = [];
@@ -393,8 +390,8 @@ final class UnitOfWork implements UnitOfWorkInterface
             // Dispatch PreUpdate hook antes del SQL
             $this->hookDispatcher?->dispatch($entity, 'PreUpdate');
 
-            $whereClause = $this->dialect->quoteIdentifier($idColumn->columnName) . ' = ?';
-            $updateValues[] = $this->typeCaster->toDatabaseValue($idValue, $idColumn->type);
+            [$whereClause, $whereValues] = $this->buildCompositeWhereClause($metadata, $entity);
+            $updateValues = array_merge($updateValues, $whereValues);
 
             $sql = $this->dialect->generateUpdate(
                 $metadata->getQualifiedTableName(),
@@ -419,24 +416,31 @@ final class UnitOfWork implements UnitOfWorkInterface
     {
         foreach ($this->deletedEntities as $entity) {
             $metadata = $this->metadataReader->getClassMetadata($entity::class);
-            $idColumn = $metadata->getIdColumn();
+            $idColumns = $metadata->getIdColumns();
 
-            if ($idColumn === null) {
+            if (empty($idColumns)) {
                 continue;
             }
 
-            $refIdProp = $this->getReflectionProperty($entity::class, $idColumn->propertyName);
-            $idValue = $refIdProp->getValue($entity);
-
-            $whereClause = $this->dialect->quoteIdentifier($idColumn->columnName) . ' = ?';
-            $dbValue = $this->typeCaster->toDatabaseValue($idValue, $idColumn->type);
+            [$whereClause, $whereValues] = $this->buildCompositeWhereClause($metadata, $entity);
 
             $sql = $this->dialect->generateDelete($metadata->getQualifiedTableName(), $whereClause);
 
-            $this->connectionManager->executeStatement($sql, [$dbValue]);
+            $this->connectionManager->executeStatement($sql, $whereValues);
 
             // Remove from identity map
-            $this->identityMap->remove($entity::class, $idValue);
+            if (count($idColumns) === 1) {
+                $refIdProp = $this->getReflectionProperty($entity::class, $idColumns[0]->propertyName);
+                $idValue = $refIdProp->getValue($entity);
+                $this->identityMap->remove($entity::class, $idValue);
+            } else {
+                $compositeId = [];
+                foreach ($idColumns as $idCol) {
+                    $refProp = $this->getReflectionProperty($entity::class, $idCol->propertyName);
+                    $compositeId[$idCol->propertyName] = $refProp->getValue($entity);
+                }
+                $this->identityMap->remove($entity::class, $compositeId);
+            }
 
             // Remove snapshot
             if ($this->entitySnapshots->contains($entity)) {
@@ -446,6 +450,30 @@ final class UnitOfWork implements UnitOfWorkInterface
             // Dispatch PostRemove hook
             $this->hookDispatcher?->dispatch($entity, 'PostRemove');
         }
+    }
+
+    /**
+     * Builds a composite WHERE clause for UPDATE/DELETE operations using all primary key columns.
+     *
+     * For single-key entities, produces a single `column = ?` condition.
+     * For composite-key entities, produces `col1 = ? AND col2 = ? AND ...`.
+     *
+     * @return array{0: string, 1: list<mixed>} [$whereString, $values]
+     */
+    private function buildCompositeWhereClause(ClassMetadata $metadata, object $entity): array
+    {
+        $idColumns = $metadata->getIdColumns();
+        $conditions = [];
+        $values = [];
+
+        foreach ($idColumns as $idCol) {
+            $refProp = $this->getReflectionProperty($entity::class, $idCol->propertyName);
+            $idValue = $refProp->getValue($entity);
+            $conditions[] = $this->dialect->quoteIdentifier($idCol->columnName) . ' = ?';
+            $values[] = $this->typeCaster->toDatabaseValue($idValue, $idCol->type);
+        }
+
+        return [implode(' AND ', $conditions), $values];
     }
 
     /**

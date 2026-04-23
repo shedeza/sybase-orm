@@ -7,7 +7,7 @@ namespace SybaseORM\Exception;
 /**
  * Lanzada cuando un valor no puede convertirse entre un tipo PHP y un tipo Sybase ASE.
  */
-class TypeConversionException extends SybaseORMException
+final class TypeConversionException extends SybaseORMException
 {
     public function __construct(
         private readonly string $sourceType,

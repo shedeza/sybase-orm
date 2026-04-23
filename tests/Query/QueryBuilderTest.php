@@ -39,6 +39,7 @@ final class QueryBuilderTest extends TestCase
             ->leftJoin('profiles', 'p', 'p.user_id = u.id')
             ->orderBy('u.name')
             ->groupBy('u.role')
+            ->having('COUNT(*) > ?', [1])
             ->limit(10)
             ->offset(20)
             ->with('posts');
@@ -263,6 +264,94 @@ final class QueryBuilderTest extends TestCase
 
         $this->assertSame(
             'SELECT dept, role, COUNT(*) FROM users GROUP BY dept, role',
+            $sql
+        );
+    }
+
+    // ── HAVING ──────────────────────────────────────────────────────
+
+    public function testHavingStoresCondition(): void
+    {
+        $sql = $this->qb
+            ->select('role', 'COUNT(*)')
+            ->from('users')
+            ->groupBy('role')
+            ->having('COUNT(*) > ?', [5])
+            ->getSQL();
+
+        $this->assertStringContainsString('HAVING COUNT(*) > ?', $sql);
+    }
+
+    public function testHavingAppearsAfterGroupBy(): void
+    {
+        $sql = $this->qb
+            ->select('role', 'COUNT(*)')
+            ->from('users')
+            ->groupBy('role')
+            ->having('COUNT(*) > ?', [5])
+            ->getSQL();
+
+        $this->assertSame(
+            'SELECT role, COUNT(*) FROM users GROUP BY role HAVING COUNT(*) > ?',
+            $sql
+        );
+    }
+
+    public function testHavingWithoutGroupByStillIncludesHaving(): void
+    {
+        $sql = $this->qb
+            ->select('COUNT(*)')
+            ->from('users')
+            ->having('COUNT(*) > ?', [1])
+            ->getSQL();
+
+        $this->assertStringContainsString('HAVING COUNT(*) > ?', $sql);
+        $this->assertStringNotContainsString('GROUP BY', $sql);
+    }
+
+    public function testHavingParametersMergedCorrectly(): void
+    {
+        $this->qb
+            ->select('role', 'COUNT(*)')
+            ->from('users')
+            ->where('active = ?', [1])
+            ->groupBy('role')
+            ->having('COUNT(*) > ?', [5]);
+
+        $this->assertSame([1, 5], $this->qb->getParameters());
+    }
+
+    public function testHavingWithNamedParameters(): void
+    {
+        $this->qb
+            ->select('role', 'COUNT(*)')
+            ->from('users')
+            ->where('active = :active', [':active' => 1])
+            ->groupBy('role')
+            ->having('COUNT(*) > :min', [':min' => 5]);
+
+        $this->assertSame([':active' => 1, ':min' => 5], $this->qb->getParameters());
+    }
+
+    public function testHavingReturnsSameInstance(): void
+    {
+        $result = $this->qb->having('COUNT(*) > ?', [1]);
+
+        $this->assertSame($this->qb, $result);
+    }
+
+    public function testHavingBeforeOrderBy(): void
+    {
+        $sql = $this->qb
+            ->select('role', 'COUNT(*)')
+            ->from('users')
+            ->groupBy('role')
+            ->having('COUNT(*) > ?', [5])
+            ->orderBy('role')
+            ->getSQL();
+
+        $this->assertSame(
+            'SELECT role, COUNT(*) FROM users GROUP BY role HAVING COUNT(*) > ? ORDER BY role ASC',
             $sql
         );
     }

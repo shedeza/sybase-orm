@@ -7,7 +7,7 @@ namespace SybaseORM\Exception;
 /**
  * Lanzada cuando ocurre un error durante la persistencia (flush) de entidades.
  */
-class PersistenceException extends SybaseORMException
+final class PersistenceException extends SybaseORMException
 {
     public function __construct(
         string $message = 'An error occurred during persistence.',

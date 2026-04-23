@@ -247,3 +247,228 @@ Este documento define los requisitos para un Symfony Bundle que implementa un OR
 4. THE ORM_Bundle SHALL permitir inyectar el Entity_Manager en controladores y servicios mediante autowiring de Symfony.
 5. WHEN se ejecutan comandos de consola de Symfony, THE ORM_Bundle SHALL registrar comandos para generar migraciones, ejecutar migraciones, generar proxies y limpiar caché.
 6. THE ORM_Bundle SHALL incluir una receta Symfony Flex (`manifest.json`) que auto-registre el bundle en `bundles.php`, copie la configuración por defecto a `config/packages/sybase_orm.yaml`, y defina la variable `DATABASE_URL` en `.env`.
+
+### Requisito 17: Claves Primarias Compuestas — Metadatos
+
+**Historia de Usuario:** Como desarrollador mapeando entidades con claves compuestas, quiero anotar múltiples propiedades con `#[Id]` en una sola entidad, para que el ORM reconozca claves primarias compuestas.
+
+#### Criterios de Aceptación
+
+1. WHEN el MetadataReader encuentra múltiples propiedades anotadas con `#[Id]` en una clase de entidad, THE MetadataReader SHALL recopilar todos los nombres de propiedad anotados en un array almacenado en `ClassMetadata.$idFields`
+2. WHEN el MetadataReader encuentra exactamente una propiedad anotada con `#[Id]`, THE MetadataReader SHALL almacenar ese nombre de propiedad en `ClassMetadata.$idFields` como un array de un solo elemento
+3. THE ClassMetadata SHALL proporcionar un método `getIdColumns()` que retorne un array de objetos ColumnMetadata para todos los campos de clave primaria
+4. THE ClassMetadata SHALL continuar proporcionando el método existente `getIdColumn()`, retornando la primera columna Id para compatibilidad con entidades de clave simple
+5. WHEN se define una sola propiedad `#[Id]`, THE ClassMetadata `$idField` property SHALL permanecer disponible y retornar ese nombre de propiedad para compatibilidad
+
+### Requisito 18: Claves Primarias Compuestas — Persistencia
+
+**Historia de Usuario:** Como desarrollador persistiendo entidades con claves compuestas, quiero que el UnitOfWork genere cláusulas WHERE correctas usando todas las columnas de clave, para que las operaciones UPDATE y DELETE apunten a la fila correcta.
+
+#### Criterios de Aceptación
+
+1. WHEN el UnitOfWork ejecuta un UPDATE para una entidad con clave primaria compuesta, THE UnitOfWork SHALL construir una cláusula WHERE que incluya todas las columnas de clave primaria unidas con AND
+2. WHEN el UnitOfWork ejecuta un DELETE para una entidad con clave primaria compuesta, THE UnitOfWork SHALL construir una cláusula WHERE que incluya todas las columnas de clave primaria unidas con AND
+3. WHEN el UnitOfWork ejecuta un UPDATE para una entidad con clave primaria simple, THE UnitOfWork SHALL continuar construyendo una cláusula WHERE con una sola columna de clave
+4. WHEN el UnitOfWork ejecuta un DELETE para una entidad con clave primaria simple, THE UnitOfWork SHALL continuar construyendo una cláusula WHERE con una sola columna de clave
+
+### Requisito 19: Claves Primarias Compuestas — Identity Map
+
+**Historia de Usuario:** Como desarrollador trabajando con entidades de clave compuesta, quiero que el IdentityMap almacene y recupere correctamente entidades usando claves compuestas, para que la identidad de objetos esté garantizada dentro de una sesión.
+
+#### Criterios de Aceptación
+
+1. WHEN el IdentityMap almacena una entidad con clave primaria compuesta, THE IdentityMap SHALL usar un string determinístico derivado de todos los valores de clave como clave del mapa
+2. WHEN el IdentityMap recibe una búsqueda de clave compuesta via `get()`, THE IdentityMap SHALL retornar la entidad que coincida con todos los valores de clave
+3. WHEN el IdentityMap recibe una clave escalar para una entidad de clave simple, THE IdentityMap SHALL continuar funcionando idénticamente al comportamiento actual
+4. THE Hydrator SHALL resolver entidades del IdentityMap usando todos los valores de columna de clave primaria cuando la entidad tiene clave primaria compuesta
+5. THE Hydrator SHALL almacenar entidades en el IdentityMap usando todos los valores de columna de clave primaria cuando la entidad tiene clave primaria compuesta
+
+### Requisito 20: Claves Primarias Compuestas en EntityManager::find()
+
+**Historia de Usuario:** Como desarrollador consultando entidades por clave compuesta, quiero que `EntityManager::find()` acepte un array asociativo de valores de clave, para poder buscar entidades con claves primarias de múltiples columnas.
+
+#### Criterios de Aceptación
+
+1. WHEN `EntityManager::find()` recibe un array asociativo como parámetro `$id`, THE EntityManager SHALL construir una cláusula WHERE con una condición por columna de clave unidas con AND
+2. WHEN `EntityManager::find()` recibe un valor escalar como parámetro `$id`, THE EntityManager SHALL continuar construyendo una cláusula WHERE de una sola columna como lo hace actualmente
+3. IF `EntityManager::find()` recibe un array asociativo cuyas claves no coinciden con los campos Id declarados de la entidad, THEN THE EntityManager SHALL lanzar una `PersistenceException`
+
+### Requisito 21: Soporte OQL para IS NULL e IS NOT NULL
+
+**Historia de Usuario:** Como desarrollador escribiendo consultas OQL, quiero usar condiciones `IS NULL` e `IS NOT NULL` en cláusulas WHERE, para poder filtrar por columnas nullable.
+
+#### Criterios de Aceptación
+
+1. WHEN el OqlParser encuentra `alias.property IS NULL` en una cláusula WHERE, THE OqlParser SHALL producir un nodo AST IsNullExpression con `negated` en false
+2. WHEN el OqlParser encuentra `alias.property IS NOT NULL` en una cláusula WHERE, THE OqlParser SHALL producir un nodo AST IsNullExpression con `negated` en true
+3. WHEN el OqlToSqlTranslator recibe un nodo IsNullExpression, THE OqlToSqlTranslator SHALL emitir `column IS NULL` o `column IS NOT NULL` en la salida SQL
+4. WHEN el OqlPrinter recibe un nodo IsNullExpression, THE OqlPrinter SHALL emitir el texto OQL correspondiente `alias.property IS NULL` o `alias.property IS NOT NULL`
+5. PARA TODOS los nodos AST IsNullExpression válidos, parsear luego imprimir luego parsear SHALL producir un AST equivalente (propiedad de ida y vuelta)
+
+### Requisito 22: Soporte OQL para IN y NOT IN
+
+**Historia de Usuario:** Como desarrollador escribiendo consultas OQL, quiero usar condiciones `IN (:param)` y `NOT IN (:param)`, para poder filtrar por conjuntos de valores.
+
+#### Criterios de Aceptación
+
+1. WHEN el OqlParser encuentra `alias.property IN (:param)` en una cláusula WHERE, THE OqlParser SHALL producir un nodo AST InExpression con `negated` en false
+2. WHEN el OqlParser encuentra `alias.property NOT IN (:param)` en una cláusula WHERE, THE OqlParser SHALL producir un nodo AST InExpression con `negated` en true
+3. WHEN el OqlParser encuentra `alias.property IN (value1, value2, ...)` con valores literales, THE OqlParser SHALL producir un nodo AST InExpression conteniendo una lista de nodos Literal
+4. WHEN el EntityManager expande parámetros de consulta para un InExpression vinculado a un parámetro array, THE EntityManager SHALL reemplazar el placeholder nombrado único con un placeholder por cada elemento del array
+5. WHEN el OqlToSqlTranslator recibe un nodo InExpression, THE OqlToSqlTranslator SHALL emitir `column IN (...)` o `column NOT IN (...)` en la salida SQL
+6. WHEN el OqlPrinter recibe un nodo InExpression, THE OqlPrinter SHALL emitir el texto OQL correspondiente
+7. PARA TODOS los nodos AST InExpression válidos, parsear luego imprimir luego parsear SHALL producir un AST equivalente (propiedad de ida y vuelta)
+
+### Requisito 23: Soporte OQL para Funciones de Agregación
+
+**Historia de Usuario:** Como desarrollador escribiendo consultas OQL para reportes, quiero usar funciones de agregación (`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`) y `DISTINCT` en cláusulas SELECT y HAVING, para poder realizar cálculos agrupados.
+
+#### Criterios de Aceptación
+
+1. WHEN el OqlParser encuentra `COUNT(alias.property)` en una cláusula SELECT o HAVING, THE OqlParser SHALL producir un nodo AST FunctionCall con nombre de función `COUNT`
+2. WHEN el OqlParser encuentra `DISTINCT` dentro de una función de agregación como `COUNT(DISTINCT alias.property)`, THE OqlParser SHALL producir un nodo AST FunctionCall con el flag `distinct` en true
+3. WHEN el OqlParser encuentra `SUM(...)`, `AVG(...)`, `MIN(...)`, o `MAX(...)`, THE OqlParser SHALL producir un nodo AST FunctionCall con el nombre de función correspondiente
+4. WHEN el OqlParser encuentra una cláusula `HAVING` después de `GROUP BY`, THE OqlParser SHALL producir un nodo AST HavingClause conteniendo la expresión de condición
+5. WHEN el OqlToSqlTranslator recibe un nodo FunctionCall, THE OqlToSqlTranslator SHALL emitir la función de agregación SQL con nombres de columna resueltos
+6. WHEN el OqlToSqlTranslator recibe un nodo HavingClause, THE OqlToSqlTranslator SHALL emitir una cláusula `HAVING` en la salida SQL
+7. THE SelectStatement AST node SHALL incluir un campo opcional `havingClause`
+8. WHEN el OqlPrinter recibe un nodo FunctionCall, THE OqlPrinter SHALL emitir el texto OQL correspondiente incluyendo DISTINCT cuando aplique
+9. WHEN el OqlPrinter recibe un nodo HavingClause, THE OqlPrinter SHALL emitir la cláusula `HAVING` en texto OQL
+10. PARA TODOS los ASTs SelectStatement válidos conteniendo funciones de agregación y cláusulas HAVING, parsear luego imprimir luego parsear SHALL producir un AST equivalente (propiedad de ida y vuelta)
+
+### Requisito 24: JOIN OQL Basado en Entidad con Condición WITH
+
+**Historia de Usuario:** Como desarrollador escribiendo consultas OQL, quiero unir entidades usando condiciones arbitrarias con la palabra clave `WITH`, para poder expresar joins que no están basados en relaciones mapeadas.
+
+#### Criterios de Aceptación
+
+1. WHEN el OqlParser encuentra `JOIN EntityName alias WITH condition` en una consulta OQL, THE OqlParser SHALL producir un nodo AST JoinClause conteniendo el nombre de entidad, alias y la expresión de condición WITH
+2. WHEN el OqlParser encuentra `LEFT JOIN EntityName alias WITH condition`, THE OqlParser SHALL producir un nodo AST JoinClause con tipo de join `LEFT JOIN`
+3. WHEN el OqlToSqlTranslator recibe un JoinClause con condición WITH, THE OqlToSqlTranslator SHALL resolver el nombre de entidad a nombre de tabla y emitir la condición como cláusula ON
+4. THE OqlParser SHALL continuar soportando la sintaxis JOIN existente basada en relaciones (`JOIN alias.property joinAlias`) sin cambios
+5. WHEN el OqlPrinter recibe un JoinClause con condición WITH, THE OqlPrinter SHALL emitir el texto OQL `JOIN EntityName alias WITH condition`
+6. PARA TODOS los nodos AST JoinClause válidos con condiciones WITH, parsear luego imprimir luego parsear SHALL producir un AST equivalente (propiedad de ida y vuelta)
+
+### Requisito 25: Wildcard SELECT y Alias de Columna en OQL
+
+**Historia de Usuario:** Como desarrollador escribiendo consultas OQL, quiero usar `SELECT *` y alias de columna (`AS`), para poder escribir consultas concisas y nombrar columnas de resultado.
+
+#### Criterios de Aceptación
+
+1. WHEN el OqlParser encuentra `SELECT *` en una consulta OQL, THE OqlParser SHALL producir un nodo AST SelectExpression representando una selección wildcard
+2. WHEN el OqlParser encuentra `expression AS alias` en la cláusula SELECT, THE OqlParser SHALL producir un nodo AST SelectExpression con el campo alias poblado
+3. WHEN el OqlToSqlTranslator recibe un SelectExpression wildcard, THE OqlToSqlTranslator SHALL emitir `*` en la cláusula SQL SELECT
+4. WHEN el OqlToSqlTranslator recibe un SelectExpression con alias, THE OqlToSqlTranslator SHALL emitir `expression AS alias` en la salida SQL
+5. WHEN el OqlPrinter recibe un SelectExpression con alias, THE OqlPrinter SHALL emitir `expression AS alias` en el texto OQL
+6. PARA TODOS los ASTs SelectStatement válidos conteniendo wildcards o aliases, parsear luego imprimir luego parsear SHALL producir un AST equivalente (propiedad de ida y vuelta)
+
+### Requisito 26: Modo de Hidratación Escalar y Array Asociativo
+
+**Historia de Usuario:** Como desarrollador ejecutando consultas OQL de agregación o multi-entidad, quiero recibir resultados como arrays asociativos en lugar de objetos entidad, para poder trabajar con resultados escalares y proyecciones personalizadas.
+
+#### Criterios de Aceptación
+
+1. WHEN `EntityManager::query()` se invoca con modo de hidratación `HYDRATE_ARRAY`, THE EntityManager SHALL retornar resultados como un array de arrays asociativos en lugar de objetos entidad
+2. WHEN `EntityManager::query()` se invoca con modo de hidratación `HYDRATE_OBJECT` o sin especificar modo, THE EntityManager SHALL retornar resultados como objetos entidad hidratados (comportamiento actual)
+3. WHEN la consulta OQL contiene funciones de agregación, alias de columna, o selecciona de múltiples entidades, THE EntityManager SHALL usar por defecto el modo `HYDRATE_ARRAY`
+4. THE EntityManager::query() method signature SHALL aceptar un parámetro opcional de modo de hidratación manteniendo compatibilidad
+
+### Requisito 27: Soporte HAVING en QueryBuilder
+
+**Historia de Usuario:** Como desarrollador construyendo consultas programáticas, quiero usar un método `having()` en el QueryBuilder, para poder agregar condiciones HAVING a consultas agrupadas.
+
+#### Criterios de Aceptación
+
+1. WHEN `QueryBuilder::having()` se invoca con un string de condición, THE QueryBuilder SHALL almacenar la condición HAVING
+2. WHEN `QueryBuilder::getSQL()` se invoca y se ha establecido una condición HAVING, THE QueryBuilder SHALL emitir una cláusula `HAVING` después de la cláusula `GROUP BY` en el SQL generado
+3. IF `QueryBuilder::having()` se invoca sin un `groupBy()` previo, THEN THE QueryBuilder SHALL incluir la cláusula HAVING en el SQL generado (la base de datos validará)
+4. THE QueryBuilderInterface SHALL declarar la firma del método `having()`
+
+### Requisito 28: Conversión Transparente de Charset UTF-8 a ISO-8859-1
+
+**Historia de Usuario:** Como desarrollador conectando a un servidor Sybase ASE que usa codificación ISO-8859-1 desde una aplicación PHP que usa UTF-8, quiero que el ORM convierta transparentemente strings entre UTF-8 e ISO-8859-1, para que los caracteres especiales se preserven sin conversión manual.
+
+#### Criterios de Aceptación
+
+1. WHERE la opción de configuración `charset_conversion` está habilitada, THE ConnectionManager SHALL convertir valores string de UTF-8 a ISO-8859-1 antes de enviarlos a la base de datos
+2. WHERE la opción de configuración `charset_conversion` está habilitada, THE ConnectionManager SHALL convertir valores string de resultado de ISO-8859-1 a UTF-8 después de leerlos de la base de datos
+3. WHERE la opción de configuración `charset_conversion` está deshabilitada o no establecida, THE ConnectionManager SHALL pasar valores string sin conversión (comportamiento actual)
+4. IF un valor string contiene caracteres que no pueden representarse en ISO-8859-1, THEN THE ConnectionManager SHALL preservar los bytes originales y no corromper los datos
+5. THE opción de configuración `charset_conversion` SHALL aceptar un valor booleano y tener false como valor por defecto
+
+
+### Requisito 29: Sentencias OQL UPDATE — Parsing, Impresión y Traducción
+
+**Historia de Usuario:** Como desarrollador migrando desde Doctrine, quiero escribir sentencias UPDATE usando OQL con nombres de entidad y propiedades, para ejecutar actualizaciones masivas sin cargar entidades en memoria.
+
+#### Criterios de Aceptación
+
+1. WHEN el OQL_Parser recibe `UPDATE EntityName alias SET prop = val`, THE OQL_Parser SHALL producir un nodo AST UpdateStatement con nombre de entidad, alias, lista de SetClause y WHERE opcional
+2. WHEN la sentencia UPDATE contiene múltiples asignaciones (`SET prop1 = val1, prop2 = val2`), THE OQL_Parser SHALL producir un array de nodos SetClause
+3. THE OQL_Parser SHALL soportar valores de asignación: parámetros nombrados, literales NULL/string/numéricos, y llamadas a funciones personalizadas (CustomFunctionCall)
+4. WHEN el OQL_Printer recibe un UpdateStatement, SHALL producir texto OQL válido; parsear la salida SHALL producir un AST equivalente (round-trip)
+5. WHEN el OQL_Translator traduce un UpdateStatement, SHALL resolver entidad→tabla y propiedad→columna, recopilar parámetros SET antes de WHERE, emitir NULL/literales directamente y funciones como pass-through
+
+### Requisito 30: Sentencias OQL DELETE — Parsing, Impresión y Traducción
+
+**Historia de Usuario:** Como desarrollador migrando desde Doctrine, quiero escribir sentencias DELETE usando OQL con nombres de entidad, para ejecutar eliminaciones masivas sin cargar entidades en memoria.
+
+#### Criterios de Aceptación
+
+1. WHEN el OQL_Parser recibe `DELETE FROM EntityName alias [WHERE condition]`, THE OQL_Parser SHALL producir un nodo AST DeleteStatement
+2. THE OQL_Printer y OQL_Translator SHALL soportar DeleteStatement con la misma lógica de resolución y round-trip que UpdateStatement
+3. IF DELETE no contiene FROM, THEN THE OQL_Parser SHALL lanzar OqlParseException
+
+### Requisito 31: Ejecución de UPDATE/DELETE vía EntityManager
+
+**Historia de Usuario:** Como desarrollador, quiero ejecutar sentencias OQL UPDATE y DELETE a través del EntityManager y obtener el número de filas afectadas.
+
+#### Criterios de Aceptación
+
+1. THE EntityManagerInterface SHALL declarar `executeUpdate(string $oql, array $params = []): int`
+2. THE EntityManager SHALL parsear, traducir, ejecutar vía ConnectionManager::executeStatement() y retornar rowCount
+3. IF recibe SELECT, SHALL lanzar OqlParseException
+4. SHALL expandir parámetros array para IN de la misma forma que `query()`
+
+### Requisito 32: Funciones OQL Personalizadas — CONVERT y RAND
+
+**Historia de Usuario:** Como desarrollador del proyecto Insaculación, quiero usar `CONVERT(expression AS type)` y `RAND()` en sentencias OQL.
+
+#### Criterios de Aceptación
+
+1. THE OQL_Parser SHALL producir nodos CustomFunctionCall para CONVERT (con castType) y RAND (sin argumentos), soportando anidamiento
+2. THE OQL_Translator SHALL emitir funciones personalizadas como pass-through a Sybase ASE
+3. THE OQL_Parser SHALL distinguir funciones de agregación (COUNT, SUM, AVG, MIN, MAX) de funciones personalizadas (CONVERT, RAND)
+
+### Requisito 33: Métodos de Resultado — queryOne y queryScalar
+
+**Historia de Usuario:** Como desarrollador migrando desde Doctrine, quiero métodos `queryOne()` y `queryScalar()` para obtener un solo resultado o un valor escalar.
+
+#### Criterios de Aceptación
+
+1. `queryOne()` SHALL aplicar límite de 1 resultado y retornar la entidad o null
+2. `queryScalar()` SHALL aplicar límite de 1, ejecutar en HYDRATE_ARRAY y retornar el primer valor o null
+
+### Requisito 34: Tipo Personalizado con Envolvimiento SQL
+
+**Historia de Usuario:** Como desarrollador, quiero tipos personalizados que envuelvan el placeholder SQL con una expresión (e.g. `CONVERT(REAL, ?)`).
+
+#### Criterios de Aceptación
+
+1. THE bundle SHALL proporcionar SqlWrappingTypeInterface que extienda CustomTypeInterface con `convertToDatabaseValueSQL(string $sqlExpr): string`
+2. THE UnitOfWork SHALL usar la expresión envolvente en INSERT y UPDATE para columnas con tipos SqlWrapping
+3. THE TypeCaster SHALL exponer `getDatabaseValueSQL()` para detectar tipos con envolvimiento
+4. THE Dialect SHALL aceptar un array opcional de expresiones de valor en generateInsert/generateUpdate
+
+### Requisito 35: Mejoras de Calidad — Validación, Logging, Convenciones y API
+
+**Historia de Usuario:** Como desarrollador, quiero que el ORM tenga validación robusta, logging de errores, convenciones consistentes y métodos de conveniencia.
+
+#### Criterios de Aceptación
+
+1. THE OQL_Parser SHALL validar que las listas IN no estén vacías, lanzando OqlParseException
+2. THE ConnectionManager SHALL loguear warnings via PSR LoggerInterface cuando la conversión iconv falla
+3. Las clases de excepción y TypeCaster SHALL ser `final` según las convenciones del proyecto
+4. THE EntityRepository SHALL proporcionar métodos `count(array $criteria = []): int` y `exists(array $criteria): bool`
+5. THE EntityManager SHALL proporcionar `queryIterator()` para streaming de resultados grandes sin cargar todo en memoria
+6. THE EntityManager::shouldAutoDetectArrayMode() SHALL detectar GROUP BY y aliases de columna además de FunctionCall

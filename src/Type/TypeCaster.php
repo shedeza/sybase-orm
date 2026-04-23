@@ -9,7 +9,7 @@ use SybaseORM\Exception\TypeConversionException;
 /**
  * Convierte tipos de datos entre PHP y Sybase ASE.
  */
-class TypeCaster implements TypeCasterInterface
+final class TypeCaster implements TypeCasterInterface
 {
     private const DATETIME_FORMAT = 'Y-m-d H:i:s.v';
 

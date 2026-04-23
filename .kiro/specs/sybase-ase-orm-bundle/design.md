@@ -266,3 +266,138 @@ interface MetadataReaderInterface
 ```
 
 ClassMetadata incluye: `entityClass`, `tableName`, `schema`, `columns`, `idField`, `relationships`, `inheritanceType`, `discriminatorColumn`, `discriminatorMap`, `lifecycleHooks`, y el método `getQualifiedTableName()` que retorna `schema.table` o solo `table`.
+
+## Extensiones para Migración Insaculación (Requisitos 17–28)
+
+### Decisiones de Diseño Adicionales
+
+23. **`idFields` como array, `idField` preservado**: `ClassMetadata` gana una nueva propiedad array `$idFields`. El `$idField` existente permanece como alias computado apuntando al primer elemento, asegurando que todos los tests existentes pasen sin modificación.
+24. **String de clave compuesta para IdentityMap**: Las claves compuestas se serializan a un string determinístico `"val1|val2|..."` usando separador pipe. Las claves escalares continúan usando `(string) $id`.
+25. **Nuevos nodos AST como clases final readonly**: `IsNullExpression`, `InExpression`, `FunctionCall` y `HavingClause` siguen el patrón AST existente — `final class` con constructor promotion y propiedades `readonly`.
+26. **Tipos union en WhereClause/LogicalExpression**: Los tipos union de condición se extienden para incluir `IsNullExpression` e `InExpression` junto a `Comparison` y `LogicalExpression`.
+27. **JoinClause modo dual**: `JoinClause` gana propiedades opcionales `?string $entityName` y `?Comparison|LogicalExpression $withCondition`. Cuando `entityName` está establecido, el traductor lo resuelve a nombre de tabla y usa `withCondition` como cláusula ON.
+28. **Constantes de modo de hidratación**: Clase simple con constantes (`HYDRATE_OBJECT = 1`, `HYDRATE_ARRAY = 2`) en lugar de PHP enum, por simplicidad y compatibilidad con patrones existentes.
+29. **Conversión de charset en frontera de ConnectionManager**: La conversión ocurre en `executeQuery()` y `executeStatement()` (salida) y en `convertResultRow()` (entrada), manteniendo la lógica centralizada.
+30. **Expansión de parámetros para cláusulas IN**: El EntityManager expande parámetros array en placeholders posicionales individuales antes de pasar al ConnectionManager.
+
+### Componentes Modificados
+
+#### ClassMetadata — Soporte Clave Compuesta
+
+```php
+final class ClassMetadata
+{
+    public readonly array $idFields;    // string[] — nombres de propiedad de todos los campos PK
+    public readonly ?string $idField;   // compatibilidad — primer elemento o null
+
+    public function getIdColumns(): array;  // ColumnMetadata[] para todos los campos PK
+    public function getIdColumn(): ?ColumnMetadata;  // primer Id column (contrato sin cambios)
+}
+```
+
+#### IdentityMap — Derivación de Clave Compuesta
+
+```php
+private function deriveKey(mixed $id): string
+{
+    if (is_array($id)) {
+        ksort($id);
+        return implode('|', array_map('strval', $id));
+    }
+    return (string) $id;
+}
+```
+
+#### UnitOfWork — WHERE Compuesto
+
+```php
+private function buildCompositeWhereClause(ClassMetadata $metadata, object $entity): array
+{
+    // Retorna [$whereString, $values] con N condiciones AND-joined
+}
+```
+
+#### Nuevos Nodos AST
+
+- `IsNullExpression(PropertyAccess $property, bool $negated)`
+- `InExpression(PropertyAccess $property, array $values, bool $negated)`
+- `FunctionCall(string $functionName, PropertyAccess|string $argument, bool $distinct)`
+- `HavingClause(Comparison|LogicalExpression|IsNullExpression|InExpression $condition)`
+
+#### Nodos AST Modificados
+
+- `SelectStatement` — `+?HavingClause $havingClause`, `+bool $distinct`
+- `JoinClause` — `+?string $entityName`, `+Comparison|LogicalExpression|null $withCondition`
+- `WhereClause` / `LogicalExpression` — tipos union extendidos con `IsNullExpression|InExpression`
+- `SelectExpression` — `$expression` cambia de `string` a `string|FunctionCall`, `+?string $alias`
+
+#### HydrationMode
+
+```php
+final class HydrationMode
+{
+    public const HYDRATE_OBJECT = 1;
+    public const HYDRATE_ARRAY = 2;
+}
+```
+
+#### ConnectionManager — Conversión de Charset
+
+```php
+private bool $charsetConversion; // desde config, default false
+private function convertToDatabase(string $value): string;   // UTF-8 → ISO-8859-1//TRANSLIT
+private function convertFromDatabase(string $value): string;  // ISO-8859-1 → UTF-8
+private function convertParams(array $params): array;
+public function convertResultRow(array $row): array;
+```
+
+### Propiedades de Corrección (Properties 1–7)
+
+1. **Consistencia de Accesores de Columna Id en ClassMetadata** — `getIdColumns()` retorna exactamente las columnas con `isId=true`, `getIdColumn()` retorna el primer elemento.
+2. **Completitud de Cláusula WHERE para Persistencia de Clave Compuesta** — Para N columnas PK, el WHERE generado contiene exactamente N condiciones de igualdad con AND.
+3. **Round-Trip de Clave Compuesta en IdentityMap** — `put()` seguido de `get()` con los mismos valores retorna la misma instancia; claves diferentes no colisionan.
+4. **Round-Trip OQL Parse–Print–Parse** — Para todo AST OQL válido incluyendo IS NULL, IN, agregados, HAVING, JOIN WITH, wildcards y aliases, imprimir y re-parsear produce un AST equivalente.
+5. **Conteo de Placeholders en Expansión de Parámetros IN** — Para N elementos en un array, la expansión produce exactamente N placeholders posicionales.
+6. **Inclusión de Cláusula HAVING en QueryBuilder** — Para toda condición HAVING no vacía, el SQL contiene HAVING en posición correcta relativa a GROUP BY y ORDER BY.
+7. **Round-Trip de Conversión de Charset** — Para todo string representable en ISO-8859-1, convertir UTF-8→ISO-8859-1→UTF-8 produce un string idéntico al original.
+
+
+## Extensiones OQL para Migración Insaculación (Requisitos 29–35)
+
+### Decisiones de Diseño Adicionales
+
+31. **Parser unificado**: `OqlParser::parse()` detecta la primera palabra clave (SELECT/UPDATE/DELETE) y delega. Tipo de retorno: `SelectStatement|UpdateStatement|DeleteStatement`.
+32. **CustomFunctionCall separado de FunctionCall**: CONVERT usa `(expr AS type)` y RAND no tiene argumentos — estructura distinta de agregaciones. Nodo dedicado evita contaminar FunctionCall.
+33. **Pass-through para funciones personalizadas**: El traductor emite CONVERT/RAND tal cual en SQL, son funciones nativas de Sybase ASE.
+34. **Literal NULL en AST**: `Literal('NULL', 'null')` — evita cambiar la firma del constructor existente.
+35. **SqlWrappingTypeInterface**: Extiende CustomTypeInterface. Solo tipos que la implementan obtienen envolvimiento SQL; los demás siguen con `?`.
+36. **Logger opcional en ConnectionManager**: `?LoggerInterface $logger = null` para loguear fallos de iconv sin romper compatibilidad.
+
+### Nuevos Nodos AST
+
+- `UpdateStatement(string $entityName, string $alias, SetClause[] $setClauses, ?WhereClause $where)`
+- `DeleteStatement(string $entityName, string $alias, ?WhereClause $where)`
+- `SetClause(PropertyAccess $property, Parameter|Literal|CustomFunctionCall $value)`
+- `CustomFunctionCall(string $functionName, array $arguments, ?string $castType)`
+
+### Nuevos Métodos en EntityManager
+
+- `executeUpdate(string $oql, array $params = []): int`
+- `queryOne(string $oql, array $params = [], int $hydrationMode): ?object`
+- `queryScalar(string $oql, array $params = []): mixed`
+- `queryIterator(string $oql, array $params = [], int $hydrationMode): \Generator`
+
+### Nuevos Métodos en EntityRepository
+
+- `count(array $criteria = []): int`
+- `exists(array $criteria): bool`
+
+### Propiedades de Corrección (Properties 8–14)
+
+8. **UPDATE round-trip** — parse ∘ print ≡ id para UpdateStatement
+9. **DELETE round-trip** — parse ∘ print ≡ id para DeleteStatement
+10. **UPDATE translation** — resuelve entidad/propiedad a tabla/columna correctamente
+11. **DELETE translation** — resuelve entidad a tabla correctamente
+12. **UPDATE parameter ordering** — parámetros SET antes de WHERE
+13. **TypeCaster getDatabaseValueSQL** — retorna wrapping iff SqlWrappingTypeInterface
+14. **Dialect value expressions** — sustituye expresiones correctamente en generateInsert/generateUpdate

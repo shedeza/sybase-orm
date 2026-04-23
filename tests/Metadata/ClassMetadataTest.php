@@ -266,4 +266,160 @@ final class ClassMetadataTest extends TestCase
         $this->assertSame([], $meta->discriminatorMap);
         $this->assertSame([], $meta->lifecycleHooks);
     }
+
+    // --- Composite key support tests (Requirements 1.3, 1.4, 1.5) ---
+
+    public function testSingleIdFieldProducesIdFieldsArray(): void
+    {
+        $idCol = new ColumnMetadata('id', 'id', 'int', false, null, null, null, true, 'IDENTITY');
+        $nameCol = new ColumnMetadata('name', 'name', 'string');
+
+        $meta = new ClassMetadata(
+            entityClass: 'App\\Entity\\User',
+            tableName: 'users',
+            columns: [$idCol, $nameCol],
+            idField: 'id',
+        );
+
+        $this->assertSame(['id'], $meta->idFields);
+    }
+
+    public function testMultipleIdFieldsProducesCorrectIdFieldsArray(): void
+    {
+        $orgIdCol = new ColumnMetadata('orgId', 'org_id', 'int', false, null, null, null, true);
+        $userIdCol = new ColumnMetadata('userId', 'user_id', 'int', false, null, null, null, true);
+        $roleCol = new ColumnMetadata('role', 'role', 'string');
+
+        $meta = new ClassMetadata(
+            entityClass: 'App\\Entity\\OrgUser',
+            tableName: 'org_users',
+            columns: [$orgIdCol, $userIdCol, $roleCol],
+            idFields: ['orgId', 'userId'],
+        );
+
+        $this->assertSame(['orgId', 'userId'], $meta->idFields);
+    }
+
+    public function testGetIdColumnsReturnsSingleIdColumnMetadata(): void
+    {
+        $idCol = new ColumnMetadata('id', 'id', 'int', false, null, null, null, true, 'IDENTITY');
+        $nameCol = new ColumnMetadata('name', 'name', 'string');
+
+        $meta = new ClassMetadata(
+            entityClass: 'App\\Entity\\User',
+            tableName: 'users',
+            columns: [$idCol, $nameCol],
+            idField: 'id',
+        );
+
+        $idColumns = $meta->getIdColumns();
+        $this->assertCount(1, $idColumns);
+        $this->assertSame('id', $idColumns[0]->propertyName);
+        $this->assertTrue($idColumns[0]->isId);
+    }
+
+    public function testGetIdColumnsReturnsAllCompositeIdColumnMetadata(): void
+    {
+        $orgIdCol = new ColumnMetadata('orgId', 'org_id', 'int', false, null, null, null, true);
+        $userIdCol = new ColumnMetadata('userId', 'user_id', 'int', false, null, null, null, true);
+        $roleCol = new ColumnMetadata('role', 'role', 'string');
+
+        $meta = new ClassMetadata(
+            entityClass: 'App\\Entity\\OrgUser',
+            tableName: 'org_users',
+            columns: [$orgIdCol, $userIdCol, $roleCol],
+            idFields: ['orgId', 'userId'],
+        );
+
+        $idColumns = $meta->getIdColumns();
+        $this->assertCount(2, $idColumns);
+        $this->assertSame('orgId', $idColumns[0]->propertyName);
+        $this->assertSame('org_id', $idColumns[0]->columnName);
+        $this->assertTrue($idColumns[0]->isId);
+        $this->assertSame('userId', $idColumns[1]->propertyName);
+        $this->assertSame('user_id', $idColumns[1]->columnName);
+        $this->assertTrue($idColumns[1]->isId);
+    }
+
+    public function testGetIdColumnReturnsFirstIdColumnForCompositeKey(): void
+    {
+        $orgIdCol = new ColumnMetadata('orgId', 'org_id', 'int', false, null, null, null, true);
+        $userIdCol = new ColumnMetadata('userId', 'user_id', 'int', false, null, null, null, true);
+
+        $meta = new ClassMetadata(
+            entityClass: 'App\\Entity\\OrgUser',
+            tableName: 'org_users',
+            columns: [$orgIdCol, $userIdCol],
+            idFields: ['orgId', 'userId'],
+        );
+
+        $firstIdCol = $meta->getIdColumn();
+        $this->assertNotNull($firstIdCol);
+        $this->assertSame('orgId', $firstIdCol->propertyName);
+    }
+
+    public function testBackwardCompatIdFieldSetFromIdFields(): void
+    {
+        $orgIdCol = new ColumnMetadata('orgId', 'org_id', 'int', false, null, null, null, true);
+        $userIdCol = new ColumnMetadata('userId', 'user_id', 'int', false, null, null, null, true);
+
+        $meta = new ClassMetadata(
+            entityClass: 'App\\Entity\\OrgUser',
+            tableName: 'org_users',
+            columns: [$orgIdCol, $userIdCol],
+            idFields: ['orgId', 'userId'],
+        );
+
+        // $idField should be set to the first element of $idFields for backward compat
+        $this->assertSame('orgId', $meta->idField);
+    }
+
+    public function testBackwardCompatIdFieldComputesIdFieldsWhenIdFieldProvided(): void
+    {
+        $idCol = new ColumnMetadata('id', 'id', 'int', false, null, null, null, true, 'IDENTITY');
+
+        $meta = new ClassMetadata(
+            entityClass: 'App\\Entity\\User',
+            tableName: 'users',
+            columns: [$idCol],
+            idField: 'id',
+        );
+
+        // When only idField is provided, idFields should be computed as [$idField]
+        $this->assertSame('id', $meta->idField);
+        $this->assertSame(['id'], $meta->idFields);
+    }
+
+    public function testNoIdFieldProducesEmptyIdFields(): void
+    {
+        $meta = new ClassMetadata(
+            entityClass: 'App\\Entity\\Simple',
+            tableName: 'simple',
+            columns: [new ColumnMetadata('name', 'name', 'string')],
+        );
+
+        $this->assertNull($meta->idField);
+        $this->assertSame([], $meta->idFields);
+        $this->assertSame([], $meta->getIdColumns());
+        $this->assertNull($meta->getIdColumn());
+    }
+
+    public function testIdFieldsParameterTakesPrecedenceOverIdField(): void
+    {
+        $orgIdCol = new ColumnMetadata('orgId', 'org_id', 'int', false, null, null, null, true);
+        $userIdCol = new ColumnMetadata('userId', 'user_id', 'int', false, null, null, null, true);
+
+        // When both idField and idFields are provided, idFields takes precedence
+        $meta = new ClassMetadata(
+            entityClass: 'App\\Entity\\OrgUser',
+            tableName: 'org_users',
+            columns: [$orgIdCol, $userIdCol],
+            idField: 'orgId',
+            idFields: ['orgId', 'userId'],
+        );
+
+        $this->assertSame(['orgId', 'userId'], $meta->idFields);
+        $this->assertSame('orgId', $meta->idField);
+        $this->assertCount(2, $meta->getIdColumns());
+    }
 }

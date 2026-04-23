@@ -8,6 +8,10 @@ use PHPUnit\Framework\TestCase;
 use SybaseORM\Exception\OqlParseException;
 use SybaseORM\Query\AST\Comparison;
 use SybaseORM\Query\AST\FromClause;
+use SybaseORM\Query\AST\FunctionCall;
+use SybaseORM\Query\AST\HavingClause;
+use SybaseORM\Query\AST\InExpression;
+use SybaseORM\Query\AST\IsNullExpression;
 use SybaseORM\Query\AST\JoinClause;
 use SybaseORM\Query\AST\Literal;
 use SybaseORM\Query\AST\LogicalExpression;
@@ -21,7 +25,7 @@ use SybaseORM\Query\OqlParser;
 
 /**
  * Unit tests for OqlParser.
- * Validates: Requirements 4.1, 4.3
+ * Validates: Requirements 4.1, 4.3, 5.1, 5.2, 6.1, 6.2, 6.3, 7.1, 7.2, 7.3, 7.4, 8.1, 8.2, 8.4, 9.1, 9.2
  */
 class OqlParserTest extends TestCase
 {
@@ -222,5 +226,350 @@ class OqlParserTest extends TestCase
     {
         $this->expectException(OqlParseException::class);
         $this->parser->parse('');
+    }
+
+    // ── IS NULL / IS NOT NULL (Requirements 5.1, 5.2) ──────────────
+
+    public function testParseIsNull(): void
+    {
+        $ast = $this->parser->parse('SELECT u FROM User u WHERE u.deletedAt IS NULL');
+
+        $this->assertNotNull($ast->where);
+        $condition = $ast->where->condition;
+        $this->assertInstanceOf(IsNullExpression::class, $condition);
+        $this->assertSame('u', $condition->property->alias);
+        $this->assertSame('deletedAt', $condition->property->property);
+        $this->assertFalse($condition->negated);
+    }
+
+    public function testParseIsNotNull(): void
+    {
+        $ast = $this->parser->parse('SELECT u FROM User u WHERE u.email IS NOT NULL');
+
+        $condition = $ast->where->condition;
+        $this->assertInstanceOf(IsNullExpression::class, $condition);
+        $this->assertSame('u', $condition->property->alias);
+        $this->assertSame('email', $condition->property->property);
+        $this->assertTrue($condition->negated);
+    }
+
+    public function testParseIsNullCombinedWithAnd(): void
+    {
+        $ast = $this->parser->parse('SELECT u FROM User u WHERE u.name = :name AND u.deletedAt IS NULL');
+
+        $condition = $ast->where->condition;
+        $this->assertInstanceOf(LogicalExpression::class, $condition);
+        $this->assertSame('AND', $condition->operator);
+        $this->assertInstanceOf(Comparison::class, $condition->left);
+        $this->assertInstanceOf(IsNullExpression::class, $condition->right);
+        $this->assertFalse($condition->right->negated);
+    }
+
+    public function testThrowsOnMalformedIsNull(): void
+    {
+        $this->expectException(OqlParseException::class);
+        $this->parser->parse('SELECT u FROM User u WHERE u.name IS EMPTY');
+    }
+
+    // ── IN / NOT IN (Requirements 6.1, 6.2, 6.3) ───────────────────
+
+    public function testParseInWithParameter(): void
+    {
+        $ast = $this->parser->parse('SELECT u FROM User u WHERE u.status IN (:statuses)');
+
+        $condition = $ast->where->condition;
+        $this->assertInstanceOf(InExpression::class, $condition);
+        $this->assertSame('u', $condition->property->alias);
+        $this->assertSame('status', $condition->property->property);
+        $this->assertFalse($condition->negated);
+        $this->assertCount(1, $condition->values);
+        $this->assertInstanceOf(Parameter::class, $condition->values[0]);
+        $this->assertSame('statuses', $condition->values[0]->name);
+    }
+
+    public function testParseNotIn(): void
+    {
+        $ast = $this->parser->parse('SELECT u FROM User u WHERE u.role NOT IN (:excluded)');
+
+        $condition = $ast->where->condition;
+        $this->assertInstanceOf(InExpression::class, $condition);
+        $this->assertTrue($condition->negated);
+        $this->assertCount(1, $condition->values);
+        $this->assertInstanceOf(Parameter::class, $condition->values[0]);
+        $this->assertSame('excluded', $condition->values[0]->name);
+    }
+
+    public function testParseInWithLiterals(): void
+    {
+        $ast = $this->parser->parse("SELECT u FROM User u WHERE u.id IN (1, 2, 3)");
+
+        $condition = $ast->where->condition;
+        $this->assertInstanceOf(InExpression::class, $condition);
+        $this->assertFalse($condition->negated);
+        $this->assertCount(3, $condition->values);
+
+        $this->assertInstanceOf(Literal::class, $condition->values[0]);
+        $this->assertSame(1, $condition->values[0]->value);
+        $this->assertSame('integer', $condition->values[0]->type);
+
+        $this->assertInstanceOf(Literal::class, $condition->values[1]);
+        $this->assertSame(2, $condition->values[1]->value);
+
+        $this->assertInstanceOf(Literal::class, $condition->values[2]);
+        $this->assertSame(3, $condition->values[2]->value);
+    }
+
+    public function testParseInWithStringLiterals(): void
+    {
+        $ast = $this->parser->parse("SELECT u FROM User u WHERE u.status IN ('active', 'pending')");
+
+        $condition = $ast->where->condition;
+        $this->assertInstanceOf(InExpression::class, $condition);
+        $this->assertCount(2, $condition->values);
+
+        $this->assertInstanceOf(Literal::class, $condition->values[0]);
+        $this->assertSame('active', $condition->values[0]->value);
+        $this->assertSame('string', $condition->values[0]->type);
+
+        $this->assertInstanceOf(Literal::class, $condition->values[1]);
+        $this->assertSame('pending', $condition->values[1]->value);
+    }
+
+    public function testThrowsOnUnclosedIn(): void
+    {
+        $this->expectException(OqlParseException::class);
+        $this->parser->parse('SELECT u FROM User u WHERE u.id IN (1, 2');
+    }
+
+    // ── Aggregate Functions (Requirements 7.1, 7.2, 7.3) ───────────
+
+    public function testParseCount(): void
+    {
+        $ast = $this->parser->parse('SELECT COUNT(u.id) FROM User u');
+
+        $this->assertCount(1, $ast->selectExpressions);
+        $expr = $ast->selectExpressions[0]->expression;
+        $this->assertInstanceOf(FunctionCall::class, $expr);
+        $this->assertSame('COUNT', $expr->functionName);
+        $this->assertInstanceOf(PropertyAccess::class, $expr->argument);
+        $this->assertSame('u', $expr->argument->alias);
+        $this->assertSame('id', $expr->argument->property);
+        $this->assertFalse($expr->distinct);
+    }
+
+    public function testParseCountStar(): void
+    {
+        $ast = $this->parser->parse('SELECT COUNT(*) FROM User u');
+
+        $expr = $ast->selectExpressions[0]->expression;
+        $this->assertInstanceOf(FunctionCall::class, $expr);
+        $this->assertSame('COUNT', $expr->functionName);
+        $this->assertSame('*', $expr->argument);
+        $this->assertFalse($expr->distinct);
+    }
+
+    public function testParseCountDistinct(): void
+    {
+        $ast = $this->parser->parse('SELECT COUNT(DISTINCT u.department) FROM User u');
+
+        $expr = $ast->selectExpressions[0]->expression;
+        $this->assertInstanceOf(FunctionCall::class, $expr);
+        $this->assertSame('COUNT', $expr->functionName);
+        $this->assertTrue($expr->distinct);
+        $this->assertInstanceOf(PropertyAccess::class, $expr->argument);
+        $this->assertSame('department', $expr->argument->property);
+    }
+
+    public function testParseSum(): void
+    {
+        $ast = $this->parser->parse('SELECT SUM(o.amount) FROM Order o');
+
+        $expr = $ast->selectExpressions[0]->expression;
+        $this->assertInstanceOf(FunctionCall::class, $expr);
+        $this->assertSame('SUM', $expr->functionName);
+        $this->assertInstanceOf(PropertyAccess::class, $expr->argument);
+        $this->assertSame('amount', $expr->argument->property);
+    }
+
+    public function testParseAvg(): void
+    {
+        $ast = $this->parser->parse('SELECT AVG(o.price) FROM Order o');
+
+        $expr = $ast->selectExpressions[0]->expression;
+        $this->assertInstanceOf(FunctionCall::class, $expr);
+        $this->assertSame('AVG', $expr->functionName);
+    }
+
+    public function testParseMin(): void
+    {
+        $ast = $this->parser->parse('SELECT MIN(o.createdAt) FROM Order o');
+
+        $expr = $ast->selectExpressions[0]->expression;
+        $this->assertInstanceOf(FunctionCall::class, $expr);
+        $this->assertSame('MIN', $expr->functionName);
+    }
+
+    public function testParseMax(): void
+    {
+        $ast = $this->parser->parse('SELECT MAX(o.total) FROM Order o');
+
+        $expr = $ast->selectExpressions[0]->expression;
+        $this->assertInstanceOf(FunctionCall::class, $expr);
+        $this->assertSame('MAX', $expr->functionName);
+    }
+
+    // ── HAVING (Requirement 7.4) ────────────────────────────────────
+
+    public function testParseHaving(): void
+    {
+        $ast = $this->parser->parse('SELECT u.department, COUNT(u.id) FROM User u GROUP BY u.department HAVING COUNT(u.id) > 5');
+
+        $this->assertNotNull($ast->groupBy);
+        $this->assertNotNull($ast->havingClause);
+        $this->assertInstanceOf(HavingClause::class, $ast->havingClause);
+
+        $condition = $ast->havingClause->condition;
+        $this->assertInstanceOf(Comparison::class, $condition);
+        $this->assertInstanceOf(FunctionCall::class, $condition->left);
+        $this->assertSame('COUNT', $condition->left->functionName);
+        $this->assertSame('>', $condition->operator);
+        $this->assertInstanceOf(Literal::class, $condition->right);
+        $this->assertSame(5, $condition->right->value);
+    }
+
+    // ── Entity-based JOIN WITH (Requirements 8.1, 8.2, 8.4) ────────
+
+    public function testParseEntityJoinWith(): void
+    {
+        $ast = $this->parser->parse('SELECT u FROM User u JOIN Address a WITH a.userId = u.id');
+
+        $this->assertCount(1, $ast->joins);
+        $join = $ast->joins[0];
+        $this->assertInstanceOf(JoinClause::class, $join);
+        $this->assertSame('JOIN', $join->joinType);
+        $this->assertSame('Address', $join->entityName);
+        $this->assertSame('a', $join->alias);
+        $this->assertNotNull($join->withCondition);
+        $this->assertInstanceOf(Comparison::class, $join->withCondition);
+        $this->assertSame('=', $join->withCondition->operator);
+    }
+
+    public function testParseLeftJoinEntityWith(): void
+    {
+        $ast = $this->parser->parse('SELECT u FROM User u LEFT JOIN Profile p WITH p.userId = u.id');
+
+        $this->assertCount(1, $ast->joins);
+        $join = $ast->joins[0];
+        $this->assertSame('LEFT JOIN', $join->joinType);
+        $this->assertSame('Profile', $join->entityName);
+        $this->assertSame('p', $join->alias);
+        $this->assertNotNull($join->withCondition);
+    }
+
+    public function testExistingRelationshipJoinStillWorks(): void
+    {
+        $ast = $this->parser->parse('SELECT u FROM User u JOIN u.posts p WHERE p.title = :title');
+
+        $this->assertCount(1, $ast->joins);
+        $join = $ast->joins[0];
+        $this->assertSame('JOIN', $join->joinType);
+        $this->assertSame('u', $join->property->alias);
+        $this->assertSame('posts', $join->property->property);
+        $this->assertSame('p', $join->alias);
+        $this->assertNull($join->entityName);
+        $this->assertNull($join->withCondition);
+    }
+
+    public function testExistingLeftJoinStillWorks(): void
+    {
+        $ast = $this->parser->parse('SELECT u FROM User u LEFT JOIN u.comments c');
+
+        $this->assertCount(1, $ast->joins);
+        $join = $ast->joins[0];
+        $this->assertSame('LEFT JOIN', $join->joinType);
+        $this->assertSame('u', $join->property->alias);
+        $this->assertSame('comments', $join->property->property);
+        $this->assertNull($join->entityName);
+        $this->assertNull($join->withCondition);
+    }
+
+    // ── SELECT * and SELECT DISTINCT (Requirement 9.1) ──────────────
+
+    public function testParseSelectWildcard(): void
+    {
+        $ast = $this->parser->parse('SELECT * FROM User u');
+
+        $this->assertCount(1, $ast->selectExpressions);
+        $this->assertSame('*', $ast->selectExpressions[0]->expression);
+    }
+
+    public function testParseSelectDistinct(): void
+    {
+        $ast = $this->parser->parse('SELECT DISTINCT u.name FROM User u');
+
+        $this->assertTrue($ast->distinct);
+        $this->assertCount(1, $ast->selectExpressions);
+        $this->assertSame('u.name', $ast->selectExpressions[0]->expression);
+    }
+
+    public function testParseSelectNotDistinctByDefault(): void
+    {
+        $ast = $this->parser->parse('SELECT u FROM User u');
+
+        $this->assertFalse($ast->distinct);
+    }
+
+    // ── Column Aliases (Requirement 9.2) ────────────────────────────
+
+    public function testParseColumnAlias(): void
+    {
+        $ast = $this->parser->parse('SELECT u.name AS userName FROM User u');
+
+        $this->assertCount(1, $ast->selectExpressions);
+        $this->assertSame('u.name', $ast->selectExpressions[0]->expression);
+        $this->assertSame('userName', $ast->selectExpressions[0]->alias);
+    }
+
+    public function testParseFunctionCallWithAlias(): void
+    {
+        $ast = $this->parser->parse('SELECT COUNT(u.id) AS total FROM User u');
+
+        $this->assertCount(1, $ast->selectExpressions);
+        $expr = $ast->selectExpressions[0];
+        $this->assertInstanceOf(FunctionCall::class, $expr->expression);
+        $this->assertSame('COUNT', $expr->expression->functionName);
+        $this->assertSame('total', $expr->alias);
+    }
+
+    public function testParseMultipleExpressionsWithAliases(): void
+    {
+        $ast = $this->parser->parse('SELECT u.department AS dept, COUNT(u.id) AS cnt FROM User u GROUP BY u.department');
+
+        $this->assertCount(2, $ast->selectExpressions);
+        $this->assertSame('u.department', $ast->selectExpressions[0]->expression);
+        $this->assertSame('dept', $ast->selectExpressions[0]->alias);
+        $this->assertInstanceOf(FunctionCall::class, $ast->selectExpressions[1]->expression);
+        $this->assertSame('cnt', $ast->selectExpressions[1]->alias);
+    }
+
+    public function testParseExpressionWithoutAlias(): void
+    {
+        $ast = $this->parser->parse('SELECT u.name FROM User u');
+
+        $this->assertNull($ast->selectExpressions[0]->alias);
+    }
+
+    // ── Error Cases ─────────────────────────────────────────────────
+
+    public function testThrowsOnIsFollowedByInvalidToken(): void
+    {
+        $this->expectException(OqlParseException::class);
+        $this->parser->parse('SELECT u FROM User u WHERE u.name IS VALID');
+    }
+
+    public function testThrowsOnInWithoutOpenParen(): void
+    {
+        $this->expectException(OqlParseException::class);
+        $this->parser->parse('SELECT u FROM User u WHERE u.id IN 1, 2, 3');
     }
 }

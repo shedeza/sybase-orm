@@ -12,6 +12,7 @@ use SybaseORM\Exception\PersistenceException;
 use SybaseORM\Metadata\MetadataReader;
 use SybaseORM\ORM\IdentityMap;
 use SybaseORM\ORM\UnitOfWork;
+use SybaseORM\Tests\ORM\Fixtures\CompositeKeyEntity;
 use SybaseORM\Tests\ORM\Fixtures\CustomerEntity;
 use SybaseORM\Tests\ORM\Fixtures\OrderEntity;
 use SybaseORM\Tests\ORM\Fixtures\OrderItemEntity;
@@ -510,5 +511,115 @@ final class UnitOfWorkTest extends TestCase
         $this->assertStringNotContainsString('[id]', $sql);
         $this->assertStringContainsString('[description]', $sql);
         $this->assertStringContainsString('[total]', $sql);
+    }
+
+    // ---------------------------------------------------------------
+    // Task 3.7: Composite WHERE clause tests
+    // ---------------------------------------------------------------
+
+    public function testUpdateSingleKeyWhereClauseBackwardCompat(): void
+    {
+        $order = new OrderEntity();
+        $order->setId(42);
+        $order->setDescription('Original');
+        $order->setTotal(100.0);
+
+        $this->unitOfWork->registerClean($order);
+        $order->setDescription('Updated');
+
+        $this->unitOfWork->commit();
+
+        $this->assertCount(1, $this->executedStatements);
+        $sql = $this->executedStatements[0]['sql'];
+
+        // Single-key entity should produce WHERE [id] = ?
+        $this->assertStringContainsString('WHERE [id] = ?', $sql);
+        // Should NOT contain AND in the WHERE clause (single key)
+        $this->assertStringNotContainsString(' AND ', $sql);
+
+        // The last parameter should be the id value
+        $params = $this->executedStatements[0]['params'];
+        $this->assertSame(42, $params[array_key_last($params)]);
+    }
+
+    public function testDeleteSingleKeyWhereClauseBackwardCompat(): void
+    {
+        $order = new OrderEntity();
+        $order->setId(99);
+        $order->setDescription('To Delete');
+
+        $this->unitOfWork->registerClean($order);
+        $this->unitOfWork->registerDeleted($order);
+
+        $this->unitOfWork->commit();
+
+        $this->assertCount(1, $this->executedStatements);
+        $sql = $this->executedStatements[0]['sql'];
+
+        // Single-key entity should produce DELETE FROM [orders] WHERE [id] = ?
+        $this->assertStringContainsString('DELETE FROM', $sql);
+        $this->assertStringContainsString('WHERE [id] = ?', $sql);
+        $this->assertStringNotContainsString(' AND ', $sql);
+
+        // The parameter should be the id value
+        $params = $this->executedStatements[0]['params'];
+        $this->assertSame(99, $params[0]);
+    }
+
+    public function testUpdateCompositeKeyWhereClauseWithAndJoinedConditions(): void
+    {
+        $entity = new CompositeKeyEntity();
+        $entity->setOrgId(10);
+        $entity->setUserId(20);
+        $entity->setRole('admin');
+
+        $this->unitOfWork->registerClean($entity);
+        $entity->setRole('editor');
+
+        $this->unitOfWork->commit();
+
+        $this->assertCount(1, $this->executedStatements);
+        $sql = $this->executedStatements[0]['sql'];
+
+        // Composite-key entity should produce WHERE [org_id] = ? AND [user_id] = ?
+        $this->assertStringContainsString('UPDATE', $sql);
+        $this->assertStringContainsString('[composite_entities]', $sql);
+        $this->assertStringContainsString('[org_id] = ?', $sql);
+        $this->assertStringContainsString('[user_id] = ?', $sql);
+        $this->assertStringContainsString(' AND ', $sql);
+
+        // Params: first is the SET value ('editor'), then WHERE values (10, 20)
+        $params = $this->executedStatements[0]['params'];
+        $this->assertSame('editor', $params[0]);
+        $this->assertSame(10, $params[1]);
+        $this->assertSame(20, $params[2]);
+    }
+
+    public function testDeleteCompositeKeyWhereClauseWithAndJoinedConditions(): void
+    {
+        $entity = new CompositeKeyEntity();
+        $entity->setOrgId(10);
+        $entity->setUserId(20);
+        $entity->setRole('admin');
+
+        $this->unitOfWork->registerClean($entity);
+        $this->unitOfWork->registerDeleted($entity);
+
+        $this->unitOfWork->commit();
+
+        $this->assertCount(1, $this->executedStatements);
+        $sql = $this->executedStatements[0]['sql'];
+
+        // Composite-key entity should produce DELETE FROM [composite_entities] WHERE [org_id] = ? AND [user_id] = ?
+        $this->assertStringContainsString('DELETE FROM', $sql);
+        $this->assertStringContainsString('[composite_entities]', $sql);
+        $this->assertStringContainsString('[org_id] = ?', $sql);
+        $this->assertStringContainsString('[user_id] = ?', $sql);
+        $this->assertStringContainsString(' AND ', $sql);
+
+        // Params should be the composite key values
+        $params = $this->executedStatements[0]['params'];
+        $this->assertSame(10, $params[0]);
+        $this->assertSame(20, $params[1]);
     }
 }

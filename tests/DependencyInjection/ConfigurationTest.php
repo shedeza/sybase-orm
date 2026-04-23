@@ -235,4 +235,37 @@ final class ConfigurationTest extends TestCase
         $this->assertSame('%env(SYBASE_USERNAME)%', $config['connection']['username']);
         $this->assertSame('%env(SYBASE_PASSWORD)%', $config['connection']['password']);
     }
+
+    // --- Task 13.3: charset_conversion configuration ---
+
+    public function testCharsetConversionOptionAccepted(): void
+    {
+        $config = $this->processor->processConfiguration($this->configuration, [
+            [
+                'connection' => [
+                    'host' => 'localhost',
+                    'database' => 'test',
+                    'username' => 'sa',
+                    'charset_conversion' => true,
+                ],
+            ],
+        ]);
+
+        $this->assertTrue($config['connection']['charset_conversion']);
+    }
+
+    public function testCharsetConversionDefaultsToFalse(): void
+    {
+        $config = $this->processor->processConfiguration($this->configuration, [
+            [
+                'connection' => [
+                    'host' => 'localhost',
+                    'database' => 'test',
+                    'username' => 'sa',
+                ],
+            ],
+        ]);
+
+        $this->assertFalse($config['connection']['charset_conversion']);
+    }
 }

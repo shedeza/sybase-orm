@@ -133,6 +133,42 @@ final class EntityRepositoryTest extends TestCase
         $this->assertNull($this->repo->find(999));
     }
 
+    public function testFindWithArrayDelegatesToFindOneByForCompositeKeys(): void
+    {
+        $entity = new CustomerEntity();
+        $entity->setId(1);
+        $entity->setName('Alice');
+
+        $compositeKey = ['id' => 1, 'name' => 'Alice'];
+
+        // find() con array NO debe llamar a EntityManager::find()
+        $this->em->expects($this->never())
+            ->method('find');
+
+        // Debe delegar a query() vía findBy → findOneBy
+        $this->em->expects($this->once())
+            ->method('query')
+            ->willReturn([$entity]);
+
+        $result = $this->repo->find($compositeKey);
+        $this->assertSame($entity, $result);
+    }
+
+    public function testFindWithArrayReturnsNullWhenNoMatch(): void
+    {
+        $compositeKey = ['id' => 999, 'name' => 'Nobody'];
+
+        $this->em->expects($this->never())
+            ->method('find');
+
+        $this->em->expects($this->once())
+            ->method('query')
+            ->willReturn([]);
+
+        $result = $this->repo->find($compositeKey);
+        $this->assertNull($result);
+    }
+
     // ── query() ─────────────────────────────────────────────────────
 
     public function testQueryDelegatesToEntityManager(): void

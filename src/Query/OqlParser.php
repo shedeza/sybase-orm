@@ -7,7 +7,11 @@ namespace SybaseORM\Query;
 use SybaseORM\Exception\OqlParseException;
 use SybaseORM\Query\AST\Comparison;
 use SybaseORM\Query\AST\FromClause;
+use SybaseORM\Query\AST\FunctionCall;
 use SybaseORM\Query\AST\GroupByClause;
+use SybaseORM\Query\AST\HavingClause;
+use SybaseORM\Query\AST\InExpression;
+use SybaseORM\Query\AST\IsNullExpression;
 use SybaseORM\Query\AST\JoinClause;
 use SybaseORM\Query\AST\Literal;
 use SybaseORM\Query\AST\LogicalExpression;
@@ -23,11 +27,14 @@ use SybaseORM\Query\AST\WhereClause;
  * Parses OQL (Object Query Language) strings into AST nodes.
  *
  * OQL syntax:
- *   SELECT expr[, expr...] FROM EntityName alias
+ *   SELECT [DISTINCT] expr[, expr...] FROM EntityName alias
  *   [JOIN alias.property joinAlias]
+ *   [JOIN EntityName joinAlias WITH condition]
  *   [LEFT JOIN alias.property joinAlias]
+ *   [LEFT JOIN EntityName joinAlias WITH condition]
  *   [WHERE condition]
  *   [GROUP BY alias.prop[, alias.prop...]]
+ *   [HAVING condition]
  *   [ORDER BY alias.prop [ASC|DESC][, ...]]
  */
 final class OqlParser
@@ -36,7 +43,9 @@ final class OqlParser
     private array $tokens = [];
     private int $pos = 0;
 
-    private const COMPARISON_OPERATORS = ['=', '!=', '<', '>', '<=', '>=', 'LIKE', 'IN'];
+    private const COMPARISON_OPERATORS = ['=', '!=', '<', '>', '<=', '>=', 'LIKE'];
+
+    private const AGGREGATE_FUNCTIONS = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'];
 
     public function parse(string $oql): SelectStatement
     {
@@ -97,8 +106,8 @@ final class OqlParser
                 }
             }
 
-            // Single-char operators/punctuation
-            if (in_array($oql[$i], ['=', '<', '>', ',', '(', ')'], true)) {
+            // Single-char operators/punctuation (including * for wildcards and COUNT(*))
+            if (in_array($oql[$i], ['=', '<', '>', ',', '(', ')', '*'], true)) {
                 $this->tokens[] = $oql[$i];
                 $i++;
                 continue;
@@ -122,6 +131,13 @@ final class OqlParser
     private function parseSelectStatement(): SelectStatement
     {
         $this->expect('SELECT');
+
+        // Task 6.6: Check for DISTINCT after SELECT
+        $distinct = false;
+        if ($this->isAt('DISTINCT')) {
+            $distinct = true;
+            $this->advance();
+        }
 
         $selectExpressions = $this->parseSelectExpressions();
 
@@ -147,6 +163,13 @@ final class OqlParser
             $groupBy = $this->parseGroupByClause();
         }
 
+        // Task 6.4: Check for HAVING after GROUP BY
+        $havingClause = null;
+        if ($this->isAt('HAVING')) {
+            $this->advance();
+            $havingClause = new HavingClause($this->parseCondition());
+        }
+
         $orderBy = null;
         if ($this->isAt('ORDER')) {
             $this->advance();
@@ -169,6 +192,8 @@ final class OqlParser
             joins: $joins,
             orderBy: $orderBy,
             groupBy: $groupBy,
+            havingClause: $havingClause,
+            distinct: $distinct,
         );
     }
 
@@ -190,10 +215,90 @@ final class OqlParser
 
     private function parseSelectExpression(): SelectExpression
     {
+        // Task 6.6: Handle * wildcard
+        if ($this->isAt('*')) {
+            $this->advance();
+
+            return new SelectExpression('*');
+        }
+
+        // Task 6.3: Handle aggregate functions
+        $token = $this->current();
+        if (in_array(strtoupper($token), self::AGGREGATE_FUNCTIONS, true)) {
+            $functionCall = $this->parseFunctionCall();
+
+            // Task 6.7: Check for AS alias after function call
+            $alias = null;
+            if ($this->isAt('AS')) {
+                $this->advance();
+                $alias = $this->current();
+                $this->advance();
+            }
+
+            return new SelectExpression($functionCall, $alias);
+        }
+
         $expr = $this->current();
         $this->advance();
 
-        return new SelectExpression($expr);
+        // Task 6.7: Check for AS alias after expression
+        $alias = null;
+        if ($this->isAt('AS')) {
+            $this->advance();
+            $alias = $this->current();
+            $this->advance();
+        }
+
+        return new SelectExpression($expr, $alias);
+    }
+
+    /**
+     * Parses an aggregate function call: FUNC([DISTINCT] argument)
+     */
+    private function parseFunctionCall(): FunctionCall
+    {
+        $functionName = strtoupper($this->current());
+        $this->advance();
+
+        $this->expect('(');
+
+        // Check for DISTINCT
+        $distinct = false;
+        if ($this->isAt('DISTINCT')) {
+            $distinct = true;
+            $this->advance();
+        }
+
+        // Check for * (COUNT(*))
+        if ($this->isAt('*')) {
+            $argument = '*';
+            $this->advance();
+        } else {
+            // Parse property access as argument
+            $token = $this->current();
+            $this->advance();
+
+            if (str_contains($token, '.')) {
+                $parts = explode('.', $token);
+                if (count($parts) === 2) {
+                    $argument = new PropertyAccess($parts[0], $parts[1]);
+                } else {
+                    throw new OqlParseException(sprintf(
+                        'Expected property access (alias.property) in function argument, got "%s".',
+                        $token,
+                    ));
+                }
+            } else {
+                throw new OqlParseException(sprintf(
+                    'Expected property access (alias.property) or "*" in function argument, got "%s".',
+                    $token,
+                ));
+            }
+        }
+
+        $this->expect(')');
+
+        return new FunctionCall($functionName, $argument, $distinct);
     }
 
     private function parseFromClause(): FromClause
@@ -222,6 +327,11 @@ final class OqlParser
         return false;
     }
 
+    /**
+     * Task 6.5: Extended to support entity-based JOIN with WITH condition.
+     * If the identifier after JOIN contains a dot, it's a relationship-based join.
+     * Otherwise, it's an entity-based join: JOIN EntityName alias WITH condition.
+     */
     private function parseJoinClause(): JoinClause
     {
         $joinType = 'JOIN';
@@ -238,43 +348,158 @@ final class OqlParser
             $this->expect('JOIN');
         }
 
-        $propertyPath = $this->current();
+        $identifier = $this->current();
         $this->advance();
 
-        $parts = explode('.', $propertyPath);
-        if (count($parts) !== 2) {
-            throw new OqlParseException(sprintf(
-                'Expected property access (alias.property) in JOIN, got "%s".',
-                $propertyPath,
-            ));
+        // Check if this is a relationship-based join (contains dot) or entity-based join
+        if (str_contains($identifier, '.')) {
+            // Relationship-based join: alias.property joinAlias
+            $parts = explode('.', $identifier);
+            if (count($parts) !== 2) {
+                throw new OqlParseException(sprintf(
+                    'Expected property access (alias.property) in JOIN, got "%s".',
+                    $identifier,
+                ));
+            }
+
+            $property = new PropertyAccess($parts[0], $parts[1]);
+
+            $alias = $this->current();
+            $this->advance();
+
+            return new JoinClause($joinType, $property, $alias);
         }
 
-        $property = new PropertyAccess($parts[0], $parts[1]);
+        // Entity-based join: EntityName alias WITH condition
+        $entityName = $identifier;
 
         $alias = $this->current();
         $this->advance();
 
-        return new JoinClause($joinType, $property, $alias);
+        $this->expect('WITH');
+
+        $withCondition = $this->parseCondition();
+
+        return new JoinClause(
+            $joinType,
+            new PropertyAccess($entityName, ''),
+            $alias,
+            $entityName,
+            $withCondition,
+        );
     }
 
-    private function parseCondition(): Comparison|LogicalExpression
+    /**
+     * Task 6.1 & 6.2: Extended to support IS NULL, IS NOT NULL, IN, NOT IN
+     * in addition to standard comparisons and logical expressions.
+     *
+     * @return Comparison|LogicalExpression|IsNullExpression|InExpression
+     */
+    private function parseCondition(): Comparison|LogicalExpression|IsNullExpression|InExpression
     {
-        $left = $this->parseComparison();
+        $left = $this->parseSingleCondition();
 
         while ($this->isAt('AND') || $this->isAt('OR')) {
             $operator = strtoupper($this->current());
             $this->advance();
-            $right = $this->parseComparison();
+            $right = $this->parseSingleCondition();
             $left = new LogicalExpression($left, $operator, $right);
         }
 
         return $left;
     }
 
-    private function parseComparison(): Comparison
+    /**
+     * Parses a single condition: comparison, IS NULL, IS NOT NULL, IN, or NOT IN.
+     *
+     * @return Comparison|IsNullExpression|InExpression
+     */
+    private function parseSingleCondition(): Comparison|IsNullExpression|InExpression
     {
+        // Check if the left operand is an aggregate function (for HAVING conditions)
+        $token = $this->current();
+        if (in_array(strtoupper($token), self::AGGREGATE_FUNCTIONS, true)) {
+            $left = $this->parseFunctionCall();
+
+            // After a function call, expect a comparison operator
+            $operator = strtoupper($this->current());
+            if (!in_array($operator, self::COMPARISON_OPERATORS, true)) {
+                throw new OqlParseException(sprintf(
+                    'Expected comparison operator, got "%s".',
+                    $this->current(),
+                ));
+            }
+            $this->advance();
+
+            $right = $this->parseOperand();
+
+            return new Comparison($left, $operator, $right);
+        }
+
         $left = $this->parseOperand();
 
+        // Task 6.1: Check for IS [NOT] NULL
+        if ($this->isAt('IS')) {
+            if (!($left instanceof PropertyAccess)) {
+                throw new OqlParseException(sprintf(
+                    'IS NULL/IS NOT NULL requires a property access on the left side at position %d.',
+                    $this->pos,
+                ));
+            }
+            $this->advance();
+
+            if ($this->isAt('NOT')) {
+                $this->advance();
+                $this->expect('NULL');
+
+                return new IsNullExpression($left, negated: true);
+            }
+
+            if ($this->isAt('NULL')) {
+                $this->advance();
+
+                return new IsNullExpression($left, negated: false);
+            }
+
+            throw new OqlParseException(sprintf(
+                'Expected "NULL" or "NOT", got "%s" at position %d.',
+                $this->currentOrEmpty(),
+                $this->pos,
+            ));
+        }
+
+        // Task 6.2: Check for NOT IN
+        if ($this->isAt('NOT') && $this->peek() !== null && strtoupper($this->peek()) === 'IN') {
+            if (!($left instanceof PropertyAccess)) {
+                throw new OqlParseException(sprintf(
+                    'NOT IN requires a property access on the left side at position %d.',
+                    $this->pos,
+                ));
+            }
+            $this->advance(); // consume NOT
+            $this->advance(); // consume IN
+
+            $values = $this->parseInValueList();
+
+            return new InExpression($left, $values, negated: true);
+        }
+
+        // Task 6.2: Check for IN
+        if ($this->isAt('IN')) {
+            if (!($left instanceof PropertyAccess)) {
+                throw new OqlParseException(sprintf(
+                    'IN requires a property access on the left side at position %d.',
+                    $this->pos,
+                ));
+            }
+            $this->advance(); // consume IN
+
+            $values = $this->parseInValueList();
+
+            return new InExpression($left, $values, negated: false);
+        }
+
+        // Standard comparison
         $operator = strtoupper($this->current());
         if (!in_array($operator, self::COMPARISON_OPERATORS, true)) {
             throw new OqlParseException(sprintf(
@@ -287,6 +512,74 @@ final class OqlParser
         $right = $this->parseOperand();
 
         return new Comparison($left, $operator, $right);
+    }
+
+    /**
+     * Parses the value list for IN/NOT IN: ( valueList )
+     * valueList := parameter | literal (',' literal)*
+     *
+     * @return array<Parameter|Literal>
+     */
+    private function parseInValueList(): array
+    {
+        $this->expect('(');
+
+        $values = [];
+        $values[] = $this->parseInValue();
+
+        while ($this->isAt(',')) {
+            $this->advance();
+            $values[] = $this->parseInValue();
+        }
+
+        $this->expect(')');
+
+        if (empty($values)) {
+            throw new OqlParseException(sprintf(
+                'IN list cannot be empty at position %d.',
+                $this->pos,
+            ));
+        }
+
+        return $values;
+    }
+
+    /**
+     * Parses a single value inside an IN list: parameter or literal.
+     */
+    private function parseInValue(): Parameter|Literal
+    {
+        $token = $this->current();
+
+        // Parameter
+        if (str_starts_with($token, ':')) {
+            $this->advance();
+
+            return new Parameter(substr($token, 1));
+        }
+
+        // String literal
+        if (str_starts_with($token, "'") && str_ends_with($token, "'")) {
+            $this->advance();
+
+            return new Literal(substr($token, 1, -1), 'string');
+        }
+
+        // Numeric literal
+        if (is_numeric($token)) {
+            $this->advance();
+            if (str_contains($token, '.')) {
+                return new Literal((float) $token, 'float');
+            }
+
+            return new Literal((int) $token, 'integer');
+        }
+
+        throw new OqlParseException(sprintf(
+            'Expected parameter or literal in IN list, got "%s" at position %d.',
+            $token,
+            $this->pos,
+        ));
     }
 
     private function parseOperand(): PropertyAccess|Literal|Parameter

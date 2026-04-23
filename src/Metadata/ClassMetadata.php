@@ -15,30 +15,49 @@ final class ClassMetadata
     /** @var array<string, ColumnMetadata> Mapa indexado columnName → ColumnMetadata */
     private array $columnsByName = [];
 
+    /** @var string[] Property names of all primary key fields */
+    public readonly array $idFields;
+
+    public readonly ?string $idField;
+
     /**
      * @param string                $entityClass        Fully qualified class name
      * @param string                $tableName          Database table name
      * @param string|null           $schema             Database schema name (e.g. 'dbo')
      * @param ColumnMetadata[]      $columns            Mapped columns
-     * @param string|null           $idField            Property name of the primary key
+     * @param string|null           $idField            Property name of the primary key (backward compat)
      * @param RelationshipMetadata[] $relationships     Mapped relationships
      * @param string|null           $inheritanceType    TPH, TPT, TPC or null
      * @param string|null           $discriminatorColumn Discriminator column name
      * @param array<string, string> $discriminatorMap   Discriminator value => class map
      * @param array<string, string[]> $lifecycleHooks   Hook type => method names
+     * @param string[]              $idFields           Property names of all primary key fields
      */
     public function __construct(
         public readonly string $entityClass,
         public readonly string $tableName,
         public readonly ?string $schema = null,
         public readonly array $columns = [],
-        public readonly ?string $idField = null,
+        ?string $idField = null,
         public readonly array $relationships = [],
         public readonly ?string $inheritanceType = null,
         public readonly ?string $discriminatorColumn = null,
         public readonly array $discriminatorMap = [],
         public readonly array $lifecycleHooks = [],
+        array $idFields = [],
     ) {
+        // Compute idFields and idField for backward compatibility
+        if ($idFields !== []) {
+            $this->idFields = $idFields;
+            $this->idField = $idFields[0];
+        } elseif ($idField !== null) {
+            $this->idFields = [$idField];
+            $this->idField = $idField;
+        } else {
+            $this->idFields = [];
+            $this->idField = null;
+        }
+
         // Pre-computar mapas indexados para búsqueda O(1)
         foreach ($this->columns as $column) {
             $this->columnsByProperty[$column->propertyName] = $column;
@@ -76,15 +95,30 @@ final class ClassMetadata
     }
 
     /**
+     * Returns ColumnMetadata[] for all primary key fields.
+     * @return ColumnMetadata[]
+     */
+    public function getIdColumns(): array
+    {
+        $idColumns = [];
+        foreach ($this->idFields as $fieldName) {
+            $column = $this->getColumn($fieldName);
+            if ($column !== null) {
+                $idColumns[] = $column;
+            }
+        }
+
+        return $idColumns;
+    }
+
+    /**
      * Returns the ColumnMetadata for the primary key, or null if not set.
      */
     public function getIdColumn(): ?ColumnMetadata
     {
-        if ($this->idField === null) {
-            return null;
-        }
+        $idColumns = $this->getIdColumns();
 
-        return $this->getColumn($this->idField);
+        return $idColumns[0] ?? null;
     }
 
     /**

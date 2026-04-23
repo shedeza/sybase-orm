@@ -98,22 +98,52 @@ final class EntityManager implements EntityManagerInterface
             return $entity;
         }
 
-        // 3. Query the database
+        // 3. Build query
         $metadata = $this->metadataReader->getClassMetadata($entityClass);
-        $idColumn = $metadata->getIdColumn();
 
-        if ($idColumn === null) {
-            return null;
+        if (is_array($id)) {
+            // Composite key: validate keys match declared idFields
+            $idColumns = $metadata->getIdColumns();
+            $declaredFields = array_map(fn($c) => $c->propertyName, $idColumns);
+            $providedFields = array_keys($id);
+            sort($declaredFields);
+            sort($providedFields);
+            if ($declaredFields !== $providedFields) {
+                throw new PersistenceException(
+                    sprintf(
+                        'Key mismatch for entity "%s": expected [%s], got [%s].',
+                        $entityClass,
+                        implode(', ', $declaredFields),
+                        implode(', ', $providedFields),
+                    ),
+                );
+            }
+
+            // Build multi-column WHERE
+            $conditions = [];
+            $dbValues = [];
+            foreach ($idColumns as $idCol) {
+                $conditions[] = $this->dialect->quoteIdentifier($idCol->columnName) . ' = ?';
+                $dbValues[] = $this->typeCaster->toDatabaseValue($id[$idCol->propertyName], $idCol->type);
+            }
+            $whereClause = implode(' AND ', $conditions);
+        } else {
+            // Single key: existing behavior
+            $idColumn = $metadata->getIdColumn();
+            if ($idColumn === null) {
+                return null;
+            }
+            $whereClause = $this->dialect->quoteIdentifier($idColumn->columnName) . ' = ?';
+            $dbValues = [$this->typeCaster->toDatabaseValue($id, $idColumn->type)];
         }
 
         $sql = $this->dialect->generateSelect(
             ['*'],
             $metadata->getQualifiedTableName(),
         );
-        $sql .= ' WHERE ' . $this->dialect->quoteIdentifier($idColumn->columnName) . ' = ?';
+        $sql .= ' WHERE ' . $whereClause;
 
-        $dbValue = $this->typeCaster->toDatabaseValue($id, $idColumn->type);
-        $stmt = $this->connectionManager->executeQuery($sql, [$dbValue]);
+        $stmt = $this->connectionManager->executeQuery($sql, $dbValues);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
         $stmt->closeCursor();
 
@@ -139,7 +169,7 @@ final class EntityManager implements EntityManagerInterface
         return $qb;
     }
 
-    public function query(string $oql, array $params = []): array
+    public function query(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): array
     {
         $ast = $this->oqlParser->parse($oql);
 
@@ -153,15 +183,36 @@ final class EntityManager implements EntityManagerInterface
         $sql = $result['sql'];
         $parameterNames = $result['parameters'];
 
-        // Map named parameters to ordered values
+        // Map named parameters to ordered values, expanding array params for IN clauses
         $orderedParams = [];
         foreach ($parameterNames as $name) {
-            $orderedParams[] = $params[$name] ?? null;
+            $value = $params[$name] ?? null;
+            if (is_array($value)) {
+                // IN parameter expansion: replace single named placeholder with N positional placeholders
+                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
+                foreach ($value as $item) {
+                    $orderedParams[] = $item;
+                }
+            } else {
+                $orderedParams[] = $value;
+            }
         }
 
         $stmt = $this->connectionManager->executeQuery($sql, $orderedParams);
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         $stmt->closeCursor();
+
+        // Auto-detect hydration mode: if AST contains FunctionCall, aliases, or multi-entity selects, default to HYDRATE_ARRAY
+        $effectiveMode = $hydrationMode;
+        if ($hydrationMode === HydrationMode::HYDRATE_OBJECT && $this->shouldAutoDetectArrayMode($ast)) {
+            $effectiveMode = HydrationMode::HYDRATE_ARRAY;
+        }
+
+        // HYDRATE_ARRAY: return raw rows without hydration
+        if ($effectiveMode === HydrationMode::HYDRATE_ARRAY) {
+            return $rows;
+        }
 
         // Determine entity class from the FROM clause
         $entityClass = $this->resolveEntityFromAst($ast);
@@ -171,6 +222,106 @@ final class EntityManager implements EntityManagerInterface
         }
 
         return $this->hydrator->hydrateAll($rows, $entityClass);
+    }
+
+    public function queryIterator(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): \Generator
+    {
+        $ast = $this->oqlParser->parse($oql);
+
+        $translator = new OqlToSqlTranslator(
+            $this->dialect,
+            $this->metadataReader,
+            $this->entityClasses,
+        );
+
+        $result = $translator->translate($ast);
+        $sql = $result['sql'];
+        $parameterNames = $result['parameters'];
+
+        // Map named parameters to ordered values, expanding array params for IN clauses
+        $orderedParams = [];
+        foreach ($parameterNames as $name) {
+            $value = $params[$name] ?? null;
+            if (is_array($value)) {
+                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
+                foreach ($value as $item) {
+                    $orderedParams[] = $item;
+                }
+            } else {
+                $orderedParams[] = $value;
+            }
+        }
+
+        $stmt = $this->connectionManager->executeQuery($sql, $orderedParams);
+
+        // Auto-detect hydration mode
+        $effectiveMode = $hydrationMode;
+        if ($hydrationMode === HydrationMode::HYDRATE_OBJECT && $this->shouldAutoDetectArrayMode($ast)) {
+            $effectiveMode = HydrationMode::HYDRATE_ARRAY;
+        }
+
+        // Determine entity class from the FROM clause
+        $entityClass = ($effectiveMode === HydrationMode::HYDRATE_OBJECT)
+            ? $this->resolveEntityFromAst($ast)
+            : null;
+
+        try {
+            while (($row = $stmt->fetch(\PDO::FETCH_ASSOC)) !== false) {
+                if ($effectiveMode === HydrationMode::HYDRATE_ARRAY || $entityClass === null) {
+                    yield $row;
+                } else {
+                    yield $this->hydrator->hydrate($row, $entityClass);
+                }
+            }
+        } finally {
+            $stmt->closeCursor();
+        }
+    }
+
+    /**
+     * Determines if the AST should trigger automatic HYDRATE_ARRAY mode.
+     * Returns true when select expressions contain FunctionCall nodes, aliases,
+     * selections from multiple entities, or when GROUP BY is present.
+     */
+    private function shouldAutoDetectArrayMode(object $ast): bool
+    {
+        // GROUP BY present → array mode
+        if (isset($ast->groupBy) && $ast->groupBy !== null) {
+            return true;
+        }
+
+        if (!isset($ast->selectExpressions) || !is_array($ast->selectExpressions)) {
+            return false;
+        }
+
+        $aliases = [];
+        foreach ($ast->selectExpressions as $expr) {
+            // FunctionCall in select → array mode
+            if ($expr->expression instanceof \SybaseORM\Query\AST\FunctionCall) {
+                return true;
+            }
+
+            // Column alias → array mode
+            if ($expr->alias !== null) {
+                return true;
+            }
+
+            // Track entity aliases for multi-entity detection
+            if (is_string($expr->expression) && str_contains($expr->expression, '.')) {
+                $parts = explode('.', $expr->expression);
+                $aliases[$parts[0]] = true;
+            } elseif (is_string($expr->expression) && $expr->expression !== '*') {
+                $aliases[$expr->expression] = true;
+            }
+        }
+
+        // Multiple distinct entity aliases → array mode
+        if (count($aliases) > 1) {
+            return true;
+        }
+
+        return false;
     }
 
     public function clear(): void

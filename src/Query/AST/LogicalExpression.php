@@ -10,9 +10,9 @@ namespace SybaseORM\Query\AST;
 final class LogicalExpression
 {
     public function __construct(
-        public readonly Comparison|LogicalExpression $left,
+        public readonly Comparison|LogicalExpression|IsNullExpression|InExpression $left,
         public readonly string $operator,
-        public readonly Comparison|LogicalExpression $right,
+        public readonly Comparison|LogicalExpression|IsNullExpression|InExpression $right,
     ) {
     }
 }

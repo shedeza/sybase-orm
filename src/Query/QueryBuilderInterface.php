@@ -45,6 +45,9 @@ interface QueryBuilderInterface
     /** Especifica relaciones para Eager Loading mediante JOINs o WHERE IN. */
     public function with(string ...$relations): static;
 
+    /** Agrega una condición HAVING a la consulta. */
+    public function having(string $condition, array $params = []): static;
+
     /** Genera la consulta SQL parametrizada. */
     public function getSQL(): string;
 

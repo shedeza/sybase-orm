@@ -40,6 +40,11 @@ final class QueryBuilder implements QueryBuilderInterface
     /** @var string[] */
     private array $eagerRelations = [];
 
+    private ?string $havingCondition = null;
+
+    /** @var array<string, mixed> */
+    private array $havingParameters = [];
+
     public function __construct(
         private readonly DialectInterface $dialect,
     ) {
@@ -125,6 +130,14 @@ final class QueryBuilder implements QueryBuilderInterface
         return $this;
     }
 
+    public function having(string $condition, array $params = []): static
+    {
+        $this->havingCondition = $condition;
+        $this->havingParameters = $params;
+
+        return $this;
+    }
+
     public function limit(int $limit): static
     {
         $this->limitValue = $limit;
@@ -154,6 +167,7 @@ final class QueryBuilder implements QueryBuilderInterface
         $sql .= $this->buildEagerLoadingJoins();
         $sql .= $this->buildWhereClause();
         $sql .= $this->buildGroupByClause();
+        $sql .= $this->buildHavingClause();
         $sql .= $this->buildOrderByClause();
 
         if ($this->limitValue !== null) {
@@ -165,7 +179,7 @@ final class QueryBuilder implements QueryBuilderInterface
 
     public function getParameters(): array
     {
-        return $this->parameters;
+        return array_merge($this->parameters, $this->havingParameters);
     }
 
     // ── Private SQL-building helpers ────────────────────────────────
@@ -258,6 +272,15 @@ final class QueryBuilder implements QueryBuilderInterface
         }
 
         return ' GROUP BY ' . implode(', ', $this->groupByColumns);
+    }
+
+    private function buildHavingClause(): string
+    {
+        if ($this->havingCondition === null) {
+            return '';
+        }
+
+        return ' HAVING ' . $this->havingCondition;
     }
 
     private function buildOrderByClause(): string

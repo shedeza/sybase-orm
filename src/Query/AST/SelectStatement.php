@@ -20,6 +20,8 @@ final class SelectStatement
         public readonly array $joins = [],
         public readonly ?OrderByClause $orderBy = null,
         public readonly ?GroupByClause $groupBy = null,
+        public readonly ?HavingClause $havingClause = null,
+        public readonly bool $distinct = false,
     ) {
     }
 }

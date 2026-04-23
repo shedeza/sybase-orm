@@ -11,9 +11,9 @@ namespace SybaseORM\Query\AST;
 final class Comparison
 {
     public function __construct(
-        public readonly PropertyAccess|Literal|Parameter $left,
+        public readonly PropertyAccess|Literal|Parameter|FunctionCall $left,
         public readonly string $operator,
-        public readonly PropertyAccess|Literal|Parameter $right,
+        public readonly PropertyAccess|Literal|Parameter|FunctionCall $right,
     ) {
     }
 }

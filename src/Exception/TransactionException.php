@@ -7,7 +7,7 @@ namespace SybaseORM\Exception;
 /**
  * Lanzada cuando se intenta commit o rollback sin una transacción activa.
  */
-class TransactionException extends SybaseORMException
+final class TransactionException extends SybaseORMException
 {
     public function __construct(
         string $message = 'No active transaction.',

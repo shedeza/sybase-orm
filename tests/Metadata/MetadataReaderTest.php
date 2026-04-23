@@ -13,6 +13,8 @@ use SybaseORM\Tests\Attribute\Fixtures\SampleEntityNoTable;
 use SybaseORM\Tests\Attribute\Fixtures\SchemaEntity;
 use SybaseORM\Tests\Attribute\Fixtures\UserEntity;
 use SybaseORM\Tests\Attribute\Fixtures\VehicleEntity;
+use SybaseORM\Tests\Metadata\Fixtures\CompositeKeyEntity;
+use SybaseORM\Tests\Metadata\Fixtures\SingleKeyEntity;
 
 final class MetadataReaderTest extends TestCase
 {
@@ -125,6 +127,60 @@ final class MetadataReaderTest extends TestCase
         $this->assertNotNull($idCol);
         $this->assertTrue($idCol->isId);
         $this->assertNull($idCol->generatedValue);
+    }
+
+    // --- Composite key reading ---
+
+    public function testCompositeKeyEntityHasBothIdFields(): void
+    {
+        $meta = $this->reader->getClassMetadata(CompositeKeyEntity::class);
+
+        $this->assertCount(2, $meta->idFields);
+        $this->assertContains('orgId', $meta->idFields);
+        $this->assertContains('userId', $meta->idFields);
+    }
+
+    public function testCompositeKeyEntityIdFieldPointsToFirst(): void
+    {
+        $meta = $this->reader->getClassMetadata(CompositeKeyEntity::class);
+
+        $this->assertSame('orgId', $meta->idField);
+    }
+
+    public function testCompositeKeyEntityGetIdColumnsReturnsBothColumns(): void
+    {
+        $meta = $this->reader->getClassMetadata(CompositeKeyEntity::class);
+        $idColumns = $meta->getIdColumns();
+
+        $this->assertCount(2, $idColumns);
+        $propertyNames = array_map(fn($col) => $col->propertyName, $idColumns);
+        $this->assertContains('orgId', $propertyNames);
+        $this->assertContains('userId', $propertyNames);
+    }
+
+    public function testSingleKeyEntityIdFieldsIsSingleElementArray(): void
+    {
+        $meta = $this->reader->getClassMetadata(SingleKeyEntity::class);
+
+        $this->assertCount(1, $meta->idFields);
+        $this->assertSame('id', $meta->idFields[0]);
+    }
+
+    public function testSingleKeyEntityIdFieldUnchanged(): void
+    {
+        $meta = $this->reader->getClassMetadata(SingleKeyEntity::class);
+
+        $this->assertSame('id', $meta->idField);
+    }
+
+    public function testSingleKeyEntityGetIdColumnUnchanged(): void
+    {
+        $meta = $this->reader->getClassMetadata(SingleKeyEntity::class);
+        $idCol = $meta->getIdColumn();
+
+        $this->assertNotNull($idCol);
+        $this->assertSame('id', $idCol->propertyName);
+        $this->assertTrue($idCol->isId);
     }
 
     // --- Relationships ---

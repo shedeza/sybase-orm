@@ -8,7 +8,11 @@ use SybaseORM\Dialect\DialectInterface;
 use SybaseORM\Metadata\MetadataReaderInterface;
 use SybaseORM\Query\AST\Comparison;
 use SybaseORM\Query\AST\FromClause;
+use SybaseORM\Query\AST\FunctionCall;
 use SybaseORM\Query\AST\GroupByClause;
+use SybaseORM\Query\AST\HavingClause;
+use SybaseORM\Query\AST\InExpression;
+use SybaseORM\Query\AST\IsNullExpression;
 use SybaseORM\Query\AST\JoinClause;
 use SybaseORM\Query\AST\Literal;
 use SybaseORM\Query\AST\LogicalExpression;
@@ -81,7 +85,8 @@ final class OqlToSqlTranslator
         $selectSql = $this->resolveSelect($statement->selectExpressions);
 
         // Build base SQL
-        $sql = 'SELECT ' . $selectSql . ' FROM ' . $fromSql . $joinsSql;
+        $distinctKeyword = $statement->distinct ? 'DISTINCT ' : '';
+        $sql = 'SELECT ' . $distinctKeyword . $selectSql . ' FROM ' . $fromSql . $joinsSql;
 
         // WHERE
         if ($statement->where !== null) {
@@ -92,6 +97,11 @@ final class OqlToSqlTranslator
         // GROUP BY
         if ($statement->groupBy !== null) {
             $sql .= ' GROUP BY ' . $this->resolveGroupBy($statement->groupBy);
+        }
+
+        // HAVING
+        if ($statement->havingClause !== null) {
+            $sql .= ' HAVING ' . $this->resolveHaving($statement->havingClause, $parameters);
         }
 
         // ORDER BY
@@ -116,6 +126,11 @@ final class OqlToSqlTranslator
 
     private function resolveJoin(JoinClause $join): string
     {
+        // Entity-based JOIN with WITH condition
+        if ($join->entityName !== null) {
+            return $this->resolveEntityJoin($join);
+        }
+
         $ownerAlias = $join->property->alias;
         $relationProperty = $join->property->property;
 
@@ -182,23 +197,43 @@ final class OqlToSqlTranslator
         $parts = [];
 
         foreach ($expressions as $expr) {
-            if (str_contains($expr->expression, '.')) {
+            $partSql = '';
+
+            if ($expr->expression instanceof FunctionCall) {
+                $partSql = $this->resolveFunctionCall($expr->expression);
+            } elseif ($expr->expression === '*') {
+                $partSql = '*';
+            } elseif (str_contains($expr->expression, '.')) {
                 // Property access: alias.property
                 $dotParts = explode('.', $expr->expression);
-                $parts[] = $this->resolvePropertyToColumn($dotParts[0], $dotParts[1]);
+                $partSql = $this->resolvePropertyToColumn($dotParts[0], $dotParts[1]);
             } elseif (isset($this->aliasToEntity[$expr->expression])) {
                 // Alias only: select all columns for that alias
-                $parts[] = $this->dialect->quoteIdentifier($expr->expression) . '.*';
+                $partSql = $this->dialect->quoteIdentifier($expr->expression) . '.*';
             } else {
-                $parts[] = $expr->expression;
+                $partSql = $expr->expression;
             }
+
+            if ($expr->alias !== null) {
+                $partSql .= ' AS ' . $this->dialect->quoteIdentifier($expr->alias);
+            }
+
+            $parts[] = $partSql;
         }
 
         return implode(', ', $parts);
     }
 
-    private function resolveCondition(Comparison|LogicalExpression $condition, array &$parameters): string
+    private function resolveCondition(Comparison|LogicalExpression|IsNullExpression|InExpression $condition, array &$parameters): string
     {
+        if ($condition instanceof IsNullExpression) {
+            return $this->resolveIsNull($condition);
+        }
+
+        if ($condition instanceof InExpression) {
+            return $this->resolveInExpression($condition, $parameters);
+        }
+
         if ($condition instanceof Comparison) {
             return $this->resolveComparison($condition, $parameters);
         }
@@ -217,7 +252,7 @@ final class OqlToSqlTranslator
         return $left . ' ' . $comparison->operator . ' ' . $right;
     }
 
-    private function resolveOperand(PropertyAccess|Literal|Parameter $operand, array &$parameters): string
+    private function resolveOperand(PropertyAccess|Literal|Parameter|FunctionCall $operand, array &$parameters): string
     {
         if ($operand instanceof PropertyAccess) {
             return $this->resolvePropertyToColumn($operand->alias, $operand->property);
@@ -233,6 +268,10 @@ final class OqlToSqlTranslator
                 return "'" . str_replace("'", "''", (string) $operand->value) . "'";
             }
             return (string) $operand->value;
+        }
+
+        if ($operand instanceof FunctionCall) {
+            return $this->resolveFunctionCall($operand);
         }
 
         return '';
@@ -255,6 +294,82 @@ final class OqlToSqlTranslator
             fn(PropertyAccess $p) => $this->resolvePropertyToColumn($p->alias, $p->property),
             $groupBy->properties,
         ));
+    }
+
+    private function resolveIsNull(IsNullExpression $expr): string
+    {
+        $column = $this->resolvePropertyToColumn($expr->property->alias, $expr->property->property);
+
+        return $expr->negated
+            ? $column . ' IS NOT NULL'
+            : $column . ' IS NULL';
+    }
+
+    private function resolveInExpression(InExpression $expr, array &$parameters): string
+    {
+        $column = $this->resolvePropertyToColumn($expr->property->alias, $expr->property->property);
+
+        $valueParts = [];
+        foreach ($expr->values as $value) {
+            if ($value instanceof Parameter) {
+                $parameters[] = $value->name;
+                $valueParts[] = ':' . $value->name;
+            } elseif ($value instanceof Literal) {
+                if ($value->type === 'string') {
+                    $valueParts[] = "'" . str_replace("'", "''", (string) $value->value) . "'";
+                } else {
+                    $valueParts[] = (string) $value->value;
+                }
+            }
+        }
+
+        $keyword = $expr->negated ? 'NOT IN' : 'IN';
+
+        return $column . ' ' . $keyword . ' (' . implode(', ', $valueParts) . ')';
+    }
+
+    private function resolveFunctionCall(FunctionCall $func): string
+    {
+        if ($func->argument === '*') {
+            return $func->functionName . '(*)';
+        }
+
+        $distinctKeyword = $func->distinct ? 'DISTINCT ' : '';
+
+        if ($func->argument instanceof PropertyAccess) {
+            $column = $this->resolvePropertyToColumn($func->argument->alias, $func->argument->property);
+            return $func->functionName . '(' . $distinctKeyword . $column . ')';
+        }
+
+        return $func->functionName . '(' . $distinctKeyword . $func->argument . ')';
+    }
+
+    private function resolveHaving(HavingClause $having, array &$parameters): string
+    {
+        return $this->resolveCondition($having->condition, $parameters);
+    }
+
+    private function resolveEntityJoin(JoinClause $join): string
+    {
+        $entityClass = $this->resolveEntityName($join->entityName);
+        $targetMeta = $this->metadataReader->getClassMetadata($entityClass);
+
+        $this->aliasToEntity[$join->alias] = $entityClass;
+        $this->aliasToTable[$join->alias] = $join->alias;
+
+        $onCondition = '';
+        if ($join->withCondition !== null) {
+            $params = [];
+            $onCondition = $this->resolveCondition($join->withCondition, $params);
+        }
+
+        return sprintf(
+            '%s %s %s ON %s',
+            $join->joinType,
+            $this->dialect->quoteIdentifier($targetMeta->tableName),
+            $this->dialect->quoteIdentifier($join->alias),
+            $onCondition,
+        );
     }
 
     private function resolvePropertyToColumn(string $alias, string $property): string

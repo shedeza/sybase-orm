@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SybaseORM\Connection;
 
+use Psr\Log\LoggerInterface;
 use SybaseORM\Exception\ConnectionLostException;
 use SybaseORM\Exception\PersistenceException;
 use SybaseORM\Exception\TransactionException;
@@ -32,12 +33,15 @@ class ConnectionManager implements ConnectionManagerInterface
 
     private ?\PDO $connection = null;
     private bool $inTransaction = false;
+    private bool $charsetConversion;
 
     /** @var array{host: string, port: int, dbname: string, username: string, password: string, charset: string, persistent: bool} */
     private array $config;
 
-    public function __construct(array $config)
+    public function __construct(array $config, private readonly ?LoggerInterface $logger = null)
     {
+        $this->charsetConversion = (bool) ($config['charset_conversion'] ?? false);
+
         $this->config = array_merge([
             'host' => 'localhost',
             'port' => 5000,
@@ -105,7 +109,7 @@ class ConnectionManager implements ConnectionManagerInterface
         try {
             $pdo = $this->getConnection();
             $stmt = $pdo->prepare($sql);
-            $stmt->execute($params);
+            $stmt->execute($this->convertParams($params));
 
             return $stmt;
         } catch (\PDOException $e) {
@@ -118,7 +122,7 @@ class ConnectionManager implements ConnectionManagerInterface
         try {
             $pdo = $this->getConnection();
             $stmt = $pdo->prepare($sql);
-            $stmt->execute($params);
+            $stmt->execute($this->convertParams($params));
             $rowCount = $stmt->rowCount();
             $stmt->closeCursor();
             unset($stmt);
@@ -191,6 +195,70 @@ class ConnectionManager implements ConnectionManagerInterface
     public function isInTransaction(): bool
     {
         return $this->inTransaction;
+    }
+
+    /**
+     * Convierte parámetros string de UTF-8 a ISO-8859-1 antes de enviar al servidor.
+     *
+     * @param array $params Parámetros de la consulta.
+     * @return array Parámetros con strings convertidos si charset_conversion está habilitado.
+     */
+    private function convertParams(array $params): array
+    {
+        if (!$this->charsetConversion) {
+            return $params;
+        }
+
+        return array_map(fn($v) => is_string($v) ? $this->convertToDatabase($v) : $v, $params);
+    }
+
+    /**
+     * Convierte valores string de un resultado de ISO-8859-1 a UTF-8.
+     *
+     * @param array $row Fila de resultado de la base de datos.
+     * @return array Fila con strings convertidos si charset_conversion está habilitado.
+     */
+    public function convertResultRow(array $row): array
+    {
+        if (!$this->charsetConversion) {
+            return $row;
+        }
+
+        return array_map(fn($v) => is_string($v) ? $this->convertFromDatabase($v) : $v, $row);
+    }
+
+    /**
+     * Convierte un string UTF-8 a ISO-8859-1 para enviar a la base de datos.
+     * Si la conversión falla, preserva el string original (sin excepción).
+     */
+    private function convertToDatabase(string $value): string
+    {
+        $converted = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $value);
+
+        if ($converted === false) {
+            $this->logger?->warning('Charset conversion failed (UTF-8 → ISO-8859-1) for value: ' . mb_substr($value, 0, 100));
+
+            return $value;
+        }
+
+        return $converted;
+    }
+
+    /**
+     * Convierte un string ISO-8859-1 de la base de datos a UTF-8.
+     * Si la conversión falla, preserva el string original (sin excepción).
+     */
+    private function convertFromDatabase(string $value): string
+    {
+        $converted = @iconv('ISO-8859-1', 'UTF-8', $value);
+
+        if ($converted === false) {
+            $this->logger?->warning('Charset conversion failed (ISO-8859-1 → UTF-8) for value: ' . mb_substr($value, 0, 100));
+
+            return $value;
+        }
+
+        return $converted;
     }
 
     /**

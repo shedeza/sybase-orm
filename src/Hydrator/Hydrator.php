@@ -73,20 +73,34 @@ final class Hydrator implements HydratorInterface
      */
     private function resolveFromIdentityMap(array $row, ClassMetadata $metadata): ?object
     {
-        $idColumn = $metadata->getIdColumn();
-        if ($idColumn === null) {
+        $idColumns = $metadata->getIdColumns();
+        if (empty($idColumns)) {
             return null;
         }
 
-        $idValue = $row[$idColumn->columnName] ?? null;
-        if ($idValue === null) {
-            return null;
+        if (count($idColumns) === 1) {
+            // Single key: existing fast path
+            $idCol = $idColumns[0];
+            $idValue = $row[$idCol->columnName] ?? null;
+            if ($idValue === null) {
+                return null;
+            }
+            $idValue = $this->typeCaster->toPhpValue($idValue, $idCol->type);
+
+            return $this->identityMap->get($metadata->entityClass, $idValue);
         }
 
-        // Convert the ID value to the proper PHP type
-        $idValue = $this->typeCaster->toPhpValue($idValue, $idColumn->type);
+        // Composite key: build associative array
+        $compositeId = [];
+        foreach ($idColumns as $idCol) {
+            $val = $row[$idCol->columnName] ?? null;
+            if ($val === null) {
+                return null;
+            }
+            $compositeId[$idCol->propertyName] = $this->typeCaster->toPhpValue($val, $idCol->type);
+        }
 
-        return $this->identityMap->get($metadata->entityClass, $idValue);
+        return $this->identityMap->get($metadata->entityClass, $compositeId);
     }
 
     /**
@@ -173,18 +187,35 @@ final class Hydrator implements HydratorInterface
         object $entity,
         ClassMetadata $metadata,
     ): void {
-        $idColumn = $metadata->getIdColumn();
-        if ($idColumn === null) {
+        $idColumns = $metadata->getIdColumns();
+        if (empty($idColumns)) {
             return;
         }
 
         $reflectionClass = $this->getReflectionClass($entity::class);
-        $idValue = $this->getPropertyValue($entity, $idColumn->propertyName, $reflectionClass);
-        if ($idValue === null) {
+
+        if (count($idColumns) === 1) {
+            // Single key: existing fast path
+            $idCol = $idColumns[0];
+            $idValue = $this->getPropertyValue($entity, $idCol->propertyName, $reflectionClass);
+            if ($idValue === null) {
+                return;
+            }
+            $this->identityMap->put($metadata->entityClass, $idValue, $entity);
+
             return;
         }
 
-        $this->identityMap->put($metadata->entityClass, $idValue, $entity);
+        // Composite key: build associative array
+        $compositeId = [];
+        foreach ($idColumns as $idCol) {
+            $val = $this->getPropertyValue($entity, $idCol->propertyName, $reflectionClass);
+            if ($val === null) {
+                return;
+            }
+            $compositeId[$idCol->propertyName] = $val;
+        }
+        $this->identityMap->put($metadata->entityClass, $compositeId, $entity);
     }
 
     /**
