@@ -14,7 +14,7 @@ interface DialectInterface
     public function applyPagination(string $sql, int $limit, ?int $offset = null): string;
 
     /** Genera la sentencia INSERT omitiendo la columna identity si corresponde. */
-    public function generateInsert(string $table, array $columns, array $values): string;
+    public function generateInsert(string $table, array $columns, array $values, ?string $identityColumn = null, ?array $valueExpressions = null): string;
 
     /** Genera SQL para obtener el último identificador generado (@@identity). */
     public function getLastInsertIdSQL(): string;
@@ -26,7 +26,7 @@ interface DialectInterface
     public function generateNullComparison(string $column, bool $isNull): string;
 
     /** Genera la sentencia UPDATE con las columnas especificadas. */
-    public function generateUpdate(string $table, array $columns, string $whereClause): string;
+    public function generateUpdate(string $table, array $columns, string $whereClause, ?array $valueExpressions = null): string;
 
     /** Genera la sentencia DELETE para la tabla especificada. */
     public function generateDelete(string $table, string $whereClause): string;

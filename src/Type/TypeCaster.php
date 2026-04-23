@@ -64,6 +64,18 @@ final class TypeCaster implements TypeCasterInterface
         $this->customTypes[$typeName] = $typeClass;
     }
 
+    public function getDatabaseValueSQL(string $sqlExpr, string $type): string
+    {
+        if (isset($this->customTypes[$type])) {
+            $typeInstance = $this->getCustomTypeInstance($type);
+            if ($typeInstance instanceof SqlWrappingTypeInterface) {
+                return $typeInstance->convertToDatabaseValueSQL($sqlExpr);
+            }
+        }
+
+        return $sqlExpr;
+    }
+
     // ── Custom / Enum resolution ────────────────────────────────
 
     private function resolveCustomToDatabaseValue(mixed $value, string $type): mixed

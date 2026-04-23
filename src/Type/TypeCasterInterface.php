@@ -29,4 +29,10 @@ interface TypeCasterInterface
      * Registra un tipo personalizado (Value Object) con métodos de conversión bidireccional.
      */
     public function registerType(string $typeName, string $typeClass): void;
+
+    /**
+     * Retorna la expresión SQL para un valor de base de datos, aplicando envolvimiento
+     * si el tipo implementa SqlWrappingTypeInterface.
+     */
+    public function getDatabaseValueSQL(string $sqlExpr, string $type): string;
 }

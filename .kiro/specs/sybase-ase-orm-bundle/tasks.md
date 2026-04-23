@@ -504,27 +504,27 @@ Implementación de 12 requisitos adicionales cerrando gaps de migración desde D
 
 Implementación de sentencias OQL UPDATE/DELETE, funciones CONVERT/RAND, métodos queryOne/queryScalar/executeUpdate, tipos SqlWrapping, y mejoras de calidad (validación IN vacío, logging iconv, final en excepciones, count/exists en Repository, queryIterator, auto-detección HYDRATE_ARRAY mejorada).
 
-- [ ] 38. Crear nuevos nodos AST (UpdateStatement, DeleteStatement, SetClause, CustomFunctionCall)
-  - [ ] 38.1 Crear UpdateStatement, DeleteStatement, SetClause, CustomFunctionCall
+- [x] 38. Crear nuevos nodos AST (UpdateStatement, DeleteStatement, SetClause, CustomFunctionCall)
+  - [x] 38.1 Crear UpdateStatement, DeleteStatement, SetClause, CustomFunctionCall
   - [ ]* 38.2 Escribir tests unitarios para nuevos nodos AST
   - _Requisitos: 29.1–29.3, 30.1, 32.1_
 
-- [ ] 39. Extender OqlParser para UPDATE, DELETE y funciones personalizadas
-  - [ ] 39.1 Refactorizar parse() para detectar tipo de sentencia
-  - [ ] 39.2 Implementar parseUpdateStatement() y parseDeleteStatement()
-  - [ ] 39.3 Implementar parseCustomFunctionCall() con CONVERT/RAND y anidamiento
+- [x] 39. Extender OqlParser para UPDATE, DELETE y funciones personalizadas
+  - [x] 39.1 Refactorizar parse() para detectar tipo de sentencia
+  - [x] 39.2 Implementar parseUpdateStatement() y parseDeleteStatement()
+  - [x] 39.3 Implementar parseCustomFunctionCall() con CONVERT/RAND y anidamiento
   - [ ]* 39.4 Escribir tests unitarios para parsing UPDATE/DELETE/CustomFunction
   - _Requisitos: 29.1–29.5, 30.1–30.3, 32.1–32.3_
 
-- [ ] 40. Checkpoint — Verificar parser
+- [x] 40. Checkpoint — Verificar parser
 
-- [ ] 41. Extender OqlPrinter y OqlToSqlTranslator
-  - [ ] 41.1 Extender OqlPrinter para UPDATE, DELETE, CustomFunctionCall
-  - [ ] 41.2 Extender OqlToSqlTranslator para UPDATE, DELETE, CustomFunctionCall
+- [x] 41. Extender OqlPrinter y OqlToSqlTranslator
+  - [x] 41.1 Extender OqlPrinter para UPDATE, DELETE, CustomFunctionCall
+  - [x] 41.2 Extender OqlToSqlTranslator para UPDATE, DELETE, CustomFunctionCall
   - [ ]* 41.3 Escribir tests unitarios para printer y translator
   - _Requisitos: 29.4–29.5, 30.2, 32.2_
 
-- [ ] 42. Checkpoint — Verificar pipeline OQL completo
+- [x] 42. Checkpoint — Verificar pipeline OQL completo
 
 - [ ]* 43. Escribir tests de propiedad (Properties 8–12)
   - [ ]* 43.1 Property 8: UPDATE round-trip
@@ -533,18 +533,18 @@ Implementación de sentencias OQL UPDATE/DELETE, funciones CONVERT/RAND, método
   - [ ]* 43.4 Property 11: DELETE translation
   - [ ]* 43.5 Property 12: UPDATE parameter ordering
 
-- [ ] 44. Implementar métodos EntityManager (executeUpdate, queryOne, queryScalar)
-  - [ ] 44.1 Agregar executeUpdate(), queryOne(), queryScalar() a EntityManagerInterface y EntityManager
+- [x] 44. Implementar métodos EntityManager (executeUpdate, queryOne, queryScalar)
+  - [x] 44.1 Agregar executeUpdate(), queryOne(), queryScalar() a EntityManagerInterface y EntityManager
   - [ ]* 44.2 Escribir tests unitarios para executeUpdate, queryOne, queryScalar
   - _Requisitos: 31.1–31.4, 33.1–33.2_
 
-- [ ] 45. Checkpoint — Verificar capa de ejecución
+- [x] 45. Checkpoint — Verificar capa de ejecución
 
-- [ ] 46. Implementar tipos SQL-wrapping
-  - [ ] 46.1 Crear SqlWrappingTypeInterface
-  - [ ] 46.2 Agregar getDatabaseValueSQL() a TypeCaster
-  - [ ] 46.3 Extender Dialect para value expressions
-  - [ ] 46.4 Integrar SQL-wrapping en UnitOfWork
+- [x] 46. Implementar tipos SQL-wrapping
+  - [x] 46.1 Crear SqlWrappingTypeInterface
+  - [x] 46.2 Agregar getDatabaseValueSQL() a TypeCaster
+  - [x] 46.3 Extender Dialect para value expressions
+  - [x] 46.4 Integrar SQL-wrapping en UnitOfWork
   - [ ]* 46.5 Escribir tests unitarios y de propiedad (Properties 13–14)
   - _Requisitos: 34.1–34.4_
 
@@ -557,7 +557,7 @@ Implementación de sentencias OQL UPDATE/DELETE, funciones CONVERT/RAND, método
   - [x] 47.6 Mejorar auto-detección HYDRATE_ARRAY (GROUP BY, aliases)
   - _Requisitos: 35.1–35.6_
 
-- [ ] 48. Checkpoint final — Regresión completa
+- [x] 48. Checkpoint final — Regresión completa
   - 2076 tests, 9922 assertions — todos pasando (mejoras de calidad ya implementadas)
 
 ### Notas de la extensión

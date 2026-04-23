@@ -7,6 +7,8 @@ namespace SybaseORM\Query;
 use SybaseORM\Dialect\DialectInterface;
 use SybaseORM\Metadata\MetadataReaderInterface;
 use SybaseORM\Query\AST\Comparison;
+use SybaseORM\Query\AST\CustomFunctionCall;
+use SybaseORM\Query\AST\DeleteStatement;
 use SybaseORM\Query\AST\FromClause;
 use SybaseORM\Query\AST\FunctionCall;
 use SybaseORM\Query\AST\GroupByClause;
@@ -22,6 +24,8 @@ use SybaseORM\Query\AST\Parameter;
 use SybaseORM\Query\AST\PropertyAccess;
 use SybaseORM\Query\AST\SelectExpression;
 use SybaseORM\Query\AST\SelectStatement;
+use SybaseORM\Query\AST\SetClause;
+use SybaseORM\Query\AST\UpdateStatement;
 
 /**
  * Translates an OQL AST into SQL compatible with Sybase ASE via the DialectInterface.
@@ -62,14 +66,33 @@ final class OqlToSqlTranslator
     }
 
     /**
-     * Translates a SelectStatement AST into a SQL string.
+     * Translates an AST into a SQL string.
      *
      * @return array{sql: string, parameters: string[]} SQL and parameter names
      */
-    public function translate(SelectStatement $statement): array
+    public function translate(SelectStatement|UpdateStatement|DeleteStatement $statement): array
     {
         $this->aliasToEntity = [];
         $this->aliasToTable = [];
+
+        if ($statement instanceof UpdateStatement) {
+            return $this->translateUpdate($statement);
+        }
+
+        if ($statement instanceof DeleteStatement) {
+            return $this->translateDelete($statement);
+        }
+
+        return $this->translateSelect($statement);
+    }
+
+    /**
+     * Translates a SelectStatement AST into a SQL string.
+     *
+     * @return array{sql: string, parameters: string[]}
+     */
+    private function translateSelect(SelectStatement $statement): array
+    {
         $parameters = [];
 
         // Resolve FROM
@@ -110,6 +133,134 @@ final class OqlToSqlTranslator
         }
 
         return ['sql' => $sql, 'parameters' => $parameters];
+    }
+
+    /**
+     * Translates an UpdateStatement AST into SQL.
+     *
+     * @return array{sql: string, parameters: string[]}
+     */
+    private function translateUpdate(UpdateStatement $statement): array
+    {
+        $parameters = [];
+
+        // Resolve entity name to table name
+        $entityClass = $this->resolveEntityName($statement->entityName);
+        $metadata = $this->metadataReader->getClassMetadata($entityClass);
+
+        $this->aliasToEntity[$statement->alias] = $entityClass;
+        $this->aliasToTable[$statement->alias] = $statement->alias;
+
+        $tableName = $this->dialect->quoteIdentifier($metadata->tableName);
+
+        // Build SET clauses
+        $setClauses = [];
+        foreach ($statement->setClauses as $setClause) {
+            $columnSql = $this->resolvePropertyToColumn($setClause->property->alias, $setClause->property->property);
+            $valueSql = $this->resolveSetValue($setClause->value, $parameters);
+            $setClauses[] = $columnSql . ' = ' . $valueSql;
+        }
+
+        $sql = 'UPDATE ' . $tableName . ' SET ' . implode(', ', $setClauses);
+
+        // WHERE
+        if ($statement->where !== null) {
+            $whereSql = $this->resolveCondition($statement->where->condition, $parameters);
+            $sql .= ' WHERE ' . $whereSql;
+        }
+
+        return ['sql' => $sql, 'parameters' => $parameters];
+    }
+
+    /**
+     * Translates a DeleteStatement AST into SQL.
+     *
+     * @return array{sql: string, parameters: string[]}
+     */
+    private function translateDelete(DeleteStatement $statement): array
+    {
+        $parameters = [];
+
+        // Resolve entity name to table name
+        $entityClass = $this->resolveEntityName($statement->entityName);
+        $metadata = $this->metadataReader->getClassMetadata($entityClass);
+
+        $this->aliasToEntity[$statement->alias] = $entityClass;
+        $this->aliasToTable[$statement->alias] = $statement->alias;
+
+        $tableName = $this->dialect->quoteIdentifier($metadata->tableName);
+
+        $sql = 'DELETE FROM ' . $tableName;
+
+        // WHERE
+        if ($statement->where !== null) {
+            $whereSql = $this->resolveCondition($statement->where->condition, $parameters);
+            $sql .= ' WHERE ' . $whereSql;
+        }
+
+        return ['sql' => $sql, 'parameters' => $parameters];
+    }
+
+    /**
+     * Resolves a SET clause value to SQL.
+     */
+    private function resolveSetValue(Parameter|Literal|CustomFunctionCall $value, array &$parameters): string
+    {
+        if ($value instanceof Parameter) {
+            $parameters[] = $value->name;
+            return ':' . $value->name;
+        }
+
+        if ($value instanceof Literal) {
+            if ($value->type === 'null') {
+                return 'NULL';
+            }
+            if ($value->type === 'string') {
+                return "'" . str_replace("'", "''", (string) $value->value) . "'";
+            }
+            return (string) $value->value;
+        }
+
+        if ($value instanceof CustomFunctionCall) {
+            return $this->resolveCustomFunctionCall($value, $parameters);
+        }
+
+        return '';
+    }
+
+    /**
+     * Resolves a CustomFunctionCall to SQL.
+     * CONVERT(expr AS type) in OQL → CONVERT(type, expr) in Sybase SQL
+     * RAND() → RAND()
+     */
+    private function resolveCustomFunctionCall(CustomFunctionCall $func, array &$parameters): string
+    {
+        if ($func->functionName === 'RAND') {
+            return 'RAND()';
+        }
+
+        // CONVERT: OQL uses CONVERT(expr AS type), Sybase SQL uses CONVERT(type, expr)
+        $argParts = [];
+        foreach ($func->arguments as $arg) {
+            if ($arg instanceof CustomFunctionCall) {
+                $argParts[] = $this->resolveCustomFunctionCall($arg, $parameters);
+            } elseif ($arg instanceof Parameter) {
+                $parameters[] = $arg->name;
+                $argParts[] = ':' . $arg->name;
+            } elseif ($arg instanceof PropertyAccess) {
+                $argParts[] = $this->resolvePropertyToColumn($arg->alias, $arg->property);
+            } elseif ($arg instanceof Literal) {
+                if ($arg->type === 'null') {
+                    $argParts[] = 'NULL';
+                } elseif ($arg->type === 'string') {
+                    $argParts[] = "'" . str_replace("'", "''", (string) $arg->value) . "'";
+                } else {
+                    $argParts[] = (string) $arg->value;
+                }
+            }
+        }
+
+        return 'CONVERT(' . $func->castType . ', ' . implode(', ', $argParts) . ')';
     }
 
     private function resolveFrom(FromClause $from): string
@@ -252,7 +403,7 @@ final class OqlToSqlTranslator
         return $left . ' ' . $comparison->operator . ' ' . $right;
     }
 
-    private function resolveOperand(PropertyAccess|Literal|Parameter|FunctionCall $operand, array &$parameters): string
+    private function resolveOperand(PropertyAccess|Literal|Parameter|FunctionCall|CustomFunctionCall $operand, array &$parameters): string
     {
         if ($operand instanceof PropertyAccess) {
             return $this->resolvePropertyToColumn($operand->alias, $operand->property);
@@ -272,6 +423,10 @@ final class OqlToSqlTranslator
 
         if ($operand instanceof FunctionCall) {
             return $this->resolveFunctionCall($operand);
+        }
+
+        if ($operand instanceof CustomFunctionCall) {
+            return $this->resolveCustomFunctionCall($operand, $parameters);
         }
 
         return '';

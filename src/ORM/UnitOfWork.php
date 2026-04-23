@@ -285,6 +285,7 @@ final class UnitOfWork implements UnitOfWorkInterface
             $columns = [];
             $placeholders = [];
             $values = [];
+            $valueExpressions = [];
             $identityColumnName = null;
 
             foreach ($metadata->columns as $column) {
@@ -296,10 +297,20 @@ final class UnitOfWork implements UnitOfWorkInterface
                 $columns[] = $column->columnName;
                 $placeholders[] = '?';
 
+                // Get SQL-wrapping expression for this column's type
+                $valueExpressions[] = $this->typeCaster->getDatabaseValueSQL('?', $column->type);
+
                 $refProp = $this->getReflectionProperty($entity::class, $column->propertyName);
                 $phpValue = $refProp->getValue($entity);
                 $values[] = $this->typeCaster->toDatabaseValue($phpValue, $column->type);
             }
+
+            // Normalize value expressions: if expression equals '?', set to null (no wrapping needed)
+            $normalizedExpressions = array_map(
+                fn(string $expr) => $expr === '?' ? null : $expr,
+                $valueExpressions,
+            );
+            $hasWrapping = array_filter($normalizedExpressions, fn($e) => $e !== null);
 
             // Filter out identity column values from the params array
             if ($identityColumnName !== null) {
@@ -317,6 +328,7 @@ final class UnitOfWork implements UnitOfWorkInterface
                 $columns,
                 $placeholders,
                 $identityColumnName,
+                !empty($hasWrapping) ? $normalizedExpressions : null,
             );
 
             $this->connectionManager->executeStatement($sql, $values);
@@ -373,6 +385,7 @@ final class UnitOfWork implements UnitOfWorkInterface
 
             $updateColumns = [];
             $updateValues = [];
+            $updateValueExpressions = [];
 
             foreach ($changeset as $propertyName => $change) {
                 $column = $metadata->getColumn($propertyName);
@@ -381,6 +394,10 @@ final class UnitOfWork implements UnitOfWorkInterface
                 }
                 $updateColumns[] = $column->columnName;
                 $updateValues[] = $this->typeCaster->toDatabaseValue($change['new'], $column->type);
+
+                // Get SQL-wrapping expression for this column's type
+                $expr = $this->typeCaster->getDatabaseValueSQL('?', $column->type);
+                $updateValueExpressions[] = $expr === '?' ? null : $expr;
             }
 
             if (empty($updateColumns)) {
@@ -393,10 +410,13 @@ final class UnitOfWork implements UnitOfWorkInterface
             [$whereClause, $whereValues] = $this->buildCompositeWhereClause($metadata, $entity);
             $updateValues = array_merge($updateValues, $whereValues);
 
+            $hasWrapping = array_filter($updateValueExpressions, fn($e) => $e !== null);
+
             $sql = $this->dialect->generateUpdate(
                 $metadata->getQualifiedTableName(),
                 $updateColumns,
                 $whereClause,
+                !empty($hasWrapping) ? $updateValueExpressions : null,
             );
 
             $this->connectionManager->executeStatement($sql, $updateValues);

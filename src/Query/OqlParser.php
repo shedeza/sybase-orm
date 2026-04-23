@@ -6,6 +6,8 @@ namespace SybaseORM\Query;
 
 use SybaseORM\Exception\OqlParseException;
 use SybaseORM\Query\AST\Comparison;
+use SybaseORM\Query\AST\CustomFunctionCall;
+use SybaseORM\Query\AST\DeleteStatement;
 use SybaseORM\Query\AST\FromClause;
 use SybaseORM\Query\AST\FunctionCall;
 use SybaseORM\Query\AST\GroupByClause;
@@ -21,6 +23,8 @@ use SybaseORM\Query\AST\Parameter;
 use SybaseORM\Query\AST\PropertyAccess;
 use SybaseORM\Query\AST\SelectExpression;
 use SybaseORM\Query\AST\SelectStatement;
+use SybaseORM\Query\AST\SetClause;
+use SybaseORM\Query\AST\UpdateStatement;
 use SybaseORM\Query\AST\WhereClause;
 
 /**
@@ -36,6 +40,9 @@ use SybaseORM\Query\AST\WhereClause;
  *   [GROUP BY alias.prop[, alias.prop...]]
  *   [HAVING condition]
  *   [ORDER BY alias.prop [ASC|DESC][, ...]]
+ *
+ *   UPDATE EntityName alias SET alias.prop = value [, ...] [WHERE condition]
+ *   DELETE FROM EntityName alias [WHERE condition]
  */
 final class OqlParser
 {
@@ -47,12 +54,25 @@ final class OqlParser
 
     private const AGGREGATE_FUNCTIONS = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'];
 
-    public function parse(string $oql): SelectStatement
+    private const CUSTOM_FUNCTIONS = ['CONVERT', 'RAND'];
+
+    public function parse(string $oql): SelectStatement|UpdateStatement|DeleteStatement
     {
         $this->tokenize($oql);
         $this->pos = 0;
 
-        return $this->parseSelectStatement();
+        $firstToken = strtoupper($this->current());
+
+        return match ($firstToken) {
+            'SELECT' => $this->parseSelectStatement(),
+            'UPDATE' => $this->parseUpdateStatement(),
+            'DELETE' => $this->parseDeleteStatement(),
+            default => throw new OqlParseException(sprintf(
+                'Expected SELECT, UPDATE, or DELETE, got "%s" at position %d.',
+                $this->current(),
+                $this->pos,
+            )),
+        };
     }
 
     private function tokenize(string $oql): void
@@ -436,6 +456,25 @@ final class OqlParser
             return new Comparison($left, $operator, $right);
         }
 
+        // Check if the left operand is a custom function (CONVERT, RAND)
+        if (in_array(strtoupper($token), self::CUSTOM_FUNCTIONS, true)) {
+            $left = $this->parseCustomFunctionCall();
+
+            // After a custom function call, expect a comparison operator
+            $operator = strtoupper($this->current());
+            if (!in_array($operator, self::COMPARISON_OPERATORS, true)) {
+                throw new OqlParseException(sprintf(
+                    'Expected comparison operator, got "%s".',
+                    $this->current(),
+                ));
+            }
+            $this->advance();
+
+            $right = $this->parseOperand();
+
+            return new Comparison($left, $operator, $right);
+        }
+
         $left = $this->parseOperand();
 
         // Task 6.1: Check for IS [NOT] NULL
@@ -582,9 +621,14 @@ final class OqlParser
         ));
     }
 
-    private function parseOperand(): PropertyAccess|Literal|Parameter
+    private function parseOperand(): PropertyAccess|Literal|Parameter|CustomFunctionCall
     {
         $token = $this->current();
+
+        // Custom function call as operand
+        if (in_array(strtoupper($token), self::CUSTOM_FUNCTIONS, true)) {
+            return $this->parseCustomFunctionCall();
+        }
 
         // Parameter
         if (str_starts_with($token, ':')) {
@@ -618,6 +662,204 @@ final class OqlParser
 
         throw new OqlParseException(sprintf(
             'Unexpected token "%s" at position %d.',
+            $token,
+            $this->pos,
+        ));
+    }
+
+    private function parseUpdateStatement(): UpdateStatement
+    {
+        $this->expect('UPDATE');
+
+        $entityName = $this->current();
+        $this->advance();
+
+        $alias = $this->current();
+        $this->advance();
+
+        $this->expect('SET');
+
+        $setClauses = [];
+        $setClauses[] = $this->parseSetClause();
+
+        while ($this->isAt(',')) {
+            $this->advance();
+            $setClauses[] = $this->parseSetClause();
+        }
+
+        $where = null;
+        if ($this->isAt('WHERE')) {
+            $this->advance();
+            $where = new WhereClause($this->parseCondition());
+        }
+
+        if ($this->pos < count($this->tokens)) {
+            throw new OqlParseException(sprintf(
+                'Unexpected token "%s" at position %d.',
+                $this->tokens[$this->pos],
+                $this->pos,
+            ));
+        }
+
+        return new UpdateStatement($entityName, $alias, $setClauses, $where);
+    }
+
+    private function parseSetClause(): SetClause
+    {
+        $property = $this->parsePropertyAccess();
+
+        $this->expect('=');
+
+        $value = $this->parseSetValue();
+
+        return new SetClause($property, $value);
+    }
+
+    private function parseSetValue(): Parameter|Literal|CustomFunctionCall
+    {
+        $token = $this->current();
+
+        // NULL literal
+        if (strtoupper($token) === 'NULL') {
+            $this->advance();
+            return new Literal('NULL', 'null');
+        }
+
+        // Parameter
+        if (str_starts_with($token, ':')) {
+            $this->advance();
+            return new Parameter(substr($token, 1));
+        }
+
+        // String literal
+        if (str_starts_with($token, "'") && str_ends_with($token, "'")) {
+            $this->advance();
+            return new Literal(substr($token, 1, -1), 'string');
+        }
+
+        // Numeric literal
+        if (is_numeric($token)) {
+            $this->advance();
+            if (str_contains($token, '.')) {
+                return new Literal((float) $token, 'float');
+            }
+            return new Literal((int) $token, 'integer');
+        }
+
+        // Custom function call
+        if (in_array(strtoupper($token), self::CUSTOM_FUNCTIONS, true)) {
+            return $this->parseCustomFunctionCall();
+        }
+
+        throw new OqlParseException(sprintf(
+            'Expected value (parameter, literal, NULL, or function) in SET clause, got "%s" at position %d.',
+            $token,
+            $this->pos,
+        ));
+    }
+
+    private function parseDeleteStatement(): DeleteStatement
+    {
+        $this->expect('DELETE');
+        $this->expect('FROM');
+
+        $entityName = $this->current();
+        $this->advance();
+
+        $alias = $this->current();
+        $this->advance();
+
+        $where = null;
+        if ($this->isAt('WHERE')) {
+            $this->advance();
+            $where = new WhereClause($this->parseCondition());
+        }
+
+        if ($this->pos < count($this->tokens)) {
+            throw new OqlParseException(sprintf(
+                'Unexpected token "%s" at position %d.',
+                $this->tokens[$this->pos],
+                $this->pos,
+            ));
+        }
+
+        return new DeleteStatement($entityName, $alias, $where);
+    }
+
+    /**
+     * Parses a custom function call: RAND() or CONVERT(expr AS type)
+     * Supports nesting: CONVERT(RAND() AS REAL)
+     */
+    private function parseCustomFunctionCall(): CustomFunctionCall
+    {
+        $functionName = strtoupper($this->current());
+        $this->advance();
+
+        $this->expect('(');
+
+        if ($functionName === 'RAND') {
+            $this->expect(')');
+            return new CustomFunctionCall('RAND', [], null);
+        }
+
+        // CONVERT(expr AS type)
+        $expr = $this->parseCustomFunctionArgument();
+
+        $this->expect('AS');
+
+        $castType = strtoupper($this->current());
+        $this->advance();
+
+        $this->expect(')');
+
+        return new CustomFunctionCall('CONVERT', [$expr], $castType);
+    }
+
+    /**
+     * Parses an argument inside a custom function call.
+     * Can be: Parameter, Literal, PropertyAccess, or nested CustomFunctionCall.
+     */
+    private function parseCustomFunctionArgument(): PropertyAccess|Literal|Parameter|CustomFunctionCall
+    {
+        $token = $this->current();
+
+        // Nested custom function
+        if (in_array(strtoupper($token), self::CUSTOM_FUNCTIONS, true)) {
+            return $this->parseCustomFunctionCall();
+        }
+
+        // Parameter
+        if (str_starts_with($token, ':')) {
+            $this->advance();
+            return new Parameter(substr($token, 1));
+        }
+
+        // String literal
+        if (str_starts_with($token, "'") && str_ends_with($token, "'")) {
+            $this->advance();
+            return new Literal(substr($token, 1, -1), 'string');
+        }
+
+        // Numeric literal
+        if (is_numeric($token)) {
+            $this->advance();
+            if (str_contains($token, '.')) {
+                return new Literal((float) $token, 'float');
+            }
+            return new Literal((int) $token, 'integer');
+        }
+
+        // Property access (alias.property)
+        if (str_contains($token, '.')) {
+            $parts = explode('.', $token);
+            if (count($parts) === 2) {
+                $this->advance();
+                return new PropertyAccess($parts[0], $parts[1]);
+            }
+        }
+
+        throw new OqlParseException(sprintf(
+            'Expected expression in function argument, got "%s" at position %d.',
             $token,
             $this->pos,
         ));

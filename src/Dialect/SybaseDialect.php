@@ -95,28 +95,45 @@ final class SybaseDialect implements DialectInterface
      * @param string[]    $values         Value placeholders (e.g. '?' or ':param')
      * @param string|null $identityColumn Column name to omit (identity)
      */
-    public function generateInsert(string $table, array $columns, array $values, ?string $identityColumn = null): string
+    public function generateInsert(string $table, array $columns, array $values, ?string $identityColumn = null, ?array $valueExpressions = null): string
     {
         if ($identityColumn !== null) {
             $filtered = [];
             $filteredValues = [];
+            $filteredExpressions = [];
             foreach ($columns as $i => $col) {
                 if ($col !== $identityColumn) {
                     $filtered[] = $col;
                     $filteredValues[] = $values[$i];
+                    if ($valueExpressions !== null) {
+                        $filteredExpressions[] = $valueExpressions[$i] ?? null;
+                    }
                 }
             }
             $columns = $filtered;
             $values = $filteredValues;
+            if ($valueExpressions !== null) {
+                $valueExpressions = $filteredExpressions;
+            }
         }
 
         $quotedColumns = array_map([$this, 'quoteIdentifier'], $columns);
+
+        // Apply value expressions where provided
+        $finalValues = [];
+        foreach ($values as $i => $val) {
+            if ($valueExpressions !== null && isset($valueExpressions[$i]) && $valueExpressions[$i] !== null) {
+                $finalValues[] = $valueExpressions[$i];
+            } else {
+                $finalValues[] = $val;
+            }
+        }
 
         return sprintf(
             'INSERT INTO %s (%s) VALUES (%s)',
             $this->quoteIdentifier($table),
             implode(', ', $quotedColumns),
-            implode(', ', $values)
+            implode(', ', $finalValues)
         );
     }
 
@@ -183,12 +200,16 @@ final class SybaseDialect implements DialectInterface
     /**
      * {@inheritdoc}
      */
-    public function generateUpdate(string $table, array $columns, string $whereClause): string
+    public function generateUpdate(string $table, array $columns, string $whereClause, ?array $valueExpressions = null): string
     {
-        $setClauses = array_map(
-            fn(string $col) => $this->quoteIdentifier($col) . ' = ?',
-            $columns
-        );
+        $setClauses = [];
+        foreach ($columns as $i => $col) {
+            if ($valueExpressions !== null && isset($valueExpressions[$i]) && $valueExpressions[$i] !== null) {
+                $setClauses[] = $this->quoteIdentifier($col) . ' = ' . $valueExpressions[$i];
+            } else {
+                $setClauses[] = $this->quoteIdentifier($col) . ' = ?';
+            }
+        }
 
         return sprintf(
             'UPDATE %s SET %s WHERE %s',

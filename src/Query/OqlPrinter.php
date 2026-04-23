@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace SybaseORM\Query;
 
 use SybaseORM\Query\AST\Comparison;
+use SybaseORM\Query\AST\CustomFunctionCall;
+use SybaseORM\Query\AST\DeleteStatement;
 use SybaseORM\Query\AST\FromClause;
 use SybaseORM\Query\AST\FunctionCall;
 use SybaseORM\Query\AST\GroupByClause;
@@ -20,6 +22,8 @@ use SybaseORM\Query\AST\Parameter;
 use SybaseORM\Query\AST\PropertyAccess;
 use SybaseORM\Query\AST\SelectExpression;
 use SybaseORM\Query\AST\SelectStatement;
+use SybaseORM\Query\AST\SetClause;
+use SybaseORM\Query\AST\UpdateStatement;
 use SybaseORM\Query\AST\WhereClause;
 
 /**
@@ -27,7 +31,20 @@ use SybaseORM\Query\AST\WhereClause;
  */
 final class OqlPrinter
 {
-    public function print(SelectStatement $statement): string
+    public function print(SelectStatement|UpdateStatement|DeleteStatement $statement): string
+    {
+        if ($statement instanceof UpdateStatement) {
+            return $this->printUpdateStatement($statement);
+        }
+
+        if ($statement instanceof DeleteStatement) {
+            return $this->printDeleteStatement($statement);
+        }
+
+        return $this->printSelectStatement($statement);
+    }
+
+    private function printSelectStatement(SelectStatement $statement): string
     {
         $parts = [];
 
@@ -61,6 +78,111 @@ final class OqlPrinter
         }
 
         return implode(' ', $parts);
+    }
+
+    private function printUpdateStatement(UpdateStatement $statement): string
+    {
+        $parts = [];
+
+        $parts[] = 'UPDATE ' . $statement->entityName . ' ' . $statement->alias;
+
+        $setClauses = implode(', ', array_map(
+            fn(SetClause $sc) => $this->printSetClause($sc),
+            $statement->setClauses,
+        ));
+        $parts[] = 'SET ' . $setClauses;
+
+        if ($statement->where !== null) {
+            $parts[] = 'WHERE ' . $this->printCondition($statement->where->condition);
+        }
+
+        return implode(' ', $parts);
+    }
+
+    private function printDeleteStatement(DeleteStatement $statement): string
+    {
+        $parts = [];
+
+        $parts[] = 'DELETE FROM ' . $statement->entityName . ' ' . $statement->alias;
+
+        if ($statement->where !== null) {
+            $parts[] = 'WHERE ' . $this->printCondition($statement->where->condition);
+        }
+
+        return implode(' ', $parts);
+    }
+
+    private function printSetClause(SetClause $clause): string
+    {
+        $property = $clause->property->alias . '.' . $clause->property->property;
+        $value = $this->printSetValue($clause->value);
+
+        return $property . ' = ' . $value;
+    }
+
+    private function printSetValue(Parameter|Literal|CustomFunctionCall $value): string
+    {
+        if ($value instanceof CustomFunctionCall) {
+            return $this->printCustomFunctionCall($value);
+        }
+
+        if ($value instanceof Parameter) {
+            return ':' . $value->name;
+        }
+
+        if ($value instanceof Literal) {
+            if ($value->type === 'null') {
+                return 'NULL';
+            }
+            if ($value->type === 'string') {
+                return "'" . $value->value . "'";
+            }
+            return (string) $value->value;
+        }
+
+        return '';
+    }
+
+    private function printCustomFunctionCall(CustomFunctionCall $func): string
+    {
+        if ($func->functionName === 'RAND') {
+            return 'RAND()';
+        }
+
+        // CONVERT(expr AS type)
+        $args = array_map(
+            fn(PropertyAccess|Literal|Parameter|CustomFunctionCall $arg) => $this->printCustomFunctionArgument($arg),
+            $func->arguments,
+        );
+
+        return 'CONVERT(' . implode(', ', $args) . ' AS ' . $func->castType . ')';
+    }
+
+    private function printCustomFunctionArgument(PropertyAccess|Literal|Parameter|CustomFunctionCall $arg): string
+    {
+        if ($arg instanceof CustomFunctionCall) {
+            return $this->printCustomFunctionCall($arg);
+        }
+
+        if ($arg instanceof PropertyAccess) {
+            return $arg->alias . '.' . $arg->property;
+        }
+
+        if ($arg instanceof Parameter) {
+            return ':' . $arg->name;
+        }
+
+        if ($arg instanceof Literal) {
+            if ($arg->type === 'null') {
+                return 'NULL';
+            }
+            if ($arg->type === 'string') {
+                return "'" . $arg->value . "'";
+            }
+            return (string) $arg->value;
+        }
+
+        return '';
     }
 
     /**
@@ -193,10 +315,14 @@ final class OqlPrinter
     /**
      * Prints an operand that can appear in a Comparison (includes FunctionCall).
      */
-    private function printComparisonOperand(PropertyAccess|Literal|Parameter|FunctionCall $operand): string
+    private function printComparisonOperand(PropertyAccess|Literal|Parameter|FunctionCall|CustomFunctionCall $operand): string
     {
         if ($operand instanceof FunctionCall) {
             return $this->printFunctionCall($operand);
+        }
+
+        if ($operand instanceof CustomFunctionCall) {
+            return $this->printCustomFunctionCall($operand);
         }
 
         return $this->printOperand($operand);

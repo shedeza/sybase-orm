@@ -41,6 +41,9 @@ interface EntityManagerInterface
     /** Executes an OQL query and returns a single scalar value or null. */
     public function queryScalar(string $oql, array $params = []): mixed;
 
+    /** Ejecuta una sentencia OQL UPDATE o DELETE y retorna el número de filas afectadas. */
+    public function executeUpdate(string $oql, array $params = []): int;
+
     /** Limpia el Identity_Map y desasocia todas las entidades. */
     public function clear(): void;
 

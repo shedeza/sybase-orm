@@ -7,6 +7,7 @@ namespace SybaseORM\ORM;
 use SybaseORM\Cache\CacheManagerInterface;
 use SybaseORM\Connection\ConnectionManagerInterface;
 use SybaseORM\Dialect\DialectInterface;
+use SybaseORM\Exception\OqlParseException;
 use SybaseORM\Exception\PersistenceException;
 use SybaseORM\Hook\HookDispatcher;
 use SybaseORM\Hydrator\HydratorInterface;
@@ -260,6 +261,45 @@ final class EntityManager implements EntityManagerInterface
         }
 
         return reset($row) !== false ? reset($row) : null;
+    }
+
+    public function executeUpdate(string $oql, array $params = []): int
+    {
+        $ast = $this->oqlParser->parse($oql);
+
+        if ($ast instanceof \SybaseORM\Query\AST\SelectStatement) {
+            throw new OqlParseException('executeUpdate() does not support SELECT statements. Use query() instead.');
+        }
+
+        if ($this->oqlTranslator === null) {
+            $this->oqlTranslator = new OqlToSqlTranslator(
+                $this->dialect,
+                $this->metadataReader,
+                $this->entityClasses,
+            );
+        }
+
+        $result = $this->oqlTranslator->translate($ast);
+        $sql = $result['sql'];
+        $parameterNames = $result['parameters'];
+
+        // Map named parameters to ordered values, expanding array params for IN clauses
+        $orderedParams = [];
+        foreach ($parameterNames as $name) {
+            $value = $params[$name] ?? null;
+            if (is_array($value)) {
+                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
+                foreach ($value as $item) {
+                    $orderedParams[] = $item;
+                }
+            } else {
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', '?', $sql, 1);
+                $orderedParams[] = $value;
+            }
+        }
+
+        return $this->connectionManager->executeStatement($sql, $orderedParams);
     }
 
     public function queryIterator(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): \Generator
