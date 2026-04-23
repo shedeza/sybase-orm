@@ -66,6 +66,12 @@ final class TypeCaster implements TypeCasterInterface
 
     public function getDatabaseValueSQL(string $sqlExpr, string $type): string
     {
+        // Built-in float types need explicit CONVERT for Sybase ASE
+        // (Sybase rejects implicit VARCHAR → REAL/FLOAT conversion)
+        if (in_array($type, ['float', 'double', 'decimal', 'real'], true)) {
+            return 'CONVERT(REAL, ' . $sqlExpr . ')';
+        }
+
         if (isset($this->customTypes[$type])) {
             $typeInstance = $this->getCustomTypeInstance($type);
             if ($typeInstance instanceof SqlWrappingTypeInterface) {

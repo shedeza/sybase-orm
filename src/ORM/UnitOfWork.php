@@ -106,13 +106,19 @@ final class UnitOfWork implements UnitOfWorkInterface
             // 2. Cascade: discover related entities marked with cascade=['remove']
             $this->processCascadeRemove();
 
-            // 3. Execute INSERTs for new entities
+            // 3. Snapshot managed entities BEFORE inserts to avoid iterating newly inserted ones
+            $managedBeforeInsert = [];
+            foreach ($this->entitySnapshots as $entity) {
+                $managedBeforeInsert[] = $entity;
+            }
+
+            // 4. Execute INSERTs for new entities
             $this->executeInserts();
 
-            // 4. Execute UPDATEs for dirty (managed) entities
-            $this->executeUpdates();
+            // 5. Execute UPDATEs only for entities that were managed BEFORE this commit
+            $this->executeUpdates($managedBeforeInsert);
 
-            // 5. Execute DELETEs for removed entities
+            // 6. Execute DELETEs for removed entities
             $this->executeDeletes();
 
             $this->connectionManager->commit();
@@ -333,6 +339,10 @@ final class UnitOfWork implements UnitOfWorkInterface
 
             $this->connectionManager->executeStatement($sql, $values);
 
+            // Remove from newEntities immediately after successful INSERT
+            // to prevent duplicate inserts if flush is called re-entrantly
+            $this->newEntities->detach($entity);
+
             // Retrieve @@identity and set on entity
             if ($identityColumnName !== null && $idColumn !== null) {
                 $identitySql = $this->dialect->getLastInsertIdSQL();
@@ -363,11 +373,19 @@ final class UnitOfWork implements UnitOfWorkInterface
 
     /**
      * Executes UPDATE statements for dirty managed entities (only changed columns).
+     *
+     * @param object[] $entities Entities to check for updates (pre-computed to avoid
+     *                           iterating entitySnapshots which may have been modified
+     *                           by executeInserts).
      */
-    private function executeUpdates(): void
+    private function executeUpdates(array $entities): void
     {
-        foreach ($this->entitySnapshots as $entity) {
+        foreach ($entities as $entity) {
             if ($this->newEntities->contains($entity) || $this->deletedEntities->contains($entity)) {
+                continue;
+            }
+
+            if (!$this->entitySnapshots->contains($entity)) {
                 continue;
             }
 

@@ -622,4 +622,74 @@ final class UnitOfWorkTest extends TestCase
         $this->assertSame(10, $params[0]);
         $this->assertSame(20, $params[1]);
     }
+
+    // ---------------------------------------------------------------
+    // v1.2.8: Newly inserted entities must NOT be processed by executeUpdates
+    // ---------------------------------------------------------------
+
+    public function testNewlyInsertedEntitiesAreNotProcessedByExecuteUpdates(): void
+    {
+        // Register a new entity for INSERT
+        $newOrder = new OrderEntity();
+        $newOrder->setDescription('New Order');
+        $newOrder->setTotal(50.0);
+
+        $this->unitOfWork->registerNew($newOrder);
+        $this->unitOfWork->commit();
+
+        // Should have exactly 1 INSERT and 0 UPDATEs
+        $inserts = array_filter($this->executedStatements, fn($s) => str_contains($s['sql'], 'INSERT'));
+        $updates = array_filter($this->executedStatements, fn($s) => str_contains($s['sql'], 'UPDATE'));
+
+        $this->assertCount(1, $inserts, 'Expected exactly 1 INSERT');
+        $this->assertCount(0, $updates, 'Expected 0 UPDATEs — newly inserted entities must not trigger UPDATE');
+    }
+
+    public function testInsertAndUpdateInSameCommitDoNotDuplicate(): void
+    {
+        // Pre-existing managed entity (will be updated)
+        $existingOrder = new OrderEntity();
+        $existingOrder->setId(42);
+        $existingOrder->setDescription('Original');
+        $existingOrder->setTotal(100.0);
+        $this->unitOfWork->registerClean($existingOrder);
+
+        // Modify the existing entity
+        $existingOrder->setDescription('Modified');
+
+        // New entity (will be inserted)
+        $newOrder = new OrderEntity();
+        $newOrder->setDescription('Brand New');
+        $newOrder->setTotal(25.0);
+        $this->unitOfWork->registerNew($newOrder);
+
+        $this->unitOfWork->commit();
+
+        // Should have exactly 1 INSERT + 1 UPDATE, no duplicates
+        $inserts = array_filter($this->executedStatements, fn($s) => str_contains($s['sql'], 'INSERT'));
+        $updates = array_filter($this->executedStatements, fn($s) => str_contains($s['sql'], 'UPDATE'));
+
+        $this->assertCount(1, $inserts, 'Expected exactly 1 INSERT');
+        $this->assertCount(1, $updates, 'Expected exactly 1 UPDATE for the pre-existing entity');
+    }
+
+    public function testMultipleInsertsDoNotGenerateSpuriousUpdates(): void
+    {
+        // Insert 5 entities at once
+        for ($i = 0; $i < 5; $i++) {
+            $order = new OrderEntity();
+            $order->setDescription('Order ' . $i);
+            $order->setTotal(10.0 * ($i + 1));
+            $this->unitOfWork->registerNew($order);
+        }
+
+        $this->unitOfWork->commit();
+
+        // Should have exactly 5 INSERTs and 0 UPDATEs
+        $inserts = array_filter($this->executedStatements, fn($s) => str_contains($s['sql'], 'INSERT'));
+        $updates = array_filter($this->executedStatements, fn($s) => str_contains($s['sql'], 'UPDATE'));
+
+        $this->assertCount(5, $inserts, 'Expected exactly 5 INSERTs');
+        $this->assertCount(0, $updates, 'Expected 0 UPDATEs — no spurious updates for newly inserted entities');
+    }
 }

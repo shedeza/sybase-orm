@@ -108,6 +108,7 @@ class ConnectionManager implements ConnectionManagerInterface
     {
         try {
             $pdo = $this->getConnection();
+            [$sql, $params] = $this->expandArrayParams($sql, $params);
             $stmt = $pdo->prepare($sql);
             $this->bindParams($stmt, $this->convertParams($params));
             $stmt->execute();
@@ -122,6 +123,7 @@ class ConnectionManager implements ConnectionManagerInterface
     {
         try {
             $pdo = $this->getConnection();
+            [$sql, $params] = $this->expandArrayParams($sql, $params);
             $stmt = $pdo->prepare($sql);
             $this->bindParams($stmt, $this->convertParams($params));
             $stmt->execute();
@@ -203,22 +205,121 @@ class ConnectionManager implements ConnectionManagerInterface
      * Binds parameters to a PDOStatement with proper PDO types.
      * Integers use PDO::PARAM_INT, nulls use PDO::PARAM_NULL, booleans use PDO::PARAM_BOOL,
      * everything else uses PDO::PARAM_STR. This prevents Sybase implicit conversion errors.
+     *
+     * Array values are expanded inline as individual binds. This handles cases where
+     * upstream code (e.g., direct ConnectionManager usage) passes unexpanded array
+     * parameters for IN clauses.
      */
     private function bindParams(\PDOStatement $stmt, array $params): void
     {
-        foreach ($params as $index => $value) {
-            $position = $index + 1; // PDO positional params are 1-based
+        $position = 1; // PDO positional params are 1-based
 
-            if ($value === null) {
-                $stmt->bindValue($position, null, \PDO::PARAM_NULL);
-            } elseif (is_int($value)) {
-                $stmt->bindValue($position, $value, \PDO::PARAM_INT);
-            } elseif (is_bool($value)) {
-                $stmt->bindValue($position, $value ? 1 : 0, \PDO::PARAM_INT);
+        foreach ($params as $value) {
+            if (is_array($value)) {
+                // Array values should have been expanded upstream with matching SQL placeholders.
+                // Bind each element individually — the caller must ensure the SQL has
+                // the correct number of ? placeholders for the total expanded count.
+                foreach ($value as $item) {
+                    $this->bindSingleValue($stmt, $position, $item);
+                    $position++;
+                }
             } else {
-                $stmt->bindValue($position, $value, \PDO::PARAM_STR);
+                $this->bindSingleValue($stmt, $position, $value);
+                $position++;
             }
         }
+    }
+
+    /**
+     * Binds a single scalar value to a PDOStatement at the given position.
+     */
+    private function bindSingleValue(\PDOStatement $stmt, int $position, mixed $value): void
+    {
+        if ($value === null) {
+            $stmt->bindValue($position, null, \PDO::PARAM_NULL);
+        } elseif (is_int($value)) {
+            $stmt->bindValue($position, $value, \PDO::PARAM_INT);
+        } elseif (is_bool($value)) {
+            $stmt->bindValue($position, $value ? 1 : 0, \PDO::PARAM_INT);
+        } elseif (is_float($value)) {
+            // Bind floats as string representation to preserve precision.
+            // Sybase CONVERT(REAL, ?) in the SQL handles the type conversion.
+            $stmt->bindValue($position, (string) $value, \PDO::PARAM_STR);
+        } else {
+            $stmt->bindValue($position, (string) $value, \PDO::PARAM_STR);
+        }
+    }
+
+    /**
+     * Expands array parameters into individual positional placeholders.
+     *
+     * When a positional parameter (?) corresponds to an array value, replaces
+     * the single ? with multiple ?, ?, ... placeholders and flattens the
+     * array values into the params list. This ensures the SQL placeholder
+     * count always matches the bind count.
+     *
+     * @param string $sql SQL with ? placeholders.
+     * @param array $params Positional parameters (may contain arrays for IN clauses).
+     * @return array{0: string, 1: array} Tuple of [expanded SQL, flat params].
+     */
+    private function expandArrayParams(string $sql, array $params): array
+    {
+        $hasArray = false;
+        foreach ($params as $value) {
+            if (is_array($value)) {
+                $hasArray = true;
+                break;
+            }
+        }
+
+        if (!$hasArray) {
+            return [$sql, $params];
+        }
+
+        // Rebuild SQL and params, expanding arrays
+        $flatParams = [];
+        $paramIndex = 0;
+        $result = '';
+        $length = strlen($sql);
+
+        for ($i = 0; $i < $length; $i++) {
+            if ($sql[$i] === '?') {
+                $value = $params[$paramIndex] ?? null;
+
+                if (is_array($value)) {
+                    $count = count($value);
+                    if ($count === 0) {
+                        // Empty array: use impossible condition (1 = 0) to match nothing
+                        $result .= '1 = 0';
+                    } else {
+                        $result .= implode(', ', array_fill(0, $count, '?'));
+                        foreach ($value as $item) {
+                            $flatParams[] = $item;
+                        }
+                    }
+                } else {
+                    $result .= '?';
+                    $flatParams[] = $value;
+                }
+
+                $paramIndex++;
+            } elseif ($sql[$i] === "'" ) {
+                // Skip string literals to avoid replacing ? inside them
+                $result .= "'";
+                $i++;
+                while ($i < $length && $sql[$i] !== "'") {
+                    $result .= $sql[$i];
+                    $i++;
+                }
+                if ($i < $length) {
+                    $result .= "'";
+                }
+            } else {
+                $result .= $sql[$i];
+            }
+        }
+
+        return [$result, $flatParams];
     }
 
     /**

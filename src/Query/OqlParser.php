@@ -430,12 +430,22 @@ final class OqlParser
     }
 
     /**
-     * Parses a single condition: comparison, IS NULL, IS NOT NULL, IN, or NOT IN.
+     * Parses a single condition: comparison, IS NULL, IS NOT NULL, IN, NOT IN,
+     * or a parenthesized condition group.
      *
-     * @return Comparison|IsNullExpression|InExpression
+     * @return Comparison|IsNullExpression|InExpression|LogicalExpression
      */
-    private function parseSingleCondition(): Comparison|IsNullExpression|InExpression
+    private function parseSingleCondition(): Comparison|IsNullExpression|InExpression|LogicalExpression
     {
+        // Parenthesized condition group: ( condition )
+        if ($this->isAt('(')) {
+            $this->advance(); // consume '('
+            $inner = $this->parseCondition();
+            $this->expect(')');
+
+            return $inner;
+        }
+
         // Check if the left operand is an aggregate function (for HAVING conditions)
         $token = $this->current();
         if (in_array(strtoupper($token), self::AGGREGATE_FUNCTIONS, true)) {
