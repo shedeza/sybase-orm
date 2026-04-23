@@ -43,7 +43,7 @@ vendor/bin/phpunit --filter testDefaults
 - `failOnRisky` and `failOnWarning` enabled
 - Test fixtures live in `tests/{Component}/Fixtures/` directories
 - Tests use `final class` and extend `PHPUnit\Framework\TestCase`
-- 2076 tests, 9922 assertions across all components
+- 2098 tests, 9594 assertions across all components
 - Property-based tests using `@dataProvider` with 100+ iterations for thorough input coverage
 
 ## Code Style Conventions

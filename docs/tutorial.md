@@ -461,6 +461,32 @@ public function crearVarios(): void
 }
 ```
 
+### Desvincular entidades (detach)
+
+`detach()` remueve una entidad del contexto de persistencia (IdentityMap). Después de desvincularla, los cambios en esa instancia no se rastrean:
+
+```php
+public function desvincular(int $id): void
+{
+    $repo = $this->em->getRepository(Producto::class);
+    $producto = $repo->find($id);
+
+    // Verificar si la entidad está rastreada
+    $this->em->isManaged($producto); // true
+
+    // Desvincular del contexto de persistencia
+    $this->em->detach($producto);
+
+    $this->em->isManaged($producto); // false — ya no está rastreada
+
+    // Un find() posterior hará una nueva consulta a la BD
+    $productoFresco = $repo->find($id); // Consulta a BD, nueva instancia
+}
+```
+
+`isManaged()` es útil para verificar si una entidad está siendo rastreada por el UnitOfWork antes de realizar operaciones.
+```
+
 ---
 
 ## 6. Repositorios
@@ -477,6 +503,18 @@ $producto = $repo->find(1);                          // Por ID
 $todos = $repo->findAll();                           // Todos
 $activos = $repo->findBy(['activo' => true]);        // Por criterios
 $laptop = $repo->findOneBy(['nombre' => 'Laptop']);  // Uno por criterios
+
+// --- Consultas con ordenamiento y paginación ---
+$recientes = $repo->findBy(
+    ['activo' => true],                // criterios
+    ['creadoEn' => 'DESC'],            // orderBy
+    10,                                 // limit
+    20,                                 // offset
+);
+
+// --- Información de la entidad ---
+$tabla = $repo->getTableName();          // string — nombre de tabla en BD (e.g. "productos")
+$nombre = $repo->getEntityShortName();   // string — nombre corto para OQL (e.g. "Producto")
 
 // --- Persistencia ---
 $repo->save($producto);                              // Crear o actualizar
@@ -744,6 +782,31 @@ $params = $qb->getParameters(); // [10]
 ```
 
 `having()` emite la cláusula HAVING después de GROUP BY y antes de ORDER BY. Los parámetros de HAVING se combinan con los de WHERE en `getParameters()`. Funciona con o sin GROUP BY.
+
+### reset() — reutilizar el QueryBuilder
+
+El método `reset()` limpia todo el estado del QueryBuilder para reutilizar la misma instancia:
+
+```php
+$qb = $this->em->createQueryBuilder(Producto::class);
+
+// Primera consulta
+$sql1 = $qb
+    ->select('e.id', 'e.nombre')
+    ->where('e.activo = ?', [1])
+    ->orderBy('e.nombre')
+    ->getSQL();
+
+// Limpiar todo el estado y construir otra consulta
+$sql2 = $qb->reset()
+    ->select('e.nombre', 'e.precio')
+    ->where('e.precio > ?', [100])
+    ->orderBy('e.precio', 'DESC')
+    ->limit(5)
+    ->getSQL();
+```
+
+Esto evita crear nuevas instancias de QueryBuilder en loops o servicios que ejecutan múltiples consultas.
 
 ---
 
@@ -1701,6 +1764,32 @@ try {
 - Usa OQL para consultas orientadas a objetos
 - Usa QueryBuilder para consultas dinámicas
 - Siempre parametriza valores del usuario (el ORM lo hace automáticamente)
+
+### Acceso directo al dialecto y la conexión
+
+Para casos avanzados donde necesitas SQL crudo o funcionalidades específicas de Sybase ASE, el EntityManager expone acceso directo:
+
+```php
+// Acceso al dialecto SQL para construir consultas específicas de Sybase ASE
+$dialect = $this->em->getDialect();
+
+// Acceso al gestor de conexiones para ejecutar SQL crudo
+$conn = $this->em->getConnection();
+$stmt = $conn->executeQuery('SELECT @@version', []);
+$version = $stmt->fetch(\PDO::FETCH_ASSOC);
+$stmt->closeCursor();
+```
+
+También puedes acceder a los metadatos de las entidades:
+
+```php
+// Leer metadatos de una entidad
+$reader = $this->em->getMetadataReader();
+$metadata = $reader->getClassMetadata(Producto::class);
+
+// ClassMetadata tiene un __toString() útil para depuración
+echo $metadata; // ClassMetadata(App\Entity\Producto → productos, 6 columns, 1 relationships)
+```
 
 ### Migraciones
 

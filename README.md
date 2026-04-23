@@ -234,6 +234,15 @@ class UsuarioController
         $usuario = $repo->find($id);
         $repo->delete($usuario);
     }
+
+    public function desvincular(int $id): void
+    {
+        $usuario = $this->em->getRepository(Usuario::class)->find($id);
+
+        $this->em->isManaged($usuario); // true — rastreado por el UnitOfWork
+        $this->em->detach($usuario);    // Remueve del IdentityMap
+        $this->em->isManaged($usuario); // false — ya no está rastreado
+    }
 }
 ```
 
@@ -247,6 +256,14 @@ $usuario = $repo->find(1);
 $todos = $repo->findAll();
 $activos = $repo->findBy(['activo' => true]);
 $admin = $repo->findOneBy(['email' => '[email]']);
+
+// Consultas con ordenamiento y paginación
+$recientes = $repo->findBy(
+    ['activo' => true],
+    ['creadoEn' => 'DESC'],  // orderBy
+    10,                       // limit
+    20,                       // offset
+);
 
 // Conteo y existencia
 $totalActivos = $repo->count(['activo' => true]);   // int
@@ -289,6 +306,23 @@ $sql = $qb
     ->getSQL();
 
 $params = $qb->getParameters(); // [5]
+```
+
+### QueryBuilder: reset()
+
+Reutiliza una instancia de QueryBuilder limpiando todo su estado:
+
+```php
+$qb = $this->em->createQueryBuilder(Usuario::class);
+
+// Primera consulta
+$sql1 = $qb->select('e.id')->where('e.activo = ?', [1])->getSQL();
+
+// Limpiar y reutilizar
+$sql2 = $qb->reset()
+    ->select('e.nombre')
+    ->where('e.departamento = ?', ['ventas'])
+    ->getSQL();
 ```
 
 ### OQL (Object Query Language)
@@ -681,6 +715,17 @@ Si Redis no está disponible, el sistema continúa operando solo con el primer n
 
 ## Arquitectura
 
+El `EntityManager` expone `getDialect()` y `getConnection()` para acceso directo al dialecto SQL y al gestor de conexiones cuando se necesita SQL crudo:
+
+```php
+// Acceso al dialecto para construir SQL específico de Sybase ASE
+$dialect = $this->em->getDialect();
+
+// Acceso a la conexión para ejecutar SQL crudo
+$conn = $this->em->getConnection();
+$stmt = $conn->executeQuery('SELECT @@version', []);
+```
+
 ```
 src/
 ├── Attribute/           # PHP Attributes para mapeo de entidades
@@ -718,7 +763,7 @@ El `SybaseDialect` maneja las particularidades de Sybase ASE:
 vendor/bin/phpunit
 ```
 
-2076 tests, 9922 assertions cubriendo todos los componentes.
+2098 tests, 9594 assertions cubriendo todos los componentes.
 
 ## Licencia
 
