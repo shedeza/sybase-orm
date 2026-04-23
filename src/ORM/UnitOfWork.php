@@ -368,6 +368,14 @@ final class UnitOfWork implements UnitOfWorkInterface
             $this->insertedEntities->attach($entity);
             $this->newEntities->detach($entity);
 
+            // Debug: log the INSERT for troubleshooting
+            error_log(sprintf(
+                '[SybaseORM] INSERT %s (class: %s, id: %s)',
+                $metadata->getQualifiedTableName(),
+                $entity::class,
+                json_encode($this->getEntityIdValues($entity, $metadata)),
+            ));
+
             // Retrieve @@identity and set on entity
             if ($identityColumnName !== null && $idColumn !== null) {
                 $identitySql = $this->dialect->getLastInsertIdSQL();
@@ -463,6 +471,14 @@ final class UnitOfWork implements UnitOfWorkInterface
             );
 
             $this->connectionManager->executeStatement($sql, $updateValues);
+
+            // Debug: log the UPDATE for troubleshooting
+            error_log(sprintf(
+                '[SybaseORM] UPDATE %s (class: %s, changed: %s)',
+                $metadata->getQualifiedTableName(),
+                $entity::class,
+                implode(', ', $updateColumns),
+            ));
 
             // Update snapshot after successful update
             $this->registerClean($entity);
@@ -675,6 +691,21 @@ final class UnitOfWork implements UnitOfWorkInterface
         } catch (\Throwable) {
             // Suppress rollback errors — the original exception is more important
         }
+    }
+
+    /**
+     * Extracts the ID values from an entity for debugging purposes.
+     *
+     * @return array<string, mixed>
+     */
+    private function getEntityIdValues(object $entity, ClassMetadata $metadata): array
+    {
+        $idValues = [];
+        foreach ($metadata->getIdColumns() as $idCol) {
+            $refProp = $this->getReflectionProperty($entity::class, $idCol->propertyName);
+            $idValues[$idCol->propertyName] = $refProp->getValue($entity);
+        }
+        return $idValues;
     }
 
     /**
