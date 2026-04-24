@@ -3,16 +3,19 @@
 ```
 src/
 ├── Attribute/          # PHP 8.1 attributes for entity mapping
-│                       # Entity (table + schema), Column, Id, GeneratedValue,
+│                       # Entity (table + schema + repositoryClass), Column, Id, GeneratedValue,
 │                       # relationships (OneToOne, OneToMany, ManyToOne, ManyToMany, JoinColumn),
 │                       # inheritance (InheritanceType, DiscriminatorColumn, DiscriminatorMap),
 │                       # lifecycle hooks (HasLifecycleHooks, PrePersist, PostPersist, etc.)
-├── Cache/              # Two-level caching: CacheManager (first level via IdentityMap),
+├── Cache/              # Two-level caching: CacheManager (first level via IdentityMap,
+│                       # type-safe keys with i:/s:/f:/b:/n: prefixes),
 │                       # SecondLevelCacheInterface, RedisCacheAdapter (second level)
 ├── Command/            # Symfony console commands:
 │                       # sybase:install, sybase:migrations:generate,
 │                       # sybase:migrations:migrate, sybase:proxy:generate, sybase:cache:clear
 ├── Connection/         # PDO dblib connection management (ConnectionManager with dbname validation,
+│                       # lazy port validation, prepared statement cache (stmtCache),
+│                       # ping(), getServerVersion(),
 │                       # optional PSR LoggerInterface for charset conversion warnings),
 │                       # ConnectionUrlParser (DSN URL parsing),
 │                       # transactions, isolation levels, differentiated error handling
@@ -21,7 +24,8 @@ src/
 │                       # Registers all services with interface aliases
 ├── Dialect/            # SQL dialect abstraction: DialectInterface + SybaseDialect
 │                       # (pagination, identity, NULL handling, schema-qualified quoting,
-│                       # SELECT * without quoting asterisk)
+│                       # SELECT * without quoting asterisk,
+│                       # generateCount(), generateExists())
 ├── Exception/          # SybaseORMException (base) → ConnectionLostException, PersistenceException,
 │                       # TransactionException, TypeConversionException, OqlParseException,
 │                       # MigrationException
@@ -42,13 +46,15 @@ src/
 ├── ORM/                # Core ORM components:
 │                       # EntityManager (cached OqlParser, cached OqlToSqlTranslator,
 │                       #   pre-computed entity maps, queryIterator() for streaming
-│                       #   results via Generator, getDialect(), getConnection(),
+│                       #   results via Generator, registerOqlFunction() for custom SQL,
+│                       #   refresh() to reload from DB, getDialect(), getConnection(),
 │                       #   isManaged(), detach(), getMetadataReader()),
 │                       # UnitOfWork (cached ReflectionProperty, FK propagation,
 │                       #   circular dependency detection, full lifecycle hook dispatch),
 │                       # IdentityMap (composite key derivation via deterministic string),
 │                       # EntityRepository (cached shortName, findBy with orderBy/limit/offset,
-│                       #   findOneBy, count, exists, getTableName, getEntityShortName),
+│                       #   findOneBy, count, exists, executeUpdate, queryScalar,
+│                       #   getTableName, getEntityShortName),
 │                       # InheritanceHandler (TPH/TPT/TPC),
 │                       # HydrationMode (HYDRATE_OBJECT / HYDRATE_ARRAY)
 ├── Proxy/              # LazyLoadingProxy interface + ProxyGenerator
@@ -63,11 +69,14 @@ src/
 │   ├── OqlParser       #   OQL string → AST (tokenizer + recursive descent parser)
 │   ├── OqlPrinter      #   AST → readable OQL text
 │   ├── OqlToSqlTranslator # AST → Sybase SQL using dialect + metadata resolution
-│   └── QueryBuilder    #   Fluent programmatic query construction (with HAVING support, reset() for reuse)
+│   └── QueryBuilder    #   Fluent programmatic query construction (with HAVING support,
+│                       #   setParameter()/setParameters() for named params, reset() for reuse)
 ├── Type/               # TypeCaster: PHP ↔ Sybase type conversion
 │                       # (bool↔BIT, DateTime↔Sybase format, BackedEnum↔scalar)
+│                       # Sybase aliases: real, tinyint, smallint, bigint
+│                       # Types dictionary class (Types::STRING, Types::INTEGER, etc.)
 │                       # CustomTypeInterface for Value Objects (instances cached)
-└── SybaseORMBundle.php # Bundle entry point (extends AbstractBundle)
+└── SybaseORMBundle.php # Bundle entry point (extends Bundle)
 
 config/
 ├── packages/
@@ -92,7 +101,7 @@ manifest.json           # Symfony Flex recipe
 - Connection config supports two modes: URL (`DATABASE_URL`) or individual params
 - URL mode uses a static factory for runtime env var resolution
 - Performance: UnitOfWork caches ReflectionProperty, Hydrator caches ReflectionClass and ReflectionProperty (per class+property), TypeCaster caches custom type instances, EntityManager caches OqlParser + OqlToSqlTranslator + pre-computes entity shortName maps, EntityRepository caches shortName, ClassMetadata uses O(1) indexed maps, MetadataReader uses constant map for lifecycle hook names
-- IdentityMap supports composite key derivation: scalar ids cast to string, array ids are ksorted and pipe-joined for deterministic keys
+- IdentityMap supports composite key derivation: scalar ids use type-prefixed strings (i:, s:, f:, b:, n: prefixes), array ids are ksorted and pipe-joined for deterministic keys
 - ConnectionManager supports transparent charset conversion (UTF-8 ↔ ISO-8859-1) via `charset_conversion` config option and `convertResultRow()` method
 - Exception hierarchy: all ORM exceptions extend SybaseORMException
 - MetadataReader reads inherited private properties from parent classes

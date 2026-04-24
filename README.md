@@ -146,25 +146,26 @@ use SybaseORM\Attribute\Column;
 use SybaseORM\Attribute\Entity;
 use SybaseORM\Attribute\GeneratedValue;
 use SybaseORM\Attribute\Id;
+use SybaseORM\Type\Types;
 
 #[Entity(table: 'usuarios')]
 class Usuario
 {
     #[Id]
     #[GeneratedValue]
-    #[Column(type: 'integer')]
+    #[Column(type: Types::INTEGER)]
     private ?int $id = null;
 
-    #[Column(type: 'string', length: 100)]
+    #[Column(type: Types::STRING, length: 100)]
     private string $nombre = '';
 
-    #[Column(type: 'string', length: 200, nullable: true)]
+    #[Column(type: Types::STRING, length: 200, nullable: true)]
     private ?string $email = null;
 
-    #[Column(type: 'boolean')]
+    #[Column(type: Types::BOOLEAN)]
     private bool $activo = true;
 
-    #[Column(type: 'datetime', nullable: true)]
+    #[Column(type: Types::DATETIME, nullable: true)]
     private ?\DateTimeImmutable $creadoEn = null;
 
     // Getters y setters...
@@ -182,6 +183,20 @@ class Factura
     // Genera SQL con: [facturacion].[facturas]
 }
 ```
+
+### Repositorio personalizado vía `repositoryClass`
+
+Puedes asociar un repositorio personalizado directamente en el atributo `#[Entity]`:
+
+```php
+#[Entity(table: 'productos', repositoryClass: ProductoRepository::class)]
+class Producto
+{
+    // ...
+}
+```
+
+Con esto, `$em->getRepository(Producto::class)` retorna una instancia de `ProductoRepository` automáticamente.
 
 ### Persistir y consultar
 
@@ -243,6 +258,16 @@ class UsuarioController
         $this->em->detach($usuario);    // Remueve del IdentityMap
         $this->em->isManaged($usuario); // false — ya no está rastreado
     }
+
+    public function refrescar(int $id): void
+    {
+        $usuario = $this->em->getRepository(Usuario::class)->find($id);
+        $usuario->setNombre('cambio temporal');
+
+        // Descarta cambios en memoria y recarga desde la BD
+        $this->em->refresh($usuario);
+        // $usuario->getNombre() retorna el valor original de la BD
+    }
 }
 ```
 
@@ -264,10 +289,21 @@ $recientes = $repo->findBy(
     10,                       // limit
     20,                       // offset
 );
+// La paginación se aplica a nivel SQL (TOP/ROW_NUMBER), no en memoria
 
 // Conteo y existencia
 $totalActivos = $repo->count(['activo' => true]);   // int
 $existe = $repo->exists(['email' => '[email]']);     // bool
+
+// OQL: executeUpdate y queryScalar
+$affected = $repo->executeUpdate(
+    'UPDATE Usuario u SET u.activo = :activo WHERE u.departamento = :dep',
+    ['activo' => false, 'dep' => 'ventas']
+);
+$maxSalario = $repo->queryScalar(
+    'SELECT MAX(u.salario) FROM Usuario u WHERE u.activo = :activo',
+    ['activo' => true]
+);
 
 // Persistencia
 $repo->save($usuario);
@@ -291,6 +327,25 @@ $sql = $qb
     ->getSQL();
 
 // Genera paginación con TOP o ROW_NUMBER() según el offset
+```
+
+### QueryBuilder: `setParameter()` / `setParameters()`
+
+Asigna parámetros con nombre de forma independiente a las cláusulas:
+
+```php
+$qb = $this->em->createQueryBuilder(Usuario::class);
+
+$sql = $qb
+    ->select('e.id', 'e.nombre')
+    ->where('e.activo = :activo')
+    ->andWhere('e.departamento = :dep')
+    ->setParameter('activo', true)
+    ->setParameter('dep', 'ventas')
+    ->getSQL();
+
+// O asignar varios de una vez
+$qb->setParameters(['activo' => true, 'dep' => 'ventas']);
 ```
 
 ### QueryBuilder: HAVING
@@ -428,6 +483,22 @@ $nombres = $this->em->query('SELECT DISTINCT u.nombre FROM Usuario u');
 // Aliases de columna
 $datos = $this->em->query(
     'SELECT u.nombre AS nombreUsuario, COUNT(u.id) AS total FROM Usuario u GROUP BY u.nombre'
+);
+```
+
+### OQL: Funciones personalizadas (`registerOqlFunction`)
+
+Registra funciones SQL personalizadas para usarlas en consultas OQL:
+
+```php
+// Registrar una función SQL personalizada
+$this->em->registerOqlFunction('RAND2', 'RAND2()');
+$this->em->registerOqlFunction('DATEDIFF_DAYS', 'DATEDIFF(day, ?, ?)');
+
+// Usar en OQL
+$resultados = $this->em->query(
+    'SELECT u FROM Usuario u WHERE DATEDIFF_DAYS(u.creadoEn, GETDATE()) > :dias',
+    ['dias' => 30]
 );
 ```
 
@@ -632,6 +703,28 @@ Conversiones automáticas entre PHP y Sybase ASE:
 | `string` | `VARCHAR` / `TEXT` | Conversión directa |
 | `BackedEnum` | Valor escalar | `->value` para DB, `::from()` para PHP |
 
+### Diccionario de tipos (`Types`)
+
+La clase `SybaseORM\Type\Types` provee constantes para todos los tipos soportados, evitando strings mágicos:
+
+```php
+use SybaseORM\Type\Types;
+
+#[Column(type: Types::STRING, length: 100)]    // 'string'
+#[Column(type: Types::INTEGER)]                 // 'integer'
+#[Column(type: Types::BOOLEAN)]                 // 'boolean'
+#[Column(type: Types::DATETIME)]                // 'datetime'
+#[Column(type: Types::DECIMAL, precision: 10, scale: 2)]
+#[Column(type: Types::TEXT)]                    // 'text'
+#[Column(type: Types::FLOAT)]                   // 'float'
+#[Column(type: Types::BIGINT)]                  // 'bigint'
+#[Column(type: Types::SMALLINT)]                // 'smallint'
+#[Column(type: Types::TINYINT)]                 // 'tinyint'
+#[Column(type: Types::REAL)]                    // 'real'
+```
+
+Los literales string (`'string'`, `'integer'`, etc.) siguen funcionando. Las constantes son opcionales pero recomendadas para autocompletado y detección de errores en tiempo de compilación.
+
 ### Tipos personalizados (Value Objects)
 
 ```php
@@ -713,6 +806,13 @@ El ORM implementa dos niveles de caché:
 
 Si Redis no está disponible, el sistema continúa operando solo con el primer nivel y registra una advertencia en el log.
 
+### Limpiar caché programáticamente
+
+```php
+$this->em->clear();                  // Limpia todo el IdentityMap
+$this->em->clear(Producto::class);   // Limpia solo las instancias de Producto
+```
+
 ## Arquitectura
 
 El `EntityManager` expone `getDialect()` y `getConnection()` para acceso directo al dialecto SQL y al gestor de conexiones cuando se necesita SQL crudo:
@@ -725,6 +825,35 @@ $dialect = $this->em->getDialect();
 $conn = $this->em->getConnection();
 $stmt = $conn->executeQuery('SELECT @@version', []);
 ```
+
+### Conexión: `ping()` y `getServerVersion()`
+
+```php
+$conn = $this->em->getConnection();
+
+// Verificar si la conexión sigue activa
+if ($conn->ping()) {
+    echo 'Conexión activa';
+}
+
+// Obtener la versión del servidor Sybase ASE
+$version = $conn->getServerVersion();
+```
+
+### Query logging (PSR-3)
+
+El `ConnectionManager` acepta un `Psr\Log\LoggerInterface` opcional. Cuando se proporciona, registra advertencias de conversión de charset. Para logging de queries SQL, configura un logger PSR-3 en tu servicio:
+
+```yaml
+# config/services.yaml
+SybaseORM\Connection\ConnectionManager:
+    arguments:
+        $logger: '@logger'
+```
+
+### Caché de sentencias preparadas
+
+El `ConnectionManager` mantiene un caché interno de `PDOStatement` (`stmtCache`). Las sentencias SQL idénticas reutilizan el statement preparado, evitando re-compilación en el servidor. El caché se invalida automáticamente al reconectar.
 
 ```
 src/
@@ -756,6 +885,7 @@ El `SybaseDialect` maneja las particularidades de Sybase ASE:
 - Identificadores con corchetes: `[tabla]`, `[esquema].[tabla]`
 - `SET ANSINULL ON` y `SET QUOTED_IDENTIFIER ON` al establecer conexión
 - Liberación temprana de `PDOStatement` para respetar el límite de cursores
+- `generateCount()` y `generateExists()` para consultas optimizadas de conteo y existencia
 
 ## Tests
 
@@ -763,7 +893,7 @@ El `SybaseDialect` maneja las particularidades de Sybase ASE:
 vendor/bin/phpunit
 ```
 
-2098 tests, 9594 assertions cubriendo todos los componentes.
+2864 tests, 11749 assertions cubriendo todos los componentes.
 
 ## Licencia
 

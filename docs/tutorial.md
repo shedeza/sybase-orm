@@ -319,6 +319,20 @@ class Factura
 }
 ```
 
+### Repositorio personalizado vía `repositoryClass`
+
+Puedes asociar un repositorio directamente en el atributo `#[Entity]`:
+
+```php
+#[Entity(table: 'productos', repositoryClass: ProductoRepository::class)]
+class Producto
+{
+    // ...
+}
+```
+
+Con esto, `$em->getRepository(Producto::class)` retorna una instancia de `ProductoRepository`.
+
 ### Tipos de columna soportados
 
 | Attribute `type` | PHP | Sybase ASE |
@@ -332,6 +346,33 @@ class Factura
 | `'datetime'` | `DateTimeImmutable` | `DATETIME` |
 | `'smallint'` | `int` | `SMALLINT` |
 | `'bigint'` | `int` | `BIGINT` |
+
+### Diccionario de tipos (`Types`)
+
+En lugar de strings literales, puedes usar las constantes de `SybaseORM\Type\Types` para autocompletado y seguridad en tiempo de compilación:
+
+```php
+use SybaseORM\Type\Types;
+
+#[Column(type: Types::STRING, length: 200)]
+private string $nombre = '';
+
+#[Column(type: Types::INTEGER)]
+private int $stock = 0;
+
+#[Column(type: Types::DECIMAL, precision: 10, scale: 2)]
+private float $precio = 0.0;
+
+#[Column(type: Types::BOOLEAN)]
+private bool $activo = true;
+
+#[Column(type: Types::DATETIME, nullable: true)]
+private ?\DateTimeImmutable $creadoEn = null;
+```
+
+Constantes disponibles: `Types::STRING`, `Types::VARCHAR`, `Types::TEXT`, `Types::INTEGER`, `Types::INT`, `Types::TINYINT`, `Types::SMALLINT`, `Types::BIGINT`, `Types::FLOAT`, `Types::DOUBLE`, `Types::DECIMAL`, `Types::REAL`, `Types::BOOLEAN`, `Types::BOOL`, `Types::DATETIME`.
+
+Los literales string (`'string'`, `'integer'`, etc.) siguen funcionando — las constantes son opcionales.
 
 
 ---
@@ -524,6 +565,17 @@ $repo->deleteMany([$p1, $p2]);                       // Eliminar varios
 
 // --- QueryBuilder ---
 $qb = $repo->createQueryBuilder();                   // Pre-configurado con FROM
+
+// --- OQL: executeUpdate y queryScalar ---
+$affected = $repo->executeUpdate(
+    'UPDATE Producto p SET p.activo = :activo WHERE p.stock = :stock',
+    ['activo' => false, 'stock' => 0]
+);  // int — filas afectadas
+
+$maxPrecio = $repo->queryScalar(
+    'SELECT MAX(p.precio) FROM Producto p WHERE p.activo = :activo',
+    ['activo' => true]
+);  // mixed — valor escalar
 
 // --- Conteo y existencia ---
 $totalActivos = $repo->count(['activo' => true]);    // int — cuenta entidades que coincidan
@@ -808,6 +860,25 @@ $sql2 = $qb->reset()
 
 Esto evita crear nuevas instancias de QueryBuilder en loops o servicios que ejecutan múltiples consultas.
 
+### `setParameter()` / `setParameters()` — parámetros con nombre
+
+Asigna parámetros con nombre de forma independiente a las cláusulas:
+
+```php
+$qb = $this->em->createQueryBuilder(Producto::class);
+
+$sql = $qb
+    ->select('e.id', 'e.nombre')
+    ->where('e.activo = :activo')
+    ->andWhere('e.precio > :min')
+    ->setParameter('activo', true)
+    ->setParameter('min', 100)
+    ->getSQL();
+
+// O asignar varios de una vez
+$qb->setParameters(['activo' => true, 'min' => 100]);
+```
+
 ---
 
 ## 8. OQL - Object Query Language
@@ -977,6 +1048,31 @@ $iterator = $this->em->queryIterator(
 foreach ($iterator as $fila) {
     // $fila es un array asociativo: ['categoria' => '...', 'nombre' => '...', 'precio' => ...]
 }
+```
+
+### Funciones OQL personalizadas (`registerOqlFunction`)
+
+Registra funciones SQL personalizadas para usarlas en consultas OQL:
+
+```php
+$this->em->registerOqlFunction('RAND2', 'RAND2()');
+$this->em->registerOqlFunction('DATEDIFF_DAYS', 'DATEDIFF(day, ?, ?)');
+
+$resultados = $this->em->query(
+    'SELECT p FROM Producto p ORDER BY RAND2()'
+);
+```
+
+### `refresh()` — recargar entidad desde la BD
+
+Descarta los cambios en memoria y recarga la entidad desde la base de datos:
+
+```php
+$producto = $repo->find(1);
+$producto->setNombre('cambio temporal');
+
+$this->em->refresh($producto);
+// $producto->getNombre() retorna el valor original de la BD
 ```
 
 ### JOIN con entidad (WITH)
@@ -1778,6 +1874,12 @@ $conn = $this->em->getConnection();
 $stmt = $conn->executeQuery('SELECT @@version', []);
 $version = $stmt->fetch(\PDO::FETCH_ASSOC);
 $stmt->closeCursor();
+
+// Verificar si la conexión sigue activa
+$conn->ping(); // bool
+
+// Obtener la versión del servidor
+$conn->getServerVersion(); // string
 ```
 
 También puedes acceder a los metadatos de las entidades:
@@ -1796,6 +1898,17 @@ echo $metadata; // ClassMetadata(App\Entity\Producto → productos, 6 columns, 1
 - Genera migraciones después de cada cambio en las entidades
 - Revisa el SQL generado antes de ejecutar en producción
 - Mantén los archivos de migración en control de versiones
+
+### Query logging (PSR-3)
+
+El `ConnectionManager` acepta un `Psr\Log\LoggerInterface` opcional para registrar advertencias de conversión de charset:
+
+```yaml
+# config/services.yaml
+SybaseORM\Connection\ConnectionManager:
+    arguments:
+        $logger: '@logger'
+```
 
 ---
 
@@ -1890,7 +2003,7 @@ $repo->save($inscripcion);
 
 | Attribute | Target | Parámetros |
 |-----------|--------|-----------|
-| `#[Entity]` | Clase | `table?`, `schema?` |
+| `#[Entity]` | Clase | `table?`, `schema?`, `repositoryClass?` |
 | `#[Column]` | Propiedad | `name?`, `type`, `nullable`, `length?`, `precision?`, `scale?` |
 | `#[Id]` | Propiedad | `strategy?` (default: `'identity'`) |
 | `#[GeneratedValue]` | Propiedad | `strategy?` (default: `'IDENTITY'`) |

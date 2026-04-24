@@ -43,7 +43,7 @@ vendor/bin/phpunit --filter testDefaults
 - `failOnRisky` and `failOnWarning` enabled
 - Test fixtures live in `tests/{Component}/Fixtures/` directories
 - Tests use `final class` and extend `PHPUnit\Framework\TestCase`
-- 2098 tests, 9594 assertions across all components
+- 2864 tests, 11749 assertions across all components
 - Property-based tests using `@dataProvider` with 100+ iterations for thorough input coverage
 
 ## Code Style Conventions
@@ -55,14 +55,20 @@ vendor/bin/phpunit --filter testDefaults
 - Named arguments used in constructor calls and method invocations
 - Some docblocks are written in Spanish (this is intentional, preserve the language when editing existing docs)
 - Performance-sensitive code caches `ReflectionProperty` and `ReflectionClass` instances, pre-computes lookup maps, and uses O(1) indexed maps in ClassMetadata
+- `Types` dictionary class (`SybaseORM\Type\Types`) provides constants for all supported column types (`Types::STRING`, `Types::INTEGER`, etc.)
+- `TypeCaster` supports Sybase type aliases: `real`, `tinyint`, `smallint`, `bigint` in addition to standard types
+- `EntityManager::registerOqlFunction()` registers custom SQL functions for OQL; invalidates query cache
 
 ## Connection Configuration
 - Two modes: URL-based (`DATABASE_URL`) or individual parameters
 - URL format: `sybase://user:pass@host:port/database?charset=UTF-8&persistent=true`
 - URL mode uses a static factory method in `SybaseORMExtension` for runtime resolution (compatible with `%env()%`)
 - Individual params mode passes config array directly to `ConnectionManager` constructor
-- `ConnectionManager` validates `dbname` is non-empty at construction time
+- `ConnectionManager` validates `dbname` is non-empty at construction time; port validated lazily on first `getConnection()` call
+- `ConnectionManager` maintains a prepared statement cache (`stmtCache`) for reusing `PDOStatement` instances; auto-cleared on reconnect
+- `ConnectionManager` exposes `ping()` (connection health check) and `getServerVersion()` (Sybase ASE version string)
 - `ConnectionUrlParser` handles DSN parsing with URL-encoded password support
+- Query logging: `ConnectionManager` accepts optional PSR-3 `LoggerInterface` for charset conversion warnings
 
 ## Exception Hierarchy
 - `SybaseORMException` (base) → `ConnectionLostException`, `PersistenceException`, `TransactionException`, `TypeConversionException`, `MigrationException`, `OqlParseException`
