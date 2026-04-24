@@ -472,3 +472,44 @@ Este documento define los requisitos para un Symfony Bundle que implementa un OR
 4. THE EntityRepository SHALL proporcionar métodos `count(array $criteria = []): int` y `exists(array $criteria): bool`
 5. THE EntityManager SHALL proporcionar `queryIterator()` para streaming de resultados grandes sin cargar todo en memoria
 6. THE EntityManager::shouldAutoDetectArrayMode() SHALL detectar GROUP BY y aliases de columna además de FunctionCall
+
+
+### Requisito 36: Mejoras de Producción (v1.3.4–v1.6.0)
+
+**Historia de Usuario:** Como desarrollador desplegando en producción con Sybase ASE, quiero que el ORM maneje correctamente edge cases de tipos, conexión y parámetros.
+
+#### Criterios de Aceptación
+
+1. THE IdentityMap SHALL use type-prefixed keys (i:, s:, f:, b:, n:) to prevent collisions between int 1 and string '1'
+2. THE ConnectionManager SHALL preserve float precision using sprintf('%.17g') instead of (string) cast
+3. THE EntityManager::find() SHALL apply charset conversion (convertResultRow) to results
+4. THE OqlParser tokenizer SHALL support Sybase doubled-quote escaping ('') in addition to backslash escaping
+5. THE EntityManager SHALL cache OQL→SQL translations to avoid re-parsing repeated queries
+6. THE EntityRepository::findBy() SHALL apply pagination at SQL level (TOP/ROW_NUMBER) instead of array_slice in PHP
+7. THE EntityManager SHALL accept optional PSR-3 LoggerInterface for query logging
+8. THE EntityManager::clear() SHALL accept optional entityClass parameter for selective clearing
+9. THE ConnectionManager SHALL validate port lazily on getConnection() instead of constructor, allowing %env()% placeholders
+10. THE ConnectionManager SHALL reject non-scalar values (array/object) in bindParams with clear exception
+11. THE EntityManager SHALL handle empty IN clause arrays by replacing :param with NULL (matches nothing with ANSINULL ON)
+12. THE ConnectionManager SHALL clear statement cache on reconnection after connection loss
+13. THE OqlToSqlTranslator SHALL strip alias prefixes in UPDATE/DELETE statements (Sybase ASE doesn't support table aliases in UPDATE/DELETE)
+14. THE ConnectionManager SHALL normalize associative arrays with non-scalar values by using array_keys() as IN values (Doctrine DQL compatibility)
+
+### Requisito 37: API Extendida (v1.5.0–v1.7.1)
+
+**Historia de Usuario:** Como desarrollador, quiero una API más completa para reducir la necesidad de SQL crudo y mejorar la experiencia de desarrollo.
+
+#### Criterios de Aceptación
+
+1. THE Entity attribute SHALL accept optional repositoryClass parameter to auto-instantiate custom repositories via EntityManager::getRepository()
+2. THE EntityManager SHALL provide registerOqlFunction(name, sqlTemplate) to register custom SQL functions for use in OQL queries
+3. THE ConnectionManager SHALL cache PDOStatement instances by SQL string (stmtCache) and reuse them with different parameters
+4. THE QueryBuilder SHALL provide setParameter(name, value) and setParameters(params) for named parameter binding
+5. THE EntityRepository SHALL provide executeUpdate(oql, params) and queryScalar(oql, params) convenience methods
+6. THE TypeCaster SHALL support Sybase type aliases: 'real' (float), 'tinyint'/'smallint'/'bigint' (int)
+7. THE ConnectionManager SHALL provide ping() for connection health check and getServerVersion() for server version retrieval
+8. THE EntityManager SHALL provide refresh(entity) to reload from database discarding in-memory changes
+9. THE SybaseDialect SHALL provide generateCount(from, whereClause) and generateExists(from, whereClause) for optimized queries
+10. THE CacheManager SHALL use type-prefixed keys consistent with IdentityMap (i:, s:, f:, b:, n:)
+11. THE Type module SHALL provide a Types dictionary class with constants (Types::STRING, Types::INTEGER, etc.) for compile-time safe type references
+12. THE TypeCaster::getDatabaseValueSQL() SHALL return CONVERT(REAL, ?) for float/double/decimal/real types to prevent Sybase implicit conversion errors

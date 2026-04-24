@@ -401,3 +401,19 @@ public function convertResultRow(array $row): array;
 12. **UPDATE parameter ordering** — parámetros SET antes de WHERE
 13. **TypeCaster getDatabaseValueSQL** — retorna wrapping iff SqlWrappingTypeInterface
 14. **Dialect value expressions** — sustituye expresiones correctamente en generateInsert/generateUpdate
+
+## Extensiones: Mejoras de Producción y API Extendida (v1.3.4–v1.7.1)
+
+### Decisiones de Diseño Adicionales
+
+37. **IdentityMap type-safe keys**: Keys use type prefixes (i:1, s:1, f:1.0, b:1, n:) to prevent collisions between different PHP types with the same string representation.
+38. **Float precision via sprintf**: `ConnectionManager::bindSingleValue()` uses `sprintf('%.17g', $value)` for floats instead of `(string)` cast, preserving full IEEE 754 precision.
+39. **Lazy port validation**: Port is validated on first `getConnection()` call, not in constructor. Allows Symfony `%env()%` placeholders to pass through construction.
+40. **Prepared statement cache**: `ConnectionManager` maintains `$stmtCache` keyed by SQL string. Cleared on connection loss and reconnection.
+41. **OQL→SQL translation cache**: `EntityManager` caches translated SQL templates in `$queryCache`. Invalidated on `registerOqlFunction()`.
+42. **Alias stripping in UPDATE/DELETE**: `OqlToSqlTranslator` uses `$stripAlias` flag during `translateUpdate()`/`translateDelete()` to omit alias prefixes, since Sybase ASE doesn't support table aliases in UPDATE/DELETE.
+43. **Empty IN clause handling**: Empty array params produce `IN (NULL)` which matches nothing with ANSINULL ON, instead of invalid `IN ()`.
+44. **repositoryClass in Entity**: `#[Entity(repositoryClass: ...)]` stores FQCN in `ClassMetadata.$repositoryClass`. `EntityManager::getRepository()` instantiates custom class if set.
+45. **Custom OQL functions**: `registerOqlFunction()` propagates to both `OqlParser` (recognition) and `OqlToSqlTranslator` (SQL template). Parser handles no-arg pattern by default.
+46. **Types dictionary**: `SybaseORM\Type\Types` provides compile-time safe constants for all supported column types. String literals remain supported for backward compatibility.
+47. **EntityManager::refresh()**: Removes from IdentityMap, reloads via find(), copies fresh values back to original entity, re-registers as clean.

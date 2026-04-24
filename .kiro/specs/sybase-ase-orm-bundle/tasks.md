@@ -566,3 +566,53 @@ Implementación de sentencias OQL UPDATE/DELETE, funciones CONVERT/RAND, método
 - Las tareas 38–46 (OQL UPDATE/DELETE, funciones, tipos SqlWrapping) están pendientes de implementación
 - 7 tests de propiedad adicionales con 100+ iteraciones cada uno
 - Total acumulado actual: 2864 tests, 11749 assertions
+
+---
+
+## Extensión: Mejoras de Producción y API Extendida (v1.3.4–v1.7.1)
+
+Features implementadas durante integración en producción y ciclos de mejora.
+
+- [x] 49. Correcciones de producción (v1.3.4–v1.6.0)
+  - [x] 49.1 IdentityMap: type-safe keys con prefijos i:/s:/f:/b:/n:
+  - [x] 49.2 ConnectionManager: float precision con sprintf('%.17g')
+  - [x] 49.3 EntityManager::find(): charset conversion en resultados
+  - [x] 49.4 OqlParser: soporte doubled-quote escaping de Sybase
+  - [x] 49.5 ConnectionManager: validación lazy del port en getConnection()
+  - [x] 49.6 ConnectionManager: bindParams rechaza non-scalars con excepción clara
+  - [x] 49.7 EntityManager: empty IN clause → IN (NULL)
+  - [x] 49.8 ConnectionManager: limpia stmtCache al reconectar
+  - [x] 49.9 OqlToSqlTranslator: strip alias en UPDATE/DELETE
+  - [x] 49.10 ConnectionManager/EntityManager: normalización de arrays asociativos en IN
+  - _Requisitos: 36.1–36.14_
+
+- [x] 50. API extendida (v1.4.0–v1.5.0)
+  - [x] 50.1 EntityManager: OQL→SQL translation cache ($queryCache)
+  - [x] 50.2 EntityRepository::findBy(): paginación SQL (TOP/ROW_NUMBER) en vez de array_slice
+  - [x] 50.3 EntityManager: query logging via PSR-3 LoggerInterface
+  - [x] 50.4 EntityManager::clear(?entityClass): selective clearing
+  - [x] 50.5 Entity attribute: repositoryClass parameter
+  - [x] 50.6 EntityManager::registerOqlFunction(): custom SQL functions en OQL
+  - [x] 50.7 ConnectionManager: prepared statement cache (stmtCache)
+  - _Requisitos: 37.1–37.3_
+
+- [x] 51. Mejoras de API (v1.7.0–v1.7.1)
+  - [x] 51.1 QueryBuilder: setParameter()/setParameters()
+  - [x] 51.2 EntityRepository: executeUpdate()/queryScalar()
+  - [x] 51.3 TypeCaster: aliases Sybase (real, tinyint, smallint, bigint)
+  - [x] 51.4 ConnectionManager: ping()/getServerVersion()
+  - [x] 51.5 EntityManager: refresh()
+  - [x] 51.6 SybaseDialect: generateCount()/generateExists()
+  - [x] 51.7 CacheManager: type-safe keys consistentes con IdentityMap
+  - [x] 51.8 Types dictionary class (Types::STRING, Types::INTEGER, etc.)
+  - [x] 51.9 TypeCaster::getDatabaseValueSQL(): CONVERT(REAL, ?) para float types
+  - _Requisitos: 37.4–37.12_
+
+- [x] 52. Checkpoint final v1.7.1
+  - 2864 tests, 11749 assertions — todos pasando
+
+### Notas de la extensión
+
+- Todas las features fueron implementadas y verificadas con tests
+- Total acumulado: 2864 tests, 11749 assertions
+- Versión actual: v1.7.1
