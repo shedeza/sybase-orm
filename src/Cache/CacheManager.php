@@ -144,12 +144,34 @@ final class CacheManager implements CacheManagerInterface
     {
         if (is_array($id)) {
             ksort($id);
-            $idStr = implode('|', array_map('strval', $id));
+            $idStr = implode('|', array_map(fn($v) => $this->typedKeyValue($v), $id));
         } else {
-            $idStr = (string) $id;
+            $idStr = $this->typedKeyValue($id);
         }
 
         return 'entity:' . $entityClass . ':' . $idStr;
+    }
+
+    /**
+     * Returns a type-prefixed string representation of a value.
+     * Matches IdentityMap::typedValue() for consistent key derivation.
+     */
+    private function typedKeyValue(mixed $value): string
+    {
+        if ($value === null) {
+            return 'n:';
+        }
+        if (is_int($value)) {
+            return 'i:' . $value;
+        }
+        if (is_float($value)) {
+            return 'f:' . $value;
+        }
+        if (is_bool($value)) {
+            return 'b:' . ($value ? '1' : '0');
+        }
+
+        return 's:' . $value;
     }
 
     private function queryKey(string $queryKey): string

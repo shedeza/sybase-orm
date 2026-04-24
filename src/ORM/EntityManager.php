@@ -798,6 +798,50 @@ final class EntityManager implements EntityManagerInterface
         $this->queryCache = [];
     }
 
+    public function refresh(object $entity): void
+    {
+        $entityClass = $entity::class;
+        $metadata = $this->metadataReader->getClassMetadata($entityClass);
+        $idColumns = $metadata->getIdColumns();
+
+        if (empty($idColumns)) {
+            throw new PersistenceException('Cannot refresh entity without ID.');
+        }
+
+        $reflectionClass = new \ReflectionClass($entityClass);
+
+        // Build ID
+        if (count($idColumns) === 1) {
+            $id = $reflectionClass->getProperty($idColumns[0]->propertyName)->getValue($entity);
+        } else {
+            $id = [];
+            foreach ($idColumns as $idCol) {
+                $id[$idCol->propertyName] = $reflectionClass->getProperty($idCol->propertyName)->getValue($entity);
+            }
+        }
+
+        // Remove from identity map to force reload
+        $this->identityMap->remove($entityClass, $id);
+
+        // Reload from DB
+        $fresh = $this->find($entityClass, $id);
+        if ($fresh === null) {
+            throw new PersistenceException('Entity not found in database during refresh.');
+        }
+
+        // Copy fresh values back to the original entity
+        foreach ($metadata->columns as $column) {
+            $prop = $reflectionClass->getProperty($column->propertyName);
+            $prop->setValue($entity, $prop->getValue($fresh));
+        }
+
+        // Re-register as clean with fresh snapshot
+        $this->unitOfWork->registerClean($entity);
+
+        // Put original entity back in identity map (not the fresh copy)
+        $this->identityMap->put($entityClass, $id, $entity);
+    }
+
     /**
      * Ensures the OQL→SQL translator is initialized with all custom functions.
      */

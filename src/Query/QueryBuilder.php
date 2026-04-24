@@ -178,6 +178,20 @@ final class QueryBuilder implements QueryBuilderInterface
         return $this;
     }
 
+    public function setParameter(string $name, mixed $value): static
+    {
+        $this->parameters[$name] = $value;
+
+        return $this;
+    }
+
+    public function setParameters(array $params): static
+    {
+        $this->parameters = array_merge($this->parameters, $params);
+
+        return $this;
+    }
+
     public function getSQL(): string
     {
         $sql = $this->buildSelectClause();

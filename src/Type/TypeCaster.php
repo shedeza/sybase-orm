@@ -28,8 +28,8 @@ final class TypeCaster implements TypeCasterInterface
         return match ($type) {
             'bool', 'boolean' => $this->boolToDatabaseValue($value),
             'datetime' => $this->dateTimeToDatabaseValue($value),
-            'int', 'integer' => $this->intToDatabaseValue($value),
-            'float', 'double', 'decimal' => $this->floatToDatabaseValue($value),
+            'int', 'integer', 'tinyint', 'smallint', 'bigint' => $this->intToDatabaseValue($value),
+            'float', 'double', 'decimal', 'real' => $this->floatToDatabaseValue($value),
             'string', 'varchar', 'text' => $this->stringToDatabaseValue($value),
             default => $this->resolveCustomToDatabaseValue($value, $type),
         };
@@ -44,8 +44,8 @@ final class TypeCaster implements TypeCasterInterface
         return match ($type) {
             'bool', 'boolean' => $this->boolToPhpValue($value),
             'datetime' => $this->dateTimeToPhpValue($value),
-            'int', 'integer' => $this->intToPhpValue($value),
-            'float', 'double', 'decimal' => $this->floatToPhpValue($value),
+            'int', 'integer', 'tinyint', 'smallint', 'bigint' => $this->intToPhpValue($value),
+            'float', 'double', 'decimal', 'real' => $this->floatToPhpValue($value),
             'string', 'varchar', 'text' => $this->stringToPhpValue($value),
             default => $this->resolveCustomToPhpValue($value, $type),
         };

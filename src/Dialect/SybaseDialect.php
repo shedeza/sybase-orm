@@ -185,6 +185,31 @@ final class SybaseDialect implements DialectInterface
 
     /**
      * {@inheritdoc}
+     */
+    public function generateCount(string $from, ?string $whereClause = null): string
+    {
+        $sql = 'SELECT COUNT(*) FROM ' . $this->quoteIdentifier($from);
+        if ($whereClause !== null) {
+            $sql .= ' WHERE ' . $whereClause;
+        }
+
+        return $sql;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function generateExists(string $from, string $whereClause): string
+    {
+        return sprintf(
+            'SELECT CASE WHEN EXISTS (SELECT 1 FROM %s WHERE %s) THEN 1 ELSE 0 END',
+            $this->quoteIdentifier($from),
+            $whereClause,
+        );
+    }
+
+    /**
+     * {@inheritdoc}
      *
      * Generates ANSINULL-compliant NULL comparisons.
      */

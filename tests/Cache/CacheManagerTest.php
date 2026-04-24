@@ -79,7 +79,7 @@ final class CacheManagerTest extends TestCase
 
         $secondLevel = $this->createMock(SecondLevelCacheInterface::class);
         $secondLevel->method('get')
-            ->with('entity:App\\Entity\\User:1')
+            ->with('entity:App\\Entity\\User:i:1')
             ->willReturn($entity);
 
         $cache = new CacheManager($this->identityMap, $secondLevel);
@@ -98,7 +98,7 @@ final class CacheManagerTest extends TestCase
         $secondLevel = $this->createMock(SecondLevelCacheInterface::class);
         $secondLevel->expects($this->once())
             ->method('put')
-            ->with('entity:App\\Entity\\User:1', $entity);
+            ->with('entity:App\\Entity\\User:i:1', $entity);
 
         $cache = new CacheManager($this->identityMap, $secondLevel);
         $cache->put('App\\Entity\\User', 1, $entity);
@@ -116,7 +116,7 @@ final class CacheManagerTest extends TestCase
         $secondLevel = $this->createMock(SecondLevelCacheInterface::class);
         $secondLevel->expects($this->once())
             ->method('delete')
-            ->with('entity:App\\Entity\\User:1');
+            ->with('entity:App\\Entity\\User:i:1');
 
         $cache = new CacheManager($this->identityMap, $secondLevel);
         $cache->invalidate('App\\Entity\\User', 1);

@@ -33,4 +33,10 @@ interface DialectInterface
 
     /** Genera la sentencia SELECT base. */
     public function generateSelect(array $columns, string $from, ?string $alias = null): string;
+
+    /** Generates a SELECT COUNT(*) query with an optional WHERE clause. */
+    public function generateCount(string $from, ?string $whereClause = null): string;
+
+    /** Generates a SELECT CASE WHEN EXISTS (...) query. */
+    public function generateExists(string $from, string $whereClause): string;
 }

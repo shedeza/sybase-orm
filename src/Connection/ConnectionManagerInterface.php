@@ -69,4 +69,16 @@ interface ConnectionManagerInterface
      * @return array Fila con strings convertidos.
      */
     public function convertResultRow(array $row): array;
+
+    /**
+     * Checks if the database connection is still alive.
+     *
+     * @return bool True if the connection responds, false otherwise.
+     */
+    public function ping(): bool;
+
+    /**
+     * Returns the Sybase ASE server version string.
+     */
+    public function getServerVersion(): string;
 }

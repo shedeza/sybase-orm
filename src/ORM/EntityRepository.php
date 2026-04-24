@@ -184,6 +184,24 @@ class EntityRepository
         return ((int) ($count ?? 0)) > 0;
     }
 
+    // ── OQL convenience ────────────────────────────────────────────
+
+    /**
+     * Executes an OQL UPDATE or DELETE statement and returns the number of affected rows.
+     */
+    public function executeUpdate(string $oql, array $params = []): int
+    {
+        return $this->entityManager->executeUpdate($oql, $params);
+    }
+
+    /**
+     * Executes an OQL query and returns a single scalar value.
+     */
+    public function queryScalar(string $oql, array $params = []): mixed
+    {
+        return $this->entityManager->queryScalar($oql, $params);
+    }
+
     // ── QueryBuilder ────────────────────────────────────────────────
 
     public function createQueryBuilder(): QueryBuilderInterface

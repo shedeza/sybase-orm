@@ -492,4 +492,24 @@ class ConnectionManager implements ConnectionManagerInterface
     {
         return new \PDO($dsn, $username, $password, $options);
     }
+
+    public function ping(): bool
+    {
+        try {
+            $this->getConnection()->exec('SELECT 1');
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    public function getServerVersion(): string
+    {
+        $stmt = $this->getConnection()->query('SELECT @@version');
+        $row = $stmt->fetch(\PDO::FETCH_NUM);
+        $stmt->closeCursor();
+
+        return is_array($row) ? ($row[0] ?? 'unknown') : 'unknown';
+    }
 }

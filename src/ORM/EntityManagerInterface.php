@@ -86,6 +86,13 @@ interface EntityManagerInterface
     public function registerOqlFunction(string $name, string $sqlTemplate): void;
 
     /**
+     * Reloads an entity from the database, discarding any in-memory changes.
+     *
+     * @throws \SybaseORM\Exception\PersistenceException If the entity has no ID or is not found.
+     */
+    public function refresh(object $entity): void;
+
+    /**
      * Sets directories to scan for entity classes.
      * Entity discovery happens lazily on first OQL query.
      *

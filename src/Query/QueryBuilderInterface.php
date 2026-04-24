@@ -48,6 +48,12 @@ interface QueryBuilderInterface
     /** Agrega una condición HAVING a la consulta. */
     public function having(string $condition, array $params = []): static;
 
+    /** Sets a single named parameter value. */
+    public function setParameter(string $name, mixed $value): static;
+
+    /** Merges multiple named parameter values. */
+    public function setParameters(array $params): static;
+
     /** Resets all query state for reuse. */
     public function reset(): static;
 
