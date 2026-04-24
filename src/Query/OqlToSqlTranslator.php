@@ -48,6 +48,12 @@ final class OqlToSqlTranslator
     private array $aliasToTable = [];
 
     /**
+     * Maps custom function name → SQL template.
+     * @var array<string, string>
+     */
+    private array $customFunctionSql = [];
+
+    /**
      * Maps entity short name → fully qualified class name.
      * @var array<string, string>
      */
@@ -63,6 +69,14 @@ final class OqlToSqlTranslator
             $shortName = (new \ReflectionClass($fqcn))->getShortName();
             $this->entityMap[$shortName] = $fqcn;
         }
+    }
+
+    /**
+     * Registers a custom function with its SQL template.
+     */
+    public function registerFunction(string $name, string $sqlTemplate): void
+    {
+        $this->customFunctionSql[strtoupper($name)] = $sqlTemplate;
     }
 
     /**
@@ -232,11 +246,18 @@ final class OqlToSqlTranslator
      * Resolves a CustomFunctionCall to SQL.
      * CONVERT(expr AS type) in OQL → CONVERT(type, expr) in Sybase SQL
      * RAND() → RAND()
+     * User-registered functions → their SQL template
      */
     private function resolveCustomFunctionCall(CustomFunctionCall $func, array &$parameters): string
     {
         if ($func->functionName === 'RAND') {
             return 'RAND()';
+        }
+
+        // User-registered custom functions (no-arg pattern)
+        $upperName = strtoupper($func->functionName);
+        if ($upperName !== 'CONVERT' && isset($this->customFunctionSql[$upperName])) {
+            return $this->customFunctionSql[$upperName];
         }
 
         // CONVERT: OQL uses CONVERT(expr AS type), Sybase SQL uses CONVERT(type, expr)

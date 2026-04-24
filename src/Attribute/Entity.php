@@ -18,6 +18,7 @@ final class Entity
     public function __construct(
         public readonly ?string $table = null,
         public readonly ?string $schema = null,
+        public readonly ?string $repositoryClass = null,
     ) {
     }
 }

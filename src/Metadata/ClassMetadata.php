@@ -32,6 +32,7 @@ final class ClassMetadata
      * @param array<string, string> $discriminatorMap   Discriminator value => class map
      * @param array<string, string[]> $lifecycleHooks   Hook type => method names
      * @param string[]              $idFields           Property names of all primary key fields
+     * @param string|null           $repositoryClass    Custom repository class FQCN
      */
     public function __construct(
         public readonly string $entityClass,
@@ -45,6 +46,7 @@ final class ClassMetadata
         public readonly array $discriminatorMap = [],
         public readonly array $lifecycleHooks = [],
         array $idFields = [],
+        public readonly ?string $repositoryClass = null,
     ) {
         // Compute idFields and idField for backward compatibility
         if ($idFields !== []) {

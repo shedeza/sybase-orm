@@ -50,4 +50,24 @@ final class EntityTest extends TestCase
         $instance = $attrs[0]->newInstance();
         $this->assertNull($instance->table);
     }
+
+    public function testDefaultRepositoryClassIsNull(): void
+    {
+        $entity = new Entity();
+        $this->assertNull($entity->repositoryClass);
+    }
+
+    public function testCustomRepositoryClass(): void
+    {
+        $entity = new Entity(table: 'users', repositoryClass: 'App\\Repository\\UserRepository');
+        $this->assertSame('App\\Repository\\UserRepository', $entity->repositoryClass);
+    }
+
+    public function testRepositoryClassWithTableAndSchema(): void
+    {
+        $entity = new Entity(table: 'users', schema: 'dbo', repositoryClass: 'App\\Repository\\UserRepository');
+        $this->assertSame('users', $entity->table);
+        $this->assertSame('dbo', $entity->schema);
+        $this->assertSame('App\\Repository\\UserRepository', $entity->repositoryClass);
+    }
 }

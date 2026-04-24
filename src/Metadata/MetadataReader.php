@@ -145,6 +145,7 @@ final class MetadataReader implements MetadataReaderInterface
             discriminatorMap: $discriminatorMap,
             lifecycleHooks: $lifecycleHooks,
             idFields: $idFields,
+            repositoryClass: $entityAttr->repositoryClass,
         );
 
         // Store in memory cache

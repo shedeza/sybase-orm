@@ -41,6 +41,9 @@ final class EntityManager implements EntityManagerInterface
     /** @var OqlToSqlTranslator|null Instancia reutilizable del traductor OQL→SQL */
     private ?OqlToSqlTranslator $oqlTranslator = null;
 
+    /** @var array<string, string> Registered custom OQL functions: name → SQL template */
+    private array $customOqlFunctions = [];
+
     /** @var bool Whether entity classes have been auto-discovered */
     private bool $entitiesDiscovered = false;
 
@@ -422,11 +425,7 @@ final class EntityManager implements EntityManagerInterface
         }
 
         if ($this->oqlTranslator === null) {
-            $this->oqlTranslator = new OqlToSqlTranslator(
-                $this->dialect,
-                $this->metadataReader,
-                $this->entityClasses,
-            );
+            $this->ensureOqlTranslator();
         }
 
         $result = $this->oqlTranslator->translate($ast);
@@ -521,11 +520,7 @@ final class EntityManager implements EntityManagerInterface
         $ast = $this->oqlParser->parse($oql);
 
         if ($this->oqlTranslator === null) {
-            $this->oqlTranslator = new OqlToSqlTranslator(
-                $this->dialect,
-                $this->metadataReader,
-                $this->entityClasses,
-            );
+            $this->ensureOqlTranslator();
         }
 
         // Use cached translation if available (caches SQL template + parameter names)
@@ -716,7 +711,13 @@ final class EntityManager implements EntityManagerInterface
     public function getRepository(string $entityClass): EntityRepository
     {
         if (!isset($this->repositories[$entityClass])) {
-            $this->repositories[$entityClass] = new EntityRepository($this, $entityClass);
+            $metadata = $this->metadataReader->getClassMetadata($entityClass);
+
+            if ($metadata->repositoryClass !== null) {
+                $this->repositories[$entityClass] = new ($metadata->repositoryClass)($this, $entityClass);
+            } else {
+                $this->repositories[$entityClass] = new EntityRepository($this, $entityClass);
+            }
         }
 
         return $this->repositories[$entityClass];
@@ -764,6 +765,39 @@ final class EntityManager implements EntityManagerInterface
     public function getMetadataReader(): MetadataReaderInterface
     {
         return $this->metadataReader;
+    }
+
+    public function registerOqlFunction(string $name, string $sqlTemplate): void
+    {
+        $this->customOqlFunctions[$name] = $sqlTemplate;
+        $this->oqlParser->registerFunction($name);
+
+        if ($this->oqlTranslator !== null) {
+            $this->oqlTranslator->registerFunction($name, $sqlTemplate);
+        }
+
+        // Invalidar caché de queries ya que las funciones disponibles cambiaron
+        $this->queryCache = [];
+    }
+
+    /**
+     * Ensures the OQL→SQL translator is initialized with all custom functions.
+     */
+    private function ensureOqlTranslator(): OqlToSqlTranslator
+    {
+        if ($this->oqlTranslator === null) {
+            $this->oqlTranslator = new OqlToSqlTranslator(
+                $this->dialect,
+                $this->metadataReader,
+                $this->entityClasses,
+            );
+
+            foreach ($this->customOqlFunctions as $name => $sqlTemplate) {
+                $this->oqlTranslator->registerFunction($name, $sqlTemplate);
+            }
+        }
+
+        return $this->oqlTranslator;
     }
 
     /**

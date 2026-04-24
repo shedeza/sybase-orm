@@ -422,4 +422,25 @@ final class ClassMetadataTest extends TestCase
         $this->assertSame('orgId', $meta->idField);
         $this->assertCount(2, $meta->getIdColumns());
     }
+
+    public function testRepositoryClassDefaultsToNull(): void
+    {
+        $meta = new ClassMetadata(
+            entityClass: 'App\\Entity\\User',
+            tableName: 'users',
+        );
+
+        $this->assertNull($meta->repositoryClass);
+    }
+
+    public function testRepositoryClassIsStored(): void
+    {
+        $meta = new ClassMetadata(
+            entityClass: 'App\\Entity\\User',
+            tableName: 'users',
+            repositoryClass: 'App\\Repository\\UserRepository',
+        );
+
+        $this->assertSame('App\\Repository\\UserRepository', $meta->repositoryClass);
+    }
 }

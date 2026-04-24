@@ -78,6 +78,14 @@ interface EntityManagerInterface
     public function getMetadataReader(): \SybaseORM\Metadata\MetadataReaderInterface;
 
     /**
+     * Registers a custom OQL function with its SQL template.
+     *
+     * @param string $name        Function name as used in OQL (e.g. 'RAND2')
+     * @param string $sqlTemplate Raw SQL output (e.g. 'RAND2()')
+     */
+    public function registerOqlFunction(string $name, string $sqlTemplate): void;
+
+    /**
      * Sets directories to scan for entity classes.
      * Entity discovery happens lazily on first OQL query.
      *

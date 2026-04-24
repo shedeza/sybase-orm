@@ -488,4 +488,23 @@ final class MetadataReaderTest extends TestCase
 
         rmdir($dir);
     }
+
+    // --- repositoryClass ---
+
+    public function testRepositoryClassIsReadFromEntityAttribute(): void
+    {
+        $meta = $this->reader->getClassMetadata(\SybaseORM\Tests\ORM\Fixtures\RepoCustomerEntity::class);
+
+        $this->assertSame(
+            \SybaseORM\Tests\ORM\Fixtures\CustomCustomerRepository::class,
+            $meta->repositoryClass,
+        );
+    }
+
+    public function testRepositoryClassIsNullWhenNotSpecified(): void
+    {
+        $meta = $this->reader->getClassMetadata(SampleEntity::class);
+
+        $this->assertNull($meta->repositoryClass);
+    }
 }

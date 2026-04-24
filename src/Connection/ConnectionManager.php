@@ -35,6 +35,9 @@ class ConnectionManager implements ConnectionManagerInterface
     private bool $inTransaction = false;
     private bool $charsetConversion;
 
+    /** @var array<string, \PDOStatement> Cache de sentencias preparadas por SQL */
+    private array $stmtCache = [];
+
     /** @var array{host: string, port: int, dbname: string, username: string, password: string, charset: string, persistent: bool} */
     private array $config;
 
@@ -108,7 +111,14 @@ class ConnectionManager implements ConnectionManagerInterface
         try {
             $pdo = $this->getConnection();
             [$sql, $params] = $this->expandArrayParams($sql, $params);
-            $stmt = $pdo->prepare($sql);
+
+            if (isset($this->stmtCache[$sql])) {
+                $stmt = $this->stmtCache[$sql];
+            } else {
+                $stmt = $pdo->prepare($sql);
+                $this->stmtCache[$sql] = $stmt;
+            }
+
             $this->bindParams($stmt, $this->convertParams($params));
             $stmt->execute();
 
@@ -123,12 +133,18 @@ class ConnectionManager implements ConnectionManagerInterface
         try {
             $pdo = $this->getConnection();
             [$sql, $params] = $this->expandArrayParams($sql, $params);
-            $stmt = $pdo->prepare($sql);
+
+            if (isset($this->stmtCache[$sql])) {
+                $stmt = $this->stmtCache[$sql];
+            } else {
+                $stmt = $pdo->prepare($sql);
+                $this->stmtCache[$sql] = $stmt;
+            }
+
             $this->bindParams($stmt, $this->convertParams($params));
             $stmt->execute();
             $rowCount = $stmt->rowCount();
             $stmt->closeCursor();
-            unset($stmt);
 
             return $rowCount;
         } catch (\PDOException $e) {
@@ -428,6 +444,7 @@ class ConnectionManager implements ConnectionManagerInterface
         if (in_array((string) $sqlState, self::CONNECTION_LOST_CODES, true) || $this->isConnectionLostMessage($e->getMessage())) {
             $this->connection = null;
             $this->inTransaction = false;
+            $this->stmtCache = [];
 
             throw new ConnectionLostException(
                 'Connection to Sybase ASE was lost: ' . $e->getMessage(),

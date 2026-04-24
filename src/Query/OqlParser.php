@@ -54,7 +54,19 @@ final class OqlParser
 
     private const AGGREGATE_FUNCTIONS = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'];
 
-    private const CUSTOM_FUNCTIONS = ['CONVERT', 'RAND'];
+    /** @var string[] */
+    private array $customFunctions = ['CONVERT', 'RAND'];
+
+    /**
+     * Registers a custom function name so the parser recognizes it.
+     */
+    public function registerFunction(string $name): void
+    {
+        $normalized = strtoupper($name);
+        if (!in_array($normalized, $this->customFunctions, true)) {
+            $this->customFunctions[] = $normalized;
+        }
+    }
 
     public function parse(string $oql): SelectStatement|UpdateStatement|DeleteStatement
     {
@@ -476,7 +488,7 @@ final class OqlParser
         }
 
         // Check if the left operand is a custom function (CONVERT, RAND)
-        if (in_array(strtoupper($token), self::CUSTOM_FUNCTIONS, true)) {
+        if (in_array(strtoupper($token), $this->customFunctions, true)) {
             $left = $this->parseCustomFunctionCall();
 
             // After a custom function call, expect a comparison operator
@@ -645,7 +657,7 @@ final class OqlParser
         $token = $this->current();
 
         // Custom function call as operand
-        if (in_array(strtoupper($token), self::CUSTOM_FUNCTIONS, true)) {
+        if (in_array(strtoupper($token), $this->customFunctions, true)) {
             return $this->parseCustomFunctionCall();
         }
 
@@ -766,7 +778,7 @@ final class OqlParser
         }
 
         // Custom function call
-        if (in_array(strtoupper($token), self::CUSTOM_FUNCTIONS, true)) {
+        if (in_array(strtoupper($token), $this->customFunctions, true)) {
             return $this->parseCustomFunctionCall();
         }
 
@@ -808,6 +820,7 @@ final class OqlParser
     /**
      * Parses a custom function call: RAND() or CONVERT(expr AS type)
      * Supports nesting: CONVERT(RAND() AS REAL)
+     * For user-registered functions, defaults to no-arg pattern: FUNCNAME()
      */
     private function parseCustomFunctionCall(): CustomFunctionCall
     {
@@ -816,22 +829,29 @@ final class OqlParser
 
         $this->expect('(');
 
-        if ($functionName === 'RAND') {
+        // RAND and other no-arg functions (including user-registered ones)
+        if ($functionName !== 'CONVERT' && $this->isAt(')')) {
             $this->expect(')');
-            return new CustomFunctionCall('RAND', [], null);
+            return new CustomFunctionCall($functionName, [], null);
         }
 
-        // CONVERT(expr AS type)
-        $expr = $this->parseCustomFunctionArgument();
+        if ($functionName === 'CONVERT') {
+            // CONVERT(expr AS type)
+            $expr = $this->parseCustomFunctionArgument();
 
-        $this->expect('AS');
+            $this->expect('AS');
 
-        $castType = strtoupper($this->current());
-        $this->advance();
+            $castType = strtoupper($this->current());
+            $this->advance();
 
+            $this->expect(')');
+
+            return new CustomFunctionCall('CONVERT', [$expr], $castType);
+        }
+
+        // Generic function with no args — closing paren expected
         $this->expect(')');
-
-        return new CustomFunctionCall('CONVERT', [$expr], $castType);
+        return new CustomFunctionCall($functionName, [], null);
     }
 
     /**
@@ -843,7 +863,7 @@ final class OqlParser
         $token = $this->current();
 
         // Nested custom function
-        if (in_array(strtoupper($token), self::CUSTOM_FUNCTIONS, true)) {
+        if (in_array(strtoupper($token), $this->customFunctions, true)) {
             return $this->parseCustomFunctionCall();
         }
 
