@@ -60,4 +60,13 @@ interface ConnectionManagerInterface
      * @param string $level Nivel de aislamiento (READ UNCOMMITTED, READ COMMITTED, REPEATABLE READ, SERIALIZABLE).
      */
     public function setTransactionIsolation(string $level): void;
+
+    /**
+     * Convierte valores string de un resultado de ISO-8859-1 a UTF-8.
+     * Si charset_conversion está deshabilitado, retorna la fila sin cambios.
+     *
+     * @param array $row Fila de resultado de la base de datos.
+     * @return array Fila con strings convertidos.
+     */
+    public function convertResultRow(array $row): array;
 }

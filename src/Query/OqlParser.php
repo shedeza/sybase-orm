@@ -88,13 +88,22 @@ final class OqlParser
                 continue;
             }
 
-            // String literal
+            // String literal (supports both backslash escaping and Sybase doubled-quote escaping)
             if ($oql[$i] === "'") {
                 $start = $i;
                 $i++;
-                while ($i < $length && $oql[$i] !== "'") {
+                while ($i < $length) {
                     if ($oql[$i] === '\\') {
-                        $i++;
+                        $i += 2; // skip escaped character
+                        continue;
+                    }
+                    if ($oql[$i] === "'") {
+                        // Check for doubled quote (Sybase escape: '')
+                        if ($i + 1 < $length && $oql[$i + 1] === "'") {
+                            $i += 2; // skip both quotes
+                            continue;
+                        }
+                        break; // closing quote
                     }
                     $i++;
                 }

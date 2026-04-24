@@ -36,17 +36,40 @@ final class IdentityMap implements IdentityMapInterface
 
     /**
      * Derives a deterministic string key from a scalar or composite id.
-     * Scalar: (string) $id
-     * Array:  ksort then implode sorted values with pipe separator.
+     * Scalar: type-prefixed string (e.g., "i:1" for int, "s:abc" for string)
+     * Array:  ksort then implode type-prefixed values with pipe separator.
+     *
+     * Type prefixes prevent collisions between int 1 and string '1'.
      */
     private function deriveKey(mixed $id): string
     {
         if (is_array($id)) {
             ksort($id);
-            return implode('|', array_map('strval', $id));
+            return implode('|', array_map(fn($v) => $this->typedValue($v), $id));
         }
 
-        return (string) $id;
+        return $this->typedValue($id);
+    }
+
+    /**
+     * Returns a type-prefixed string representation of a value.
+     */
+    private function typedValue(mixed $value): string
+    {
+        if ($value === null) {
+            return 'n:';
+        }
+        if (is_int($value)) {
+            return 'i:' . $value;
+        }
+        if (is_float($value)) {
+            return 'f:' . $value;
+        }
+        if (is_bool($value)) {
+            return 'b:' . ($value ? '1' : '0');
+        }
+
+        return 's:' . $value;
     }
 
     public function clear(): void

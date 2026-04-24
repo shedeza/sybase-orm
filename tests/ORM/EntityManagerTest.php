@@ -48,6 +48,10 @@ final class EntityManagerTest extends TestCase
         $this->identityMap = $this->createMock(IdentityMapInterface::class);
         $this->cacheManager = $this->createMock(CacheManagerInterface::class);
 
+        // Default: convertResultRow passes through unchanged (no charset conversion)
+        $this->connectionManager->method('convertResultRow')
+            ->willReturnCallback(fn(array $row) => $row);
+
         $this->metadata = new ClassMetadata(
             entityClass: Fixtures\CustomerEntity::class,
             tableName: 'customers',
@@ -438,6 +442,8 @@ final class EntityManagerTest extends TestCase
                 [1, 42],
             )
             ->willReturn($stmt);
+        $connectionManager->method('convertResultRow')
+            ->willReturnCallback(fn(array $row) => $row);
 
         $entity = new Fixtures\CompositeKeyEntity();
         $entity->setOrgId(1);
@@ -512,6 +518,8 @@ final class EntityManagerTest extends TestCase
 
         $connectionManager = $this->createMock(ConnectionManagerInterface::class);
         $connectionManager->method('executeQuery')->willReturn($stmt);
+        $connectionManager->method('convertResultRow')
+            ->willReturnCallback(fn(array $row) => $row);
 
         $hydrator = $this->createMock(HydratorInterface::class);
         $unitOfWork = $this->createMock(UnitOfWorkInterface::class);
@@ -560,6 +568,8 @@ final class EntityManagerTest extends TestCase
         $hydrator = $this->createMock(HydratorInterface::class);
         $unitOfWork = $this->createMock(UnitOfWorkInterface::class);
         $connectionManager = $this->createMock(ConnectionManagerInterface::class);
+        $connectionManager->method('convertResultRow')
+            ->willReturnCallback(fn(array $row) => $row);
         $hookDispatcher = new HookDispatcher($metadataReader);
 
         $em = new EntityManager(
@@ -615,6 +625,8 @@ final class EntityManagerTest extends TestCase
 
         $connectionManager = $this->createMock(ConnectionManagerInterface::class);
         $connectionManager->expects($this->never())->method('executeQuery');
+        $connectionManager->method('convertResultRow')
+            ->willReturnCallback(fn(array $row) => $row);
 
         $dialect = $this->createMock(DialectInterface::class);
         $typeCaster = $this->createMock(TypeCasterInterface::class);

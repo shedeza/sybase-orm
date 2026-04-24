@@ -281,6 +281,9 @@ final class EntityManager implements EntityManagerInterface
             return null;
         }
 
+        // Apply charset conversion (ISO-8859-1 → UTF-8)
+        $row = $this->connectionManager->convertResultRow($row);
+
         // 4. Hydrate and register
         $entity = $this->hydrator->hydrate($row, $entityClass);
         $this->unitOfWork->registerClean($entity);
@@ -309,6 +312,9 @@ final class EntityManager implements EntityManagerInterface
         $stmt = $this->connectionManager->executeQuery($sql, $orderedParams);
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         $stmt->closeCursor();
+
+        // Apply charset conversion (ISO-8859-1 → UTF-8) to result rows
+        $rows = array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
 
         // Auto-detect hydration mode: if AST contains FunctionCall, aliases, or multi-entity selects, default to HYDRATE_ARRAY
         $effectiveMode = $hydrationMode;
@@ -349,6 +355,9 @@ final class EntityManager implements EntityManagerInterface
             return null;
         }
 
+        // Apply charset conversion (ISO-8859-1 → UTF-8)
+        $row = $this->connectionManager->convertResultRow($row);
+
         // Auto-detect hydration mode
         $effectiveMode = $hydrationMode;
         if ($hydrationMode === HydrationMode::HYDRATE_OBJECT && $this->shouldAutoDetectArrayMode($ast)) {
@@ -384,6 +393,9 @@ final class EntityManager implements EntityManagerInterface
         if ($row === false) {
             return null;
         }
+
+        // Apply charset conversion (ISO-8859-1 → UTF-8)
+        $row = $this->connectionManager->convertResultRow($row);
 
         return reset($row) !== false ? reset($row) : null;
     }
@@ -470,6 +482,9 @@ final class EntityManager implements EntityManagerInterface
 
         try {
             while (($row = $stmt->fetch(\PDO::FETCH_ASSOC)) !== false) {
+                // Apply charset conversion (ISO-8859-1 → UTF-8)
+                $row = $this->connectionManager->convertResultRow($row);
+
                 if ($effectiveMode === HydrationMode::HYDRATE_ARRAY || $entityClass === null) {
                     yield $row;
                 } else {

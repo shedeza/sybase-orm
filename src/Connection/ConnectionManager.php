@@ -242,9 +242,9 @@ class ConnectionManager implements ConnectionManagerInterface
         } elseif (is_bool($value)) {
             $stmt->bindValue($position, $value ? 1 : 0, \PDO::PARAM_INT);
         } elseif (is_float($value)) {
-            // Bind floats as string representation to preserve precision.
+            // Use sprintf with %.17g to preserve full float precision.
             // Sybase CONVERT(REAL, ?) in the SQL handles the type conversion.
-            $stmt->bindValue($position, (string) $value, \PDO::PARAM_STR);
+            $stmt->bindValue($position, sprintf('%.17g', $value), \PDO::PARAM_STR);
         } else {
             $stmt->bindValue($position, (string) $value, \PDO::PARAM_STR);
         }
