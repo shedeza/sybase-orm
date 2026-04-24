@@ -54,7 +54,7 @@ final class OqlToSqlTranslatorUpdateDeleteTest extends TestCase
 
         $result = $this->translator->translate($ast);
 
-        $this->assertSame('UPDATE [users] SET [u].[name] = :name', $result['sql']);
+        $this->assertSame('UPDATE [users] SET [name] = :name', $result['sql']);
         $this->assertSame(['name'], $result['parameters']);
     }
 
@@ -71,7 +71,7 @@ final class OqlToSqlTranslatorUpdateDeleteTest extends TestCase
 
         $result = $this->translator->translate($ast);
 
-        $this->assertSame('UPDATE [users] SET [u].[name] = :name, [u].[email] = :email', $result['sql']);
+        $this->assertSame('UPDATE [users] SET [name] = :name, [email] = :email', $result['sql']);
         $this->assertSame(['name', 'email'], $result['parameters']);
     }
 
@@ -88,7 +88,7 @@ final class OqlToSqlTranslatorUpdateDeleteTest extends TestCase
 
         $result = $this->translator->translate($ast);
 
-        $this->assertSame('UPDATE [users] SET [u].[name] = :name WHERE [u].[id] = :id', $result['sql']);
+        $this->assertSame('UPDATE [users] SET [name] = :name WHERE [id] = :id', $result['sql']);
         // SET params first, then WHERE params
         $this->assertSame(['name', 'id'], $result['parameters']);
     }
@@ -103,7 +103,7 @@ final class OqlToSqlTranslatorUpdateDeleteTest extends TestCase
 
         $result = $this->translator->translate($ast);
 
-        $this->assertSame('UPDATE [users] SET [u].[email] = NULL', $result['sql']);
+        $this->assertSame('UPDATE [users] SET [email] = NULL', $result['sql']);
         $this->assertEmpty($result['parameters']);
     }
 
@@ -117,7 +117,7 @@ final class OqlToSqlTranslatorUpdateDeleteTest extends TestCase
 
         $result = $this->translator->translate($ast);
 
-        $this->assertSame("UPDATE [users] SET [u].[name] = 'John'", $result['sql']);
+        $this->assertSame("UPDATE [users] SET [name] = 'John'", $result['sql']);
         $this->assertEmpty($result['parameters']);
     }
 
@@ -131,7 +131,7 @@ final class OqlToSqlTranslatorUpdateDeleteTest extends TestCase
 
         $result = $this->translator->translate($ast);
 
-        $this->assertSame('UPDATE [users] SET [u].[age] = 25', $result['sql']);
+        $this->assertSame('UPDATE [users] SET [age] = 25', $result['sql']);
         $this->assertEmpty($result['parameters']);
     }
 
@@ -179,7 +179,7 @@ final class OqlToSqlTranslatorUpdateDeleteTest extends TestCase
 
         $result = $this->translator->translate($ast);
 
-        $this->assertSame('DELETE FROM [users] WHERE [u].[id] = :id', $result['sql']);
+        $this->assertSame('DELETE FROM [users] WHERE [id] = :id', $result['sql']);
         $this->assertSame(['id'], $result['parameters']);
     }
 
@@ -195,7 +195,7 @@ final class OqlToSqlTranslatorUpdateDeleteTest extends TestCase
 
         $result = $this->translator->translate($ast);
 
-        $this->assertSame('UPDATE [users] SET [u].[age] = RAND()', $result['sql']);
+        $this->assertSame('UPDATE [users] SET [age] = RAND()', $result['sql']);
         $this->assertEmpty($result['parameters']);
     }
 
@@ -213,7 +213,7 @@ final class OqlToSqlTranslatorUpdateDeleteTest extends TestCase
         $result = $this->translator->translate($ast);
 
         // Sybase SQL uses CONVERT(type, expr) not CONVERT(expr AS type)
-        $this->assertSame('UPDATE [users] SET [u].[age] = CONVERT(REAL, :value)', $result['sql']);
+        $this->assertSame('UPDATE [users] SET [age] = CONVERT(REAL, :value)', $result['sql']);
         $this->assertSame(['value'], $result['parameters']);
     }
 
@@ -230,7 +230,7 @@ final class OqlToSqlTranslatorUpdateDeleteTest extends TestCase
 
         $result = $this->translator->translate($ast);
 
-        $this->assertSame('UPDATE [users] SET [u].[age] = CONVERT(REAL, RAND())', $result['sql']);
+        $this->assertSame('UPDATE [users] SET [age] = CONVERT(REAL, RAND())', $result['sql']);
         $this->assertEmpty($result['parameters']);
     }
 
@@ -247,7 +247,7 @@ final class OqlToSqlTranslatorUpdateDeleteTest extends TestCase
 
         $result = $this->translator->translate($ast);
 
-        $this->assertSame('UPDATE [users] SET [u].[age] = CONVERT(INT, [u].[name])', $result['sql']);
+        $this->assertSame('UPDATE [users] SET [age] = CONVERT(INT, [name])', $result['sql']);
     }
 
     // ── Full pipeline test (parse → translate) ──────────────────────
@@ -259,7 +259,7 @@ final class OqlToSqlTranslatorUpdateDeleteTest extends TestCase
 
         $result = $this->translator->translate($ast);
 
-        $this->assertSame('UPDATE [users] SET [u].[name] = :name WHERE [u].[id] = :id', $result['sql']);
+        $this->assertSame('UPDATE [users] SET [name] = :name WHERE [id] = :id', $result['sql']);
         $this->assertSame(['name', 'id'], $result['parameters']);
     }
 
@@ -270,7 +270,7 @@ final class OqlToSqlTranslatorUpdateDeleteTest extends TestCase
 
         $result = $this->translator->translate($ast);
 
-        $this->assertSame('DELETE FROM [users] WHERE [u].[id] = :id', $result['sql']);
+        $this->assertSame('DELETE FROM [users] WHERE [id] = :id', $result['sql']);
         $this->assertSame(['id'], $result['parameters']);
     }
 }

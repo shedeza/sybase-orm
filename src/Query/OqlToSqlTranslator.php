@@ -48,6 +48,12 @@ final class OqlToSqlTranslator
     private array $aliasToTable = [];
 
     /**
+     * When true, resolvePropertyToColumn omits the alias prefix.
+     * Used for UPDATE/DELETE where Sybase ASE doesn't support table aliases.
+     */
+    private bool $stripAlias = false;
+
+    /**
      * Maps custom function name → SQL template.
      * @var array<string, string>
      */
@@ -88,6 +94,7 @@ final class OqlToSqlTranslator
     {
         $this->aliasToEntity = [];
         $this->aliasToTable = [];
+        $this->stripAlias = false;
 
         if ($statement instanceof UpdateStatement) {
             return $this->translateUpdate($statement);
@@ -165,6 +172,9 @@ final class OqlToSqlTranslator
         $this->aliasToEntity[$statement->alias] = $entityClass;
         $this->aliasToTable[$statement->alias] = $statement->alias;
 
+        // Sybase ASE doesn't support table aliases in UPDATE statements
+        $this->stripAlias = true;
+
         $tableName = $this->dialect->quoteIdentifier($metadata->tableName);
 
         // Build SET clauses
@@ -182,6 +192,8 @@ final class OqlToSqlTranslator
             $whereSql = $this->resolveCondition($statement->where->condition, $parameters);
             $sql .= ' WHERE ' . $whereSql;
         }
+
+        $this->stripAlias = false;
 
         return ['sql' => $sql, 'parameters' => $parameters];
     }
@@ -202,6 +214,9 @@ final class OqlToSqlTranslator
         $this->aliasToEntity[$statement->alias] = $entityClass;
         $this->aliasToTable[$statement->alias] = $statement->alias;
 
+        // Sybase ASE doesn't support table aliases in DELETE statements
+        $this->stripAlias = true;
+
         $tableName = $this->dialect->quoteIdentifier($metadata->tableName);
 
         $sql = 'DELETE FROM ' . $tableName;
@@ -211,6 +226,8 @@ final class OqlToSqlTranslator
             $whereSql = $this->resolveCondition($statement->where->condition, $parameters);
             $sql .= ' WHERE ' . $whereSql;
         }
+
+        $this->stripAlias = false;
 
         return ['sql' => $sql, 'parameters' => $parameters];
     }
@@ -554,7 +571,9 @@ final class OqlToSqlTranslator
         $entityClass = $this->aliasToEntity[$alias] ?? null;
 
         if ($entityClass === null) {
-            // Fallback: use as-is
+            if ($this->stripAlias) {
+                return $this->dialect->quoteIdentifier($property);
+            }
             return $this->dialect->quoteIdentifier($alias) . '.' . $this->dialect->quoteIdentifier($property);
         }
 
@@ -562,6 +581,10 @@ final class OqlToSqlTranslator
         $column = $metadata->getColumn($property);
 
         $columnName = $column !== null ? $column->columnName : $property;
+
+        if ($this->stripAlias) {
+            return $this->dialect->quoteIdentifier($columnName);
+        }
 
         return $this->dialect->quoteIdentifier($alias) . '.' . $this->dialect->quoteIdentifier($columnName);
     }
