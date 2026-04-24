@@ -155,4 +155,83 @@ final class CustomOqlFunctionsTest extends TestCase
 
         $this->assertStringContainsString('CONVERT(VARCHAR', $result['sql']);
     }
+
+    // ── SET clause with CONVERT + nested custom function ───────────
+
+    public function testConvertWithNestedCustomFunctionInSetClause(): void
+    {
+        $translator = $this->createTranslator();
+        $translator->registerFunction('RAND2', 'RAND2()');
+
+        $parser = new OqlParser();
+        $parser->registerFunction('RAND2');
+
+        $ast = $parser->parse('UPDATE OqlUserEntity u SET u.age = CONVERT(RAND2() AS REAL) WHERE u.id = :id');
+        $result = $translator->translate($ast);
+
+        $this->assertStringContainsString('CONVERT(REAL, RAND2())', $result['sql']);
+        $this->assertStringContainsString('SET', $result['sql']);
+        $this->assertContains('id', $result['parameters']);
+    }
+
+    public function testUpdateWithSetNullAndInClause(): void
+    {
+        $translator = $this->createTranslator();
+
+        $parser = new OqlParser();
+
+        $ast = $parser->parse("UPDATE OqlUserEntity u SET u.name = NULL WHERE u.id IN (:ids)");
+        $result = $translator->translate($ast);
+
+        $this->assertStringContainsString('SET', $result['sql']);
+        $this->assertStringContainsString('NULL', $result['sql']);
+        $this->assertStringContainsString('IN (:ids)', $result['sql']);
+        $this->assertContains('ids', $result['parameters']);
+    }
+
+    public function testUpdateWithMultipleSetAndInClause(): void
+    {
+        $translator = $this->createTranslator();
+
+        $parser = new OqlParser();
+
+        $ast = $parser->parse("UPDATE OqlUserEntity u SET u.name = NULL, u.age = NULL WHERE u.id IN (:ids)");
+        $result = $translator->translate($ast);
+
+        $sql = $result['sql'];
+        $this->assertStringContainsString('SET', $sql);
+        $this->assertStringContainsString('NULL', $sql);
+        $this->assertStringContainsString('IN (:ids)', $sql);
+        // Should have 2 SET clauses separated by comma
+        $this->assertSame(1, substr_count($sql, 'SET'));
+    }
+
+    public function testDeleteWithInClause(): void
+    {
+        $translator = $this->createTranslator();
+
+        $parser = new OqlParser();
+
+        $ast = $parser->parse("DELETE FROM OqlUserEntity u WHERE u.id IN (:ids)");
+        $result = $translator->translate($ast);
+
+        $this->assertStringContainsString('DELETE FROM', $result['sql']);
+        $this->assertStringContainsString('IN (:ids)', $result['sql']);
+        $this->assertContains('ids', $result['parameters']);
+    }
+
+    public function testUpdateWithLiteralComparisonAndInClause(): void
+    {
+        $translator = $this->createTranslator();
+
+        $parser = new OqlParser();
+
+        $ast = $parser->parse("UPDATE OqlUserEntity u SET u.name = NULL WHERE u.name = 'E' AND u.id IN (:ids)");
+        $result = $translator->translate($ast);
+
+        $sql = $result['sql'];
+        $this->assertStringContainsString("'E'", $sql);
+        $this->assertStringContainsString('IN (:ids)', $sql);
+        $this->assertStringContainsString('AND', $sql);
+    }
 }
