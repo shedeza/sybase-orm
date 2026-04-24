@@ -1,8 +1,8 @@
 {
     "name": "sybase-orm/sybase-ase-orm-bundle",
-    "description": "Symfony Bundle ORM for Sybase ASE based on Doctrine patterns",
+    "description": "Symfony Bundle ORM for Sybase ASE",
     "type": "symfony-bundle",
-    "version": "1.7.0",
+    "version": "1.7.1",
     "license": "MIT",
     "minimum-stability": "stable",
     "require": {
