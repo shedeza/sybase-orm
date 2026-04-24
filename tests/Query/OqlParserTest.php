@@ -437,6 +437,23 @@ class OqlParserTest extends TestCase
         $this->assertSame(5, $condition->right->value);
     }
 
+    public function testParseHavingWithoutGroupByParsesSuccessfully(): void
+    {
+        $ast = $this->parser->parse('SELECT COUNT(u.id) FROM User u HAVING COUNT(u.id) > 0');
+
+        $this->assertNull($ast->groupBy);
+        $this->assertNotNull($ast->havingClause);
+        $this->assertInstanceOf(HavingClause::class, $ast->havingClause);
+
+        $condition = $ast->havingClause->condition;
+        $this->assertInstanceOf(Comparison::class, $condition);
+        $this->assertInstanceOf(FunctionCall::class, $condition->left);
+        $this->assertSame('COUNT', $condition->left->functionName);
+        $this->assertSame('>', $condition->operator);
+        $this->assertInstanceOf(Literal::class, $condition->right);
+        $this->assertSame(0, $condition->right->value);
+    }
+
     // ── Entity-based JOIN WITH (Requirements 8.1, 8.2, 8.4) ────────
 
     public function testParseEntityJoinWith(): void

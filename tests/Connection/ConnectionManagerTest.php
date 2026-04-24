@@ -537,6 +537,61 @@ class ConnectionManagerTest extends TestCase
         $this->assertIsString($result['name']);
     }
 
+    // --- Statement cache cleared on reconnection ---
+
+    public function testStmtCacheClearedOnReconnection(): void
+    {
+        $manager = $this->createManager();
+
+        // First connection: prepare and cache a statement
+        $mockPdo1 = $this->createMock(\PDO::class);
+        $mockPdo1->method('exec')->willReturn(0);
+        $mockStmt1 = $this->createMock(\PDOStatement::class);
+        $mockStmt1->method('execute')->willReturn(true);
+        $mockStmt1->method('bindValue')->willReturn(true);
+
+        $prepareCallCount = 0;
+        $mockPdo1->method('prepare')
+            ->willReturnCallback(function (string $sql) use ($mockStmt1, &$prepareCallCount) {
+                $prepareCallCount++;
+                if ($prepareCallCount === 2) {
+                    // Second prepare triggers connection lost
+                    throw new \PDOException('server has gone away');
+                }
+                return $mockStmt1;
+            });
+
+        $manager->setMockPdo($mockPdo1);
+
+        // First call — prepares and caches 'SELECT 1'
+        $manager->executeQuery('SELECT 1', []);
+
+        // Second call with different SQL — triggers connection lost
+        try {
+            $manager->executeQuery('SELECT 2', []);
+        } catch (ConnectionLostException) {
+            // expected — connection is now null, stmtCache cleared by handlePdoException
+        }
+
+        // Reconnect with a new PDO: getConnection() should also clear stmtCache
+        $mockPdo2 = $this->createMock(\PDO::class);
+        $mockPdo2->method('exec')->willReturn(0);
+        $mockStmt2 = $this->createMock(\PDOStatement::class);
+        $mockStmt2->method('execute')->willReturn(true);
+        $mockStmt2->method('bindValue')->willReturn(true);
+
+        // prepare() MUST be called again for 'SELECT 1' because cache was cleared
+        $mockPdo2->expects($this->once())
+            ->method('prepare')
+            ->with('SELECT 1')
+            ->willReturn($mockStmt2);
+
+        $manager->setMockPdo($mockPdo2);
+
+        $result = $manager->executeQuery('SELECT 1', []);
+        $this->assertSame($mockStmt2, $result);
+    }
+
     // --- Array param expansion at connection level (v1.2.6) ---
 
     public function testExpandArrayParamsInExecuteQuery(): void

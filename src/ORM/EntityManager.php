@@ -438,6 +438,11 @@ final class EntityManager implements EntityManagerInterface
             $value = $params[$name] ?? null;
             if (is_array($value)) {
                 $scalarValues = $this->normalizeArrayParam($value);
+                if (empty($scalarValues)) {
+                    // Empty IN list — replace :param with NULL (IN (NULL) matches nothing with ANSINULL ON)
+                    $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', 'NULL', $sql, 1);
+                    continue;
+                }
                 $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
                 $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
                 foreach ($scalarValues as $item) {
@@ -456,6 +461,10 @@ final class EntityManager implements EntityManagerInterface
             }
             if (is_array($value) && str_contains($sql, ':' . $name)) {
                 $scalarValues = $this->normalizeArrayParam($value);
+                if (empty($scalarValues)) {
+                    $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', 'NULL', $sql, 1);
+                    continue;
+                }
                 $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
                 $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
                 foreach ($scalarValues as $item) {
@@ -540,6 +549,11 @@ final class EntityManager implements EntityManagerInterface
             $value = $params[$name] ?? null;
             if (is_array($value)) {
                 $scalarValues = $this->normalizeArrayParam($value);
+                if (empty($scalarValues)) {
+                    // Empty IN list — replace :param with NULL (IN (NULL) matches nothing with ANSINULL ON)
+                    $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', 'NULL', $sql, 1);
+                    continue;
+                }
                 $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
                 $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
                 foreach ($scalarValues as $item) {
@@ -560,6 +574,10 @@ final class EntityManager implements EntityManagerInterface
             }
             if (is_array($value) && str_contains($sql, ':' . $name)) {
                 $scalarValues = $this->normalizeArrayParam($value);
+                if (empty($scalarValues)) {
+                    $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', 'NULL', $sql, 1);
+                    continue;
+                }
                 $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
                 $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
                 foreach ($scalarValues as $item) {

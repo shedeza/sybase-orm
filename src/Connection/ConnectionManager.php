@@ -66,6 +66,9 @@ class ConnectionManager implements ConnectionManagerInterface
             return $this->connection;
         }
 
+        // Clear statement cache — old statements are invalid for new connections
+        $this->stmtCache = [];
+
         $port = (int) $this->config['port'];
         if ($port < 1 || $port > 65535) {
             throw new \InvalidArgumentException(sprintf(

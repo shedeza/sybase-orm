@@ -1169,4 +1169,39 @@ final class EntityManagerTest extends TestCase
 
         $this->em->queryScalar('SELECT COUNT(*) FROM CustomerEntity c');
     }
+
+    // ── query() with empty IN array parameter ────────────────────
+
+    public function testQueryWithEmptyArrayParameterReturnsNoResults(): void
+    {
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetchAll')->willReturn([]);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        // The empty array should produce IN (NULL) in the SQL, with no bound params
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->with(
+                $this->callback(function (string $sql): bool {
+                    // The named param :ids should be replaced with NULL
+                    return str_contains($sql, 'NULL')
+                        && !str_contains($sql, ':ids');
+                }),
+                [],
+            )
+            ->willReturn($stmt);
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $result = $this->em->query(
+            'SELECT c.id, c.name FROM CustomerEntity c WHERE c.id IN (:ids)',
+            ['ids' => []],
+            HydrationMode::HYDRATE_ARRAY,
+        );
+
+        $this->assertSame([], $result);
+    }
 }
