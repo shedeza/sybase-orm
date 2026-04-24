@@ -27,7 +27,7 @@ interface EntityManagerInterface
     public function createQueryBuilder(string $entityClass): QueryBuilderInterface;
 
     /** Ejecuta una consulta OQL y retorna los resultados hidratados. */
-    public function query(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): array;
+    public function query(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT, ?int $limit = null, ?int $offset = null): array;
 
     /**
      * Ejecuta una consulta OQL y retorna un Generator que produce resultados uno a uno.
@@ -45,7 +45,7 @@ interface EntityManagerInterface
     public function executeUpdate(string $oql, array $params = []): int;
 
     /** Limpia el Identity_Map y desasocia todas las entidades. */
-    public function clear(): void;
+    public function clear(?string $entityClass = null): void;
 
     /** Re-asocia una entidad detached al Entity_Manager. */
     public function merge(object $entity): object;

@@ -235,6 +235,8 @@ final class SybaseORMExtension extends Extension
 
     private function registerEntityManager(ContainerBuilder $container, array $config): void
     {
+        $loggerRef = new Reference(LoggerInterface::class, ContainerInterface::IGNORE_ON_INVALID_REFERENCE);
+
         $definition = new Definition(EntityManager::class, [
             new Reference(ConnectionManagerInterface::class),
             new Reference(MetadataReaderInterface::class),
@@ -245,6 +247,7 @@ final class SybaseORMExtension extends Extension
             new Reference(IdentityMapInterface::class),
             new Reference(HookDispatcher::class),
             new Reference(CacheManagerInterface::class),
+            $loggerRef,
         ]);
         $definition->setPublic(true);
         $definition->setAutowired(true);

@@ -17,6 +17,7 @@ use SybaseORM\Query\OqlToSqlTranslator;
 use SybaseORM\Query\QueryBuilder;
 use SybaseORM\Query\QueryBuilderInterface;
 use SybaseORM\Type\TypeCasterInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Central orchestrator of the ORM. Coordinates UnitOfWork, IdentityMap,
@@ -46,6 +47,9 @@ final class EntityManager implements EntityManagerInterface
     /** @var string[] Directories to scan for entity classes */
     private array $entityDirectories = [];
 
+    /** @var array<string, array{sql: string, parameters: list<string>}> Cache de traducciones OQL→SQL */
+    private array $queryCache = [];
+
     public function __construct(
         private readonly ConnectionManagerInterface $connectionManager,
         private readonly MetadataReaderInterface $metadataReader,
@@ -56,6 +60,7 @@ final class EntityManager implements EntityManagerInterface
         private readonly IdentityMapInterface $identityMap,
         private readonly HookDispatcher $hookDispatcher,
         private readonly CacheManagerInterface $cacheManager,
+        private readonly ?LoggerInterface $logger = null,
     ) {
         $this->oqlParser = new OqlParser();
     }
@@ -273,6 +278,8 @@ final class EntityManager implements EntityManagerInterface
         );
         $sql .= ' WHERE ' . $whereClause;
 
+        $this->logger?->debug('SQL', ['sql' => $sql, 'params' => $dbValues]);
+
         $stmt = $this->connectionManager->executeQuery($sql, $dbValues);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
         $stmt->closeCursor();
@@ -302,12 +309,16 @@ final class EntityManager implements EntityManagerInterface
         return $qb;
     }
 
-    public function query(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): array
+    public function query(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT, ?int $limit = null, ?int $offset = null): array
     {
         $prepared = $this->prepareQueryExecution($oql, $params);
         $sql = $prepared['sql'];
         $orderedParams = $prepared['params'];
         $ast = $prepared['ast'];
+
+        if ($limit !== null) {
+            $sql = $this->dialect->applyPagination($sql, $limit, $offset);
+        }
 
         $stmt = $this->connectionManager->executeQuery($sql, $orderedParams);
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
@@ -457,6 +468,8 @@ final class EntityManager implements EntityManagerInterface
             }
         }
 
+        $this->logger?->debug('OQL→SQL', ['oql' => $oql, 'sql' => $sql, 'params' => $orderedParams]);
+
         return $this->connectionManager->executeStatement($sql, $orderedParams);
     }
 
@@ -515,7 +528,14 @@ final class EntityManager implements EntityManagerInterface
             );
         }
 
-        $result = $this->oqlTranslator->translate($ast);
+        // Use cached translation if available (caches SQL template + parameter names)
+        if (isset($this->queryCache[$oql])) {
+            $result = $this->queryCache[$oql];
+        } else {
+            $result = $this->oqlTranslator->translate($ast);
+            $this->queryCache[$oql] = $result;
+        }
+
         $sql = $result['sql'];
         $parameterNames = $result['parameters'];
 
@@ -555,6 +575,8 @@ final class EntityManager implements EntityManagerInterface
                 $orderedParams[] = $value;
             }
         }
+
+        $this->logger?->debug('OQL→SQL', ['oql' => $oql, 'sql' => $sql, 'params' => $orderedParams]);
 
         return ['sql' => $sql, 'params' => $orderedParams, 'ast' => $ast];
     }
@@ -604,8 +626,13 @@ final class EntityManager implements EntityManagerInterface
         return false;
     }
 
-    public function clear(): void
+    public function clear(?string $entityClass = null): void
     {
+        if ($entityClass !== null) {
+            $this->identityMap->clearClass($entityClass);
+            return;
+        }
+
         $this->unitOfWork->clear();
         $this->identityMap->clear();
     }

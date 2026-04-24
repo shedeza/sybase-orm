@@ -117,7 +117,10 @@ class ConnectionManagerTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/port/i');
 
-        new TestableConnectionManager(['dbname' => 'test', 'port' => 0]);
+        $manager = new TestableConnectionManager(['dbname' => 'test', 'port' => 0]);
+        $mockPdo = $this->createMockPdo();
+        $manager->setMockPdo($mockPdo);
+        $manager->getConnection();
     }
 
     public function testThrowsOnInvalidPortTooHigh(): void
@@ -125,7 +128,10 @@ class ConnectionManagerTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/port/i');
 
-        new TestableConnectionManager(['dbname' => 'test', 'port' => 70000]);
+        $manager = new TestableConnectionManager(['dbname' => 'test', 'port' => 70000]);
+        $mockPdo = $this->createMockPdo();
+        $manager->setMockPdo($mockPdo);
+        $manager->getConnection();
     }
 
     public function testAcceptsValidPort(): void

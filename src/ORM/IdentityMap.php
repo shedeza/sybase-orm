@@ -76,4 +76,9 @@ final class IdentityMap implements IdentityMapInterface
     {
         $this->map = [];
     }
+
+    public function clearClass(string $entityClass): void
+    {
+        unset($this->map[$entityClass]);
+    }
 }

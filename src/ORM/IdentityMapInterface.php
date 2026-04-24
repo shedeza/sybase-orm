@@ -23,4 +23,7 @@ interface IdentityMapInterface
 
     /** Limpia todo el mapa. */
     public function clear(): void;
+
+    /** Limpia solo las entidades de una clase específica del mapa. */
+    public function clearClass(string $entityClass): void;
 }

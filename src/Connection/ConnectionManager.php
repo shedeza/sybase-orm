@@ -55,15 +55,6 @@ class ConnectionManager implements ConnectionManagerInterface
         if ($this->config['dbname'] === '') {
             throw new \InvalidArgumentException('Connection config requires a non-empty "dbname".');
         }
-
-        $port = (int) $this->config['port'];
-        if ($port < 1 || $port > 65535) {
-            throw new \InvalidArgumentException(sprintf(
-                'Invalid port "%d". Must be between 1 and 65535.',
-                $port,
-            ));
-        }
-        $this->config['port'] = $port;
     }
 
     public function getConnection(): \PDO
@@ -72,10 +63,18 @@ class ConnectionManager implements ConnectionManagerInterface
             return $this->connection;
         }
 
+        $port = (int) $this->config['port'];
+        if ($port < 1 || $port > 65535) {
+            throw new \InvalidArgumentException(sprintf(
+                'Invalid port "%d". Must be between 1 and 65535.',
+                $port,
+            ));
+        }
+
         $dsn = sprintf(
             'dblib:host=%s:%d;dbname=%s;charset=%s',
             $this->config['host'],
-            (int) $this->config['port'],
+            $port,
             $this->config['dbname'],
             $this->config['charset'],
         );

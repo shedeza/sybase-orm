@@ -115,13 +115,7 @@ class EntityRepository
             $oql .= ' ORDER BY ' . implode(', ', $orderParts);
         }
 
-        $results = $this->entityManager->query($oql, $params);
-
-        if ($limit !== null) {
-            $results = array_slice($results, $offset ?? 0, $limit);
-        } elseif ($offset !== null) {
-            $results = array_slice($results, $offset);
-        }
+        $results = $this->entityManager->query($oql, $params, HydrationMode::HYDRATE_OBJECT, $limit, $offset);
 
         return $results;
     }
