@@ -415,9 +415,10 @@ final class EntityManager implements EntityManagerInterface
         foreach ($parameterNames as $name) {
             $value = $params[$name] ?? null;
             if (is_array($value)) {
-                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $scalarValues = $this->normalizeArrayParam($value);
+                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
                 $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($value as $item) {
+                foreach ($scalarValues as $item) {
                     $orderedParams[] = $item;
                 }
             } else {
@@ -432,9 +433,10 @@ final class EntityManager implements EntityManagerInterface
                 continue;
             }
             if (is_array($value) && str_contains($sql, ':' . $name)) {
-                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $scalarValues = $this->normalizeArrayParam($value);
+                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
                 $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($value as $item) {
+                foreach ($scalarValues as $item) {
                     $orderedParams[] = $item;
                 }
             } elseif (str_contains($sql, ':' . $name)) {
@@ -507,9 +509,10 @@ final class EntityManager implements EntityManagerInterface
         foreach ($parameterNames as $name) {
             $value = $params[$name] ?? null;
             if (is_array($value)) {
-                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $scalarValues = $this->normalizeArrayParam($value);
+                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
                 $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($value as $item) {
+                foreach ($scalarValues as $item) {
                     $orderedParams[] = $item;
                 }
             } else {
@@ -526,9 +529,10 @@ final class EntityManager implements EntityManagerInterface
                 continue; // Already processed above
             }
             if (is_array($value) && str_contains($sql, ':' . $name)) {
-                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $scalarValues = $this->normalizeArrayParam($value);
+                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
                 $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($value as $item) {
+                foreach ($scalarValues as $item) {
                     $orderedParams[] = $item;
                 }
             } elseif (str_contains($sql, ':' . $name)) {
@@ -718,6 +722,56 @@ final class EntityManager implements EntityManagerInterface
     public function getMetadataReader(): MetadataReaderInterface
     {
         return $this->metadataReader;
+    }
+
+    /**
+     * Normalizes an array parameter for IN clause expansion.
+     *
+     * Handles three cases:
+     * 1. Flat array of scalars: ['a', 'b', 'c'] → used as-is
+     * 2. Associative array with non-scalar values: ['001' => [...], '002' => [...]]
+     *    → uses array_keys() as the IN values (Doctrine DQL compatibility)
+     * 3. Mixed: ensures all values are scalar, throws on nested arrays
+     *
+     * @param array $value The array parameter to normalize.
+     * @return list<scalar|null> Flat list of scalar values for binding.
+     * @throws \InvalidArgumentException If values cannot be normalized to scalars.
+     */
+    private function normalizeArrayParam(array $value): array
+    {
+        if (empty($value)) {
+            return [];
+        }
+
+        // Check if any value is a non-scalar (array or object)
+        $hasNonScalar = false;
+        foreach ($value as $item) {
+            if (is_array($item) || is_object($item)) {
+                $hasNonScalar = true;
+                break;
+            }
+        }
+
+        if (!$hasNonScalar) {
+            // All values are scalar — use array_values to ensure sequential keys
+            return array_values($value);
+        }
+
+        // Values contain arrays/objects — use keys as the IN values
+        // This matches Doctrine DQL behavior for associative arrays
+        $keys = array_keys($value);
+
+        // Validate that keys are scalar
+        foreach ($keys as $key) {
+            if (!is_scalar($key)) {
+                throw new \InvalidArgumentException(
+                    'IN clause parameter contains non-scalar values that cannot be normalized. '
+                    . 'Pass a flat array of scalar values, or an associative array where keys are the desired IN values.',
+                );
+            }
+        }
+
+        return $keys;
     }
 
     /**

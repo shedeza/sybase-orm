@@ -882,6 +882,44 @@ final class EntityManagerTest extends TestCase
         );
     }
 
+    public function testQueryExpandsAssociativeArrayUsingKeys(): void
+    {
+        $rows = [];
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetchAll')->willReturn($rows);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        // Associative array where values are sub-arrays (like Unidad constants)
+        // The ORM should use the KEYS ('001', '002', '003') as IN values
+        $grupo = [
+            '001' => ['clave' => '001', 'nombre' => 'Iztapalapa'],
+            '002' => ['clave' => '002', 'nombre' => 'Azcapotzalco'],
+            '003' => ['clave' => '003', 'nombre' => 'Lerma'],
+        ];
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->with(
+                $this->callback(function (string $sql): bool {
+                    return str_contains($sql, '?, ?, ?');
+                }),
+                ['001', '002', '003'],
+            )
+            ->willReturn($stmt);
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $this->em->query(
+            'SELECT c.id, c.name FROM CustomerEntity c WHERE c.id IN (:grupo)',
+            ['grupo' => $grupo],
+            HydrationMode::HYDRATE_ARRAY,
+        );
+    }
+
     // ── queryOne() ───────────────────────────────────────────────
 
     public function testQueryOneReturnsHydratedEntity(): void

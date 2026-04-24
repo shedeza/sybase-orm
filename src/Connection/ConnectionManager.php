@@ -215,18 +215,18 @@ class ConnectionManager implements ConnectionManagerInterface
         $position = 1; // PDO positional params are 1-based
 
         foreach ($params as $value) {
-            if (is_array($value)) {
-                // Array values should have been expanded upstream with matching SQL placeholders.
-                // Bind each element individually — the caller must ensure the SQL has
-                // the correct number of ? placeholders for the total expanded count.
-                foreach ($value as $item) {
-                    $this->bindSingleValue($stmt, $position, $item);
-                    $position++;
-                }
-            } else {
-                $this->bindSingleValue($stmt, $position, $value);
-                $position++;
+            if (is_array($value) || is_object($value)) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Cannot bind non-scalar value at position %d. '
+                    . 'Array/object parameters must be expanded before reaching ConnectionManager. '
+                    . 'Got: %s',
+                    $position,
+                    get_debug_type($value),
+                ));
             }
+
+            $this->bindSingleValue($stmt, $position, $value);
+            $position++;
         }
     }
 
@@ -287,13 +287,15 @@ class ConnectionManager implements ConnectionManagerInterface
                 $value = $params[$paramIndex] ?? null;
 
                 if (is_array($value)) {
-                    $count = count($value);
+                    // Normalize: if values are non-scalar, use keys instead
+                    $scalarValues = $this->normalizeExpandValues($value);
+                    $count = count($scalarValues);
                     if ($count === 0) {
                         // Empty array: use impossible condition (1 = 0) to match nothing
                         $result .= '1 = 0';
                     } else {
                         $result .= implode(', ', array_fill(0, $count, '?'));
-                        foreach ($value as $item) {
+                        foreach ($scalarValues as $item) {
                             $flatParams[] = $item;
                         }
                     }
@@ -303,7 +305,7 @@ class ConnectionManager implements ConnectionManagerInterface
                 }
 
                 $paramIndex++;
-            } elseif ($sql[$i] === "'" ) {
+            } elseif ($sql[$i] === "'") {
                 // Skip string literals to avoid replacing ? inside them
                 $result .= "'";
                 $i++;
@@ -320,6 +322,29 @@ class ConnectionManager implements ConnectionManagerInterface
         }
 
         return [$result, $flatParams];
+    }
+
+    /**
+     * Normalizes array values for SQL expansion.
+     * If all values are scalar/null, returns them as-is.
+     * If values contain arrays/objects, uses array_keys() instead (Doctrine compatibility).
+     *
+     * @param array $value The array to normalize.
+     * @return list<scalar|null> Flat list of scalar values.
+     */
+    private function normalizeExpandValues(array $value): array
+    {
+        foreach ($value as $item) {
+            if (is_array($item) || is_object($item)) {
+                // Values are non-scalar — use keys as the actual values
+                return array_values(array_map(
+                    fn($k) => is_int($k) || is_string($k) || is_float($k) ? $k : (string) $k,
+                    array_keys($value),
+                ));
+            }
+        }
+
+        return array_values($value);
     }
 
     /**
