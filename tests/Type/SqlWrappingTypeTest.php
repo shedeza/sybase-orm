@@ -70,6 +70,58 @@ final class SqlWrappingTypeTest extends TestCase
         $this->assertInstanceOf(CustomTypeInterface::class, $type);
         $this->assertInstanceOf(SqlWrappingTypeInterface::class, $type);
     }
+
+    // ── Built-in float/real CONVERT wrapping (v1.2.7) ───────────
+
+    /**
+     * @dataProvider builtinFloatTypesProvider
+     */
+    public function testGetDatabaseValueSQLWrapsBuiltinFloatTypes(string $type): void
+    {
+        $typeCaster = new TypeCaster();
+
+        $result = $typeCaster->getDatabaseValueSQL('?', $type);
+
+        $this->assertSame('CONVERT(REAL, ?)', $result);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function builtinFloatTypesProvider(): array
+    {
+        return [
+            'float' => ['float'],
+            'double' => ['double'],
+            'decimal' => ['decimal'],
+            'real' => ['real'],
+        ];
+    }
+
+    public function testGetDatabaseValueSQLDoesNotWrapIntType(): void
+    {
+        $typeCaster = new TypeCaster();
+
+        $result = $typeCaster->getDatabaseValueSQL('?', 'int');
+
+        $this->assertSame('?', $result);
+    }
+
+    public function testGetDatabaseValueSQLDoesNotWrapBoolType(): void
+    {
+        $typeCaster = new TypeCaster();
+
+        $result = $typeCaster->getDatabaseValueSQL('?', 'bool');
+
+        $this->assertSame('?', $result);
+    }
+
+    public function testGetDatabaseValueSQLFloatWithCustomExpression(): void
+    {
+        $typeCaster = new TypeCaster();
+
+        $result = $typeCaster->getDatabaseValueSQL('column_name', 'float');
+
+        $this->assertSame('CONVERT(REAL, column_name)', $result);
+    }
 }
 
 /**

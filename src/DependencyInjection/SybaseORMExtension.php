@@ -175,6 +175,7 @@ final class SybaseORMExtension extends Extension
             new Reference(MetadataReaderInterface::class),
             new Reference(TypeCasterInterface::class),
             new Reference(IdentityMapInterface::class),
+            new Reference(UnitOfWorkInterface::class),
         ]);
         $definition->setPublic(false);
 

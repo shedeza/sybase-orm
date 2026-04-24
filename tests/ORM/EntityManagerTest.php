@@ -48,6 +48,10 @@ final class EntityManagerTest extends TestCase
         $this->identityMap = $this->createMock(IdentityMapInterface::class);
         $this->cacheManager = $this->createMock(CacheManagerInterface::class);
 
+        // Default: convertResultRow passes through unchanged (no charset conversion)
+        $this->connectionManager->method('convertResultRow')
+            ->willReturnCallback(fn(array $row) => $row);
+
         $this->metadata = new ClassMetadata(
             entityClass: Fixtures\CustomerEntity::class,
             tableName: 'customers',
@@ -438,6 +442,8 @@ final class EntityManagerTest extends TestCase
                 [1, 42],
             )
             ->willReturn($stmt);
+        $connectionManager->method('convertResultRow')
+            ->willReturnCallback(fn(array $row) => $row);
 
         $entity = new Fixtures\CompositeKeyEntity();
         $entity->setOrgId(1);
@@ -512,6 +518,8 @@ final class EntityManagerTest extends TestCase
 
         $connectionManager = $this->createMock(ConnectionManagerInterface::class);
         $connectionManager->method('executeQuery')->willReturn($stmt);
+        $connectionManager->method('convertResultRow')
+            ->willReturnCallback(fn(array $row) => $row);
 
         $hydrator = $this->createMock(HydratorInterface::class);
         $unitOfWork = $this->createMock(UnitOfWorkInterface::class);
@@ -560,6 +568,8 @@ final class EntityManagerTest extends TestCase
         $hydrator = $this->createMock(HydratorInterface::class);
         $unitOfWork = $this->createMock(UnitOfWorkInterface::class);
         $connectionManager = $this->createMock(ConnectionManagerInterface::class);
+        $connectionManager->method('convertResultRow')
+            ->willReturnCallback(fn(array $row) => $row);
         $hookDispatcher = new HookDispatcher($metadataReader);
 
         $em = new EntityManager(
@@ -615,6 +625,8 @@ final class EntityManagerTest extends TestCase
 
         $connectionManager = $this->createMock(ConnectionManagerInterface::class);
         $connectionManager->expects($this->never())->method('executeQuery');
+        $connectionManager->method('convertResultRow')
+            ->willReturnCallback(fn(array $row) => $row);
 
         $dialect = $this->createMock(DialectInterface::class);
         $typeCaster = $this->createMock(TypeCasterInterface::class);
@@ -878,6 +890,44 @@ final class EntityManagerTest extends TestCase
         $this->em->query(
             'SELECT c.id, c.name FROM CustomerEntity c WHERE c.id IN (:ids)',
             ['ids' => $ids],
+            HydrationMode::HYDRATE_ARRAY,
+        );
+    }
+
+    public function testQueryExpandsAssociativeArrayUsingKeys(): void
+    {
+        $rows = [];
+
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetchAll')->willReturn($rows);
+        $stmt->expects($this->once())->method('closeCursor');
+
+        $this->dialect->method('quoteIdentifier')
+            ->willReturnCallback(fn(string $id) => '[' . $id . ']');
+
+        // Associative array where values are sub-arrays (like Unidad constants)
+        // The ORM should use the KEYS ('001', '002', '003') as IN values
+        $grupo = [
+            '001' => ['clave' => '001', 'nombre' => 'Iztapalapa'],
+            '002' => ['clave' => '002', 'nombre' => 'Azcapotzalco'],
+            '003' => ['clave' => '003', 'nombre' => 'Lerma'],
+        ];
+
+        $this->connectionManager->expects($this->once())
+            ->method('executeQuery')
+            ->with(
+                $this->callback(function (string $sql): bool {
+                    return str_contains($sql, '?, ?, ?');
+                }),
+                ['001', '002', '003'],
+            )
+            ->willReturn($stmt);
+
+        $this->em->setEntityClasses([Fixtures\CustomerEntity::class]);
+
+        $this->em->query(
+            'SELECT c.id, c.name FROM CustomerEntity c WHERE c.id IN (:grupo)',
+            ['grupo' => $grupo],
             HydrationMode::HYDRATE_ARRAY,
         );
     }

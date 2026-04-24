@@ -530,4 +530,135 @@ class ConnectionManagerTest extends TestCase
         // but the key point is no exception is thrown)
         $this->assertIsString($result['name']);
     }
+
+    // --- Array param expansion at connection level (v1.2.6) ---
+
+    public function testExpandArrayParamsInExecuteQuery(): void
+    {
+        $manager = $this->createManager();
+        $mockPdo = $this->createMockPdo();
+        $mockStmt = $this->createMock(\PDOStatement::class);
+
+        $boundValues = [];
+        $boundTypes = [];
+        $mockPdo->method('prepare')->with('SELECT * FROM t WHERE id IN (?, ?, ?)')->willReturn($mockStmt);
+        $mockStmt->method('bindValue')->willReturnCallback(function (int $pos, mixed $val, int $type) use (&$boundValues, &$boundTypes) {
+            $boundValues[$pos] = $val;
+            $boundTypes[$pos] = $type;
+            return true;
+        });
+        $mockStmt->method('execute')->willReturn(true);
+
+        $manager->setMockPdo($mockPdo);
+
+        // Pass an array param — expandArrayParams should expand the single ? into ?, ?, ?
+        $manager->executeQuery('SELECT * FROM t WHERE id IN (?)', [['a', 'b', 'c']]);
+
+        $this->assertCount(3, $boundValues);
+        $this->assertSame('a', $boundValues[1]);
+        $this->assertSame('b', $boundValues[2]);
+        $this->assertSame('c', $boundValues[3]);
+    }
+
+    public function testExpandArrayParamsMixedScalarAndArray(): void
+    {
+        $manager = $this->createManager();
+        $mockPdo = $this->createMockPdo();
+        $mockStmt = $this->createMock(\PDOStatement::class);
+
+        $boundValues = [];
+        $boundTypes = [];
+        $mockPdo->method('prepare')->with('SELECT * FROM t WHERE name = ? AND id IN (?, ?)')->willReturn($mockStmt);
+        $mockStmt->method('bindValue')->willReturnCallback(function (int $pos, mixed $val, int $type) use (&$boundValues, &$boundTypes) {
+            $boundValues[$pos] = $val;
+            $boundTypes[$pos] = $type;
+            return true;
+        });
+        $mockStmt->method('execute')->willReturn(true);
+
+        $manager->setMockPdo($mockPdo);
+
+        $manager->executeQuery('SELECT * FROM t WHERE name = ? AND id IN (?)', ['John', [1, 2]]);
+
+        $this->assertCount(3, $boundValues);
+        $this->assertSame('John', $boundValues[1]);
+        $this->assertSame(1, $boundValues[2]);
+        $this->assertSame(2, $boundValues[3]);
+        $this->assertSame(\PDO::PARAM_STR, $boundTypes[1]);
+        $this->assertSame(\PDO::PARAM_INT, $boundTypes[2]);
+        $this->assertSame(\PDO::PARAM_INT, $boundTypes[3]);
+    }
+
+    public function testExpandArrayParamsHandlesNullInsideArray(): void
+    {
+        $manager = $this->createManager();
+        $mockPdo = $this->createMockPdo();
+        $mockStmt = $this->createMock(\PDOStatement::class);
+
+        $boundValues = [];
+        $boundTypes = [];
+        $mockPdo->method('prepare')->with('SELECT * FROM t WHERE id IN (?, ?)')->willReturn($mockStmt);
+        $mockStmt->method('bindValue')->willReturnCallback(function (int $pos, mixed $val, int $type) use (&$boundValues, &$boundTypes) {
+            $boundValues[$pos] = $val;
+            $boundTypes[$pos] = $type;
+            return true;
+        });
+        $mockStmt->method('execute')->willReturn(true);
+
+        $manager->setMockPdo($mockPdo);
+
+        $manager->executeQuery('SELECT * FROM t WHERE id IN (?)', [[null, 5]]);
+
+        $this->assertCount(2, $boundValues);
+        $this->assertNull($boundValues[1]);
+        $this->assertSame(\PDO::PARAM_NULL, $boundTypes[1]);
+        $this->assertSame(5, $boundValues[2]);
+        $this->assertSame(\PDO::PARAM_INT, $boundTypes[2]);
+    }
+
+    public function testExpandArrayParamsNoOpForFlatParams(): void
+    {
+        $manager = $this->createManager();
+        $mockPdo = $this->createMockPdo();
+        $mockStmt = $this->createMock(\PDOStatement::class);
+
+        $boundValues = [];
+        $mockPdo->method('prepare')->with('SELECT * FROM t WHERE id = ? AND name = ?')->willReturn($mockStmt);
+        $mockStmt->method('bindValue')->willReturnCallback(function (int $pos, mixed $val, int $type) use (&$boundValues) {
+            $boundValues[$pos] = $val;
+            return true;
+        });
+        $mockStmt->method('execute')->willReturn(true);
+
+        $manager->setMockPdo($mockPdo);
+
+        // All scalar params — no expansion needed
+        $manager->executeQuery('SELECT * FROM t WHERE id = ? AND name = ?', [42, 'John']);
+
+        $this->assertCount(2, $boundValues);
+        $this->assertSame(42, $boundValues[1]);
+        $this->assertSame('John', $boundValues[2]);
+    }
+
+    public function testExpandArrayParamsInExecuteStatement(): void
+    {
+        $manager = $this->createManager();
+        $mockPdo = $this->createMockPdo();
+        $mockStmt = $this->createMock(\PDOStatement::class);
+
+        $capturedSql = null;
+        $mockPdo->method('prepare')->willReturnCallback(function (string $sql) use ($mockStmt, &$capturedSql) {
+            $capturedSql = $sql;
+            return $mockStmt;
+        });
+        $mockStmt->method('execute')->willReturn(true);
+        $mockStmt->method('rowCount')->willReturn(3);
+        $mockStmt->method('closeCursor')->willReturn(true);
+
+        $manager->setMockPdo($mockPdo);
+
+        $manager->executeStatement('DELETE FROM t WHERE id IN (?)', [[1, 2, 3]]);
+
+        $this->assertSame('DELETE FROM t WHERE id IN (?, ?, ?)', $capturedSql);
+    }
 }

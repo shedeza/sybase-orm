@@ -8,6 +8,7 @@ use ReflectionClass;
 use SybaseORM\Metadata\ClassMetadata;
 use SybaseORM\Metadata\MetadataReaderInterface;
 use SybaseORM\ORM\IdentityMapInterface;
+use SybaseORM\ORM\UnitOfWorkInterface;
 use SybaseORM\Type\TypeCasterInterface;
 
 /**
@@ -28,6 +29,7 @@ final class Hydrator implements HydratorInterface
         private readonly MetadataReaderInterface $metadataReader,
         private readonly TypeCasterInterface $typeCaster,
         private readonly ?IdentityMapInterface $identityMap = null,
+        private readonly ?UnitOfWorkInterface $unitOfWork = null,
     ) {
     }
 
@@ -56,6 +58,11 @@ final class Hydrator implements HydratorInterface
         // Store in Identity Map if available
         if ($this->identityMap !== null) {
             $this->storeInIdentityMap($entity, $metadata);
+        }
+
+        // Register as clean in UnitOfWork so dirty checking works on subsequent save()
+        if ($this->unitOfWork !== null) {
+            $this->unitOfWork->registerClean($entity);
         }
 
         return $entity;

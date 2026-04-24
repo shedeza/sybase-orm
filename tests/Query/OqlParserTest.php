@@ -572,4 +572,83 @@ class OqlParserTest extends TestCase
         $this->expectException(OqlParseException::class);
         $this->parser->parse('SELECT u FROM User u WHERE u.id IN 1, 2, 3');
     }
+
+    // ── Parenthesized Condition Groups ──────────────────────────────
+
+    public function testParseParenthesizedOrCondition(): void
+    {
+        $ast = $this->parser->parse('SELECT e FROM Entity e WHERE (e.status IS NULL OR e.status IN (:statuses))');
+
+        $this->assertNotNull($ast->where);
+        $condition = $ast->where->condition;
+        $this->assertInstanceOf(LogicalExpression::class, $condition);
+        $this->assertSame('OR', $condition->operator);
+        $this->assertInstanceOf(IsNullExpression::class, $condition->left);
+        $this->assertInstanceOf(InExpression::class, $condition->right);
+    }
+
+    public function testParseParenthesizedConditionWithAnd(): void
+    {
+        $ast = $this->parser->parse('SELECT e FROM Entity e WHERE e.active = :active AND (e.role = :r1 OR e.role = :r2)');
+
+        $this->assertNotNull($ast->where);
+        $condition = $ast->where->condition;
+        $this->assertInstanceOf(LogicalExpression::class, $condition);
+        $this->assertSame('AND', $condition->operator);
+        $this->assertInstanceOf(Comparison::class, $condition->left);
+        $this->assertInstanceOf(LogicalExpression::class, $condition->right);
+        $this->assertSame('OR', $condition->right->operator);
+    }
+
+    public function testParseNestedParenthesizedConditions(): void
+    {
+        $ast = $this->parser->parse('SELECT e FROM Entity e WHERE (e.a = :a AND (e.b IS NULL OR e.c IN (:vals)))');
+
+        $this->assertNotNull($ast->where);
+        $condition = $ast->where->condition;
+        $this->assertInstanceOf(LogicalExpression::class, $condition);
+        $this->assertSame('AND', $condition->operator);
+        $this->assertInstanceOf(Comparison::class, $condition->left);
+        $this->assertInstanceOf(LogicalExpression::class, $condition->right);
+        $this->assertSame('OR', $condition->right->operator);
+    }
+
+    public function testParseMultipleParenthesizedGroups(): void
+    {
+        $ast = $this->parser->parse('SELECT e FROM Entity e WHERE (e.a = :a OR e.b = :b) AND (e.c IS NULL OR e.d IN (:vals))');
+
+        $this->assertNotNull($ast->where);
+        $condition = $ast->where->condition;
+        $this->assertInstanceOf(LogicalExpression::class, $condition);
+        $this->assertSame('AND', $condition->operator);
+        $this->assertInstanceOf(LogicalExpression::class, $condition->left);
+        $this->assertSame('OR', $condition->left->operator);
+        $this->assertInstanceOf(LogicalExpression::class, $condition->right);
+        $this->assertSame('OR', $condition->right->operator);
+    }
+
+    /**
+     * @dataProvider parenthesizedConditionProvider
+     */
+    public function testParenthesizedConditionsParsing(string $oql): void
+    {
+        $ast = $this->parser->parse($oql);
+        $this->assertInstanceOf(SelectStatement::class, $ast);
+        $this->assertNotNull($ast->where);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function parenthesizedConditionProvider(): array
+    {
+        return [
+            'simple parens' => ['SELECT e FROM Entity e WHERE (e.x = :x)'],
+            'OR in parens' => ['SELECT e FROM Entity e WHERE (e.x = :x OR e.y = :y)'],
+            'IS NULL OR IN' => ['SELECT e FROM Entity e WHERE (e.x IS NULL OR e.x IN (:vals))'],
+            'AND with parens right' => ['SELECT e FROM Entity e WHERE e.a = :a AND (e.b = :b OR e.c = :c)'],
+            'AND with parens left' => ['SELECT e FROM Entity e WHERE (e.a = :a OR e.b = :b) AND e.c = :c'],
+            'nested parens' => ['SELECT e FROM Entity e WHERE (e.a = :a AND (e.b IS NULL OR e.c = :c))'],
+            'IS NOT NULL in parens' => ['SELECT e FROM Entity e WHERE (e.x IS NOT NULL OR e.y = :y)'],
+            'NOT IN in parens' => ['SELECT e FROM Entity e WHERE (e.x NOT IN (:vals) OR e.y IS NULL)'],
+        ];
+    }
 }

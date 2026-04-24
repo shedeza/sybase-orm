@@ -389,10 +389,11 @@ final class OqlToSqlTranslator
             return $this->resolveComparison($condition, $parameters);
         }
 
+        // LogicalExpression: wrap in parentheses to preserve operator precedence
         $left = $this->resolveCondition($condition->left, $parameters);
         $right = $this->resolveCondition($condition->right, $parameters);
 
-        return $left . ' ' . $condition->operator . ' ' . $right;
+        return '(' . $left . ' ' . $condition->operator . ' ' . $right . ')';
     }
 
     private function resolveComparison(Comparison $comparison, array &$parameters): string

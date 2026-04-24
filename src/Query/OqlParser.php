@@ -88,13 +88,22 @@ final class OqlParser
                 continue;
             }
 
-            // String literal
+            // String literal (supports both backslash escaping and Sybase doubled-quote escaping)
             if ($oql[$i] === "'") {
                 $start = $i;
                 $i++;
-                while ($i < $length && $oql[$i] !== "'") {
+                while ($i < $length) {
                     if ($oql[$i] === '\\') {
-                        $i++;
+                        $i += 2; // skip escaped character
+                        continue;
+                    }
+                    if ($oql[$i] === "'") {
+                        // Check for doubled quote (Sybase escape: '')
+                        if ($i + 1 < $length && $oql[$i + 1] === "'") {
+                            $i += 2; // skip both quotes
+                            continue;
+                        }
+                        break; // closing quote
                     }
                     $i++;
                 }
@@ -430,12 +439,22 @@ final class OqlParser
     }
 
     /**
-     * Parses a single condition: comparison, IS NULL, IS NOT NULL, IN, or NOT IN.
+     * Parses a single condition: comparison, IS NULL, IS NOT NULL, IN, NOT IN,
+     * or a parenthesized condition group.
      *
-     * @return Comparison|IsNullExpression|InExpression
+     * @return Comparison|IsNullExpression|InExpression|LogicalExpression
      */
-    private function parseSingleCondition(): Comparison|IsNullExpression|InExpression
+    private function parseSingleCondition(): Comparison|IsNullExpression|InExpression|LogicalExpression
     {
+        // Parenthesized condition group: ( condition )
+        if ($this->isAt('(')) {
+            $this->advance(); // consume '('
+            $inner = $this->parseCondition();
+            $this->expect(')');
+
+            return $inner;
+        }
+
         // Check if the left operand is an aggregate function (for HAVING conditions)
         $token = $this->current();
         if (in_array(strtoupper($token), self::AGGREGATE_FUNCTIONS, true)) {

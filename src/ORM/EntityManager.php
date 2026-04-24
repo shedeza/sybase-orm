@@ -281,6 +281,9 @@ final class EntityManager implements EntityManagerInterface
             return null;
         }
 
+        // Apply charset conversion (ISO-8859-1 → UTF-8)
+        $row = $this->connectionManager->convertResultRow($row);
+
         // 4. Hydrate and register
         $entity = $this->hydrator->hydrate($row, $entityClass);
         $this->unitOfWork->registerClean($entity);
@@ -309,6 +312,9 @@ final class EntityManager implements EntityManagerInterface
         $stmt = $this->connectionManager->executeQuery($sql, $orderedParams);
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         $stmt->closeCursor();
+
+        // Apply charset conversion (ISO-8859-1 → UTF-8) to result rows
+        $rows = array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
 
         // Auto-detect hydration mode: if AST contains FunctionCall, aliases, or multi-entity selects, default to HYDRATE_ARRAY
         $effectiveMode = $hydrationMode;
@@ -349,6 +355,9 @@ final class EntityManager implements EntityManagerInterface
             return null;
         }
 
+        // Apply charset conversion (ISO-8859-1 → UTF-8)
+        $row = $this->connectionManager->convertResultRow($row);
+
         // Auto-detect hydration mode
         $effectiveMode = $hydrationMode;
         if ($hydrationMode === HydrationMode::HYDRATE_OBJECT && $this->shouldAutoDetectArrayMode($ast)) {
@@ -385,6 +394,9 @@ final class EntityManager implements EntityManagerInterface
             return null;
         }
 
+        // Apply charset conversion (ISO-8859-1 → UTF-8)
+        $row = $this->connectionManager->convertResultRow($row);
+
         return reset($row) !== false ? reset($row) : null;
     }
 
@@ -415,9 +427,10 @@ final class EntityManager implements EntityManagerInterface
         foreach ($parameterNames as $name) {
             $value = $params[$name] ?? null;
             if (is_array($value)) {
-                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $scalarValues = $this->normalizeArrayParam($value);
+                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
                 $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($value as $item) {
+                foreach ($scalarValues as $item) {
                     $orderedParams[] = $item;
                 }
             } else {
@@ -432,9 +445,10 @@ final class EntityManager implements EntityManagerInterface
                 continue;
             }
             if (is_array($value) && str_contains($sql, ':' . $name)) {
-                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $scalarValues = $this->normalizeArrayParam($value);
+                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
                 $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($value as $item) {
+                foreach ($scalarValues as $item) {
                     $orderedParams[] = $item;
                 }
             } elseif (str_contains($sql, ':' . $name)) {
@@ -468,6 +482,9 @@ final class EntityManager implements EntityManagerInterface
 
         try {
             while (($row = $stmt->fetch(\PDO::FETCH_ASSOC)) !== false) {
+                // Apply charset conversion (ISO-8859-1 → UTF-8)
+                $row = $this->connectionManager->convertResultRow($row);
+
                 if ($effectiveMode === HydrationMode::HYDRATE_ARRAY || $entityClass === null) {
                     yield $row;
                 } else {
@@ -507,9 +524,10 @@ final class EntityManager implements EntityManagerInterface
         foreach ($parameterNames as $name) {
             $value = $params[$name] ?? null;
             if (is_array($value)) {
-                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $scalarValues = $this->normalizeArrayParam($value);
+                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
                 $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($value as $item) {
+                foreach ($scalarValues as $item) {
                     $orderedParams[] = $item;
                 }
             } else {
@@ -526,9 +544,10 @@ final class EntityManager implements EntityManagerInterface
                 continue; // Already processed above
             }
             if (is_array($value) && str_contains($sql, ':' . $name)) {
-                $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                $scalarValues = $this->normalizeArrayParam($value);
+                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
                 $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($value as $item) {
+                foreach ($scalarValues as $item) {
                     $orderedParams[] = $item;
                 }
             } elseif (str_contains($sql, ':' . $name)) {
@@ -718,6 +737,56 @@ final class EntityManager implements EntityManagerInterface
     public function getMetadataReader(): MetadataReaderInterface
     {
         return $this->metadataReader;
+    }
+
+    /**
+     * Normalizes an array parameter for IN clause expansion.
+     *
+     * Handles three cases:
+     * 1. Flat array of scalars: ['a', 'b', 'c'] → used as-is
+     * 2. Associative array with non-scalar values: ['001' => [...], '002' => [...]]
+     *    → uses array_keys() as the IN values (Doctrine DQL compatibility)
+     * 3. Mixed: ensures all values are scalar, throws on nested arrays
+     *
+     * @param array $value The array parameter to normalize.
+     * @return list<scalar|null> Flat list of scalar values for binding.
+     * @throws \InvalidArgumentException If values cannot be normalized to scalars.
+     */
+    private function normalizeArrayParam(array $value): array
+    {
+        if (empty($value)) {
+            return [];
+        }
+
+        // Check if any value is a non-scalar (array or object)
+        $hasNonScalar = false;
+        foreach ($value as $item) {
+            if (is_array($item) || is_object($item)) {
+                $hasNonScalar = true;
+                break;
+            }
+        }
+
+        if (!$hasNonScalar) {
+            // All values are scalar — use array_values to ensure sequential keys
+            return array_values($value);
+        }
+
+        // Values contain arrays/objects — use keys as the IN values
+        // This matches Doctrine DQL behavior for associative arrays
+        $keys = array_keys($value);
+
+        // Validate that keys are scalar
+        foreach ($keys as $key) {
+            if (!is_scalar($key)) {
+                throw new \InvalidArgumentException(
+                    'IN clause parameter contains non-scalar values that cannot be normalized. '
+                    . 'Pass a flat array of scalar values, or an associative array where keys are the desired IN values.',
+                );
+            }
+        }
+
+        return $keys;
     }
 
     /**
