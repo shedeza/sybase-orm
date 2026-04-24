@@ -267,7 +267,7 @@ interface MetadataReaderInterface
 
 ClassMetadata incluye: `entityClass`, `tableName`, `schema`, `columns`, `idField`, `relationships`, `inheritanceType`, `discriminatorColumn`, `discriminatorMap`, `lifecycleHooks`, y el método `getQualifiedTableName()` que retorna `schema.table` o solo `table`.
 
-## Extensiones para Migración Insaculación (Requisitos 17–28)
+## Extensiones: Claves Compuestas y OQL Avanzado (Requisitos 17–28)
 
 ### Decisiones de Diseño Adicionales
 
@@ -362,7 +362,7 @@ public function convertResultRow(array $row): array;
 7. **Round-Trip de Conversión de Charset** — Para todo string representable en ISO-8859-1, convertir UTF-8→ISO-8859-1→UTF-8 produce un string idéntico al original.
 
 
-## Extensiones OQL para Migración Insaculación (Requisitos 29–35)
+## Extensiones: OQL UPDATE/DELETE y Funciones Personalizadas (Requisitos 29–35)
 
 ### Decisiones de Diseño Adicionales
 

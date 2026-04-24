@@ -432,7 +432,7 @@ Este documento define los requisitos para un Symfony Bundle que implementa un OR
 
 ### Requisito 32: Funciones OQL Personalizadas — CONVERT y RAND
 
-**Historia de Usuario:** Como desarrollador del proyecto Insaculación, quiero usar `CONVERT(expression AS type)` y `RAND()` en sentencias OQL.
+**Historia de Usuario:** Como desarrollador, quiero usar `CONVERT(expression AS type)` y `RAND()` en sentencias OQL.
 
 #### Criterios de Aceptación
 

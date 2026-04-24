@@ -369,7 +369,7 @@ Implementación incremental de un Symfony Bundle ORM para Sybase ASE basado en p
 - Cada tarea referencia requisitos específicos para trazabilidad
 - Los checkpoints validaron la integración incremental en cada capa
 - El test de propiedad (tarea 9.5) valida la propiedad de round-trip OQL definida en el requisito 4.6
-- 510 tests unitarios con 1113 assertions cubren todos los componentes
+- 2864 tests unitarios con 11749 assertions cubren todos los componentes
 - Mejoras post-implementación aplicadas:
   - Soporte de esquema en Entity attribute (`#[Entity(table: 'invoices', schema: 'billing')]`)
   - Caché de ReflectionProperty en UnitOfWork y ReflectionClass en Hydrator para rendimiento
@@ -397,9 +397,9 @@ Implementación incremental de un Symfony Bundle ORM para Sybase ASE basado en p
 
 ---
 
-## Extensión: Gaps de Migración Insaculación (Requisitos 17–28)
+## Extensión: Claves Compuestas y OQL Avanzado (Requisitos 17–28)
 
-Implementación de 12 requisitos adicionales cerrando gaps de migración desde Doctrine ORM. Tareas organizadas por área: metadatos, persistencia/identidad, extensiones OQL (nodos AST → parser → printer → traductor), hidratación & API de consultas, y conversión de charset. Incluye 7 tests de propiedad con 100+ iteraciones cada uno.
+Implementación de 12 requisitos adicionales extendiendo el ORM con soporte avanzado. Tareas organizadas por área: metadatos, persistencia/identidad, extensiones OQL (nodos AST → parser → printer → traductor), hidratación & API de consultas, y conversión de charset. Incluye 7 tests de propiedad con 100+ iteraciones cada uno.
 
 - [x] 24. Extender ClassMetadata y MetadataReader para claves primarias compuestas
   - [x] 24.1 Agregar propiedad array `$idFields` a `ClassMetadata` e implementar `getIdColumns()`
@@ -486,7 +486,7 @@ Implementación de 12 requisitos adicionales cerrando gaps de migración desde D
   - _Requisitos: 28.1–28.5_
 
 - [x] 37. Checkpoint final — Regresión completa
-  - 2076 tests, 9400 assertions — todos pasando
+  - 2864 tests, 11749 assertions — todos pasando
   - Compatibilidad total con los 529 tests originales mantenida
 
 ### Notas de la extensión
@@ -495,7 +495,7 @@ Implementación de 12 requisitos adicionales cerrando gaps de migración desde D
 - Todos los nuevos nodos AST usan `final class` con constructor promotion y propiedades `readonly`
 - PHP 8.1+ con `declare(strict_types=1)` en cada archivo nuevo
 - Fixtures de test para entidades de clave compuesta en `tests/Metadata/Fixtures/`, `tests/ORM/Fixtures/`, `tests/Hydrator/Fixtures/`
-- Total acumulado: 2076 tests, 9400 assertions
+- Total acumulado: 2864 tests, 11749 assertions
 
 
 ---
@@ -558,11 +558,11 @@ Implementación de sentencias OQL UPDATE/DELETE, funciones CONVERT/RAND, método
   - _Requisitos: 35.1–35.6_
 
 - [x] 48. Checkpoint final — Regresión completa
-  - 2076 tests, 9922 assertions — todos pasando (mejoras de calidad ya implementadas)
+  - 2864 tests, 11749 assertions — todos pasando (mejoras de calidad ya implementadas)
 
 ### Notas de la extensión
 
 - Las tareas 47.1–47.6 (mejoras de calidad) ya están implementadas y verificadas
 - Las tareas 38–46 (OQL UPDATE/DELETE, funciones, tipos SqlWrapping) están pendientes de implementación
 - 7 tests de propiedad adicionales con 100+ iteraciones cada uno
-- Total acumulado actual: 2076 tests, 9922 assertions
+- Total acumulado actual: 2864 tests, 11749 assertions
