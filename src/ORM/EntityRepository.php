@@ -244,6 +244,14 @@ class EntityRepository
         return $this->entityShortName;
     }
 
+    /**
+     * Reloads an entity from the database, discarding any in-memory changes.
+     */
+    public function refresh(object $entity): void
+    {
+        $this->entityManager->refresh($entity);
+    }
+
     protected function getEntityManager(): EntityManagerInterface
     {
         return $this->entityManager;

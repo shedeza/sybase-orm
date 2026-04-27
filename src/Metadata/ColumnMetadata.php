@@ -21,4 +21,24 @@ final class ColumnMetadata
         public readonly ?string $generatedValue = null,
     ) {
     }
+
+    /**
+     * Returns a human-readable string representation of this column.
+     */
+    public function __toString(): string
+    {
+        $parts = [$this->columnName, $this->type];
+
+        if ($this->isId) {
+            $parts[] = 'PK';
+        }
+        if ($this->nullable) {
+            $parts[] = 'nullable';
+        }
+        if ($this->generatedValue !== null) {
+            $parts[] = $this->generatedValue;
+        }
+
+        return implode(' ', $parts);
+    }
 }

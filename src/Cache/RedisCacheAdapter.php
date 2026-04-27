@@ -48,6 +48,11 @@ final class RedisCacheAdapter implements SecondLevelCacheInterface
         $this->redis->del($this->prefix . $key);
     }
 
+    public function has(string $key): bool
+    {
+        return (bool) $this->redis->exists($this->prefix . $key);
+    }
+
     public function clear(): void
     {
         // Use SCAN to find and delete only keys with our prefix

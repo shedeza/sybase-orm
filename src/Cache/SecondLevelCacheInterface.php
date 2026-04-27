@@ -29,6 +29,11 @@ interface SecondLevelCacheInterface
     public function delete(string $key): void;
 
     /**
+     * Returns true if the cache contains an entry for the given key.
+     */
+    public function has(string $key): bool;
+
+    /**
      * Clears all entries from the cache.
      */
     public function clear(): void;

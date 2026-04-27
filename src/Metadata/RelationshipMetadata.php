@@ -22,4 +22,36 @@ final class RelationshipMetadata
         public readonly string $fetch = 'LAZY',
     ) {
     }
+
+    /**
+     * Returns true if this relationship has cascade persist enabled.
+     */
+    public function hasCascadePersist(): bool
+    {
+        return in_array('persist', $this->cascade, true);
+    }
+
+    /**
+     * Returns true if this relationship has cascade remove enabled.
+     */
+    public function hasCascadeRemove(): bool
+    {
+        return in_array('remove', $this->cascade, true);
+    }
+
+    /**
+     * Returns true if this is a to-one relationship (ManyToOne or OneToOne).
+     */
+    public function isToOne(): bool
+    {
+        return $this->type === 'ManyToOne' || $this->type === 'OneToOne';
+    }
+
+    /**
+     * Returns true if this is a to-many relationship (OneToMany or ManyToMany).
+     */
+    public function isToMany(): bool
+    {
+        return $this->type === 'OneToMany' || $this->type === 'ManyToMany';
+    }
 }
