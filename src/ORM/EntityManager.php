@@ -558,7 +558,10 @@ final class EntityManager implements EntityManagerInterface
     }
 
     /**
-     * Executes a callable within a transaction. Commits on success, rolls back on exception.
+     * Executes a callable within a transaction. Flushes and commits on success, rolls back on exception.
+     *
+     * The callback should use persist()/remove() to register changes.
+     * flush() is called automatically after the callback returns.
      *
      * @template T
      * @param callable(): T $callback
@@ -567,20 +570,12 @@ final class EntityManager implements EntityManagerInterface
      */
     public function transactional(callable $callback): mixed
     {
-        $this->beginTransaction();
-
         try {
             $result = $callback();
             $this->flush();
-            $this->commit();
 
             return $result;
         } catch (\Throwable $e) {
-            try {
-                $this->rollback();
-            } catch (\Throwable) {
-                // Suppress rollback errors — the original exception is more important
-            }
             throw $e;
         }
     }

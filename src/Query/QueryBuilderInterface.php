@@ -18,7 +18,7 @@ interface QueryBuilderInterface
     /** Define la tabla o entidad origen de la consulta. */
     public function from(string $from, ?string $alias = null): static;
 
-    /** Agrega una condición WHERE con parametrización automática. */
+    /** Agrega una condición WHERE con parametrización automática. Replaces any previous WHERE conditions. Use andWhere()/orWhere() to append. */
     public function where(string $condition, array $params = []): static;
 
     /** Agrega una condición AND WHERE. */

@@ -262,6 +262,7 @@ final class MigrationManager
         $upStatements = [];
         $downStatements = [];
 
+        // Detect new columns (exist in entity but not in DB)
         foreach ($metadata->columns as $column) {
             if (!in_array($column->columnName, $existingColumns, true)) {
                 $upStatements[] = sprintf(
@@ -273,6 +274,24 @@ final class MigrationManager
                     'ALTER TABLE %s DROP %s',
                     $this->dialect->quoteIdentifier($qualifiedName),
                     $this->dialect->quoteIdentifier($column->columnName)
+                );
+            }
+        }
+
+        // Detect removed columns (exist in DB but not in entity)
+        $entityColumnNames = array_map(fn($c) => $c->columnName, $metadata->columns);
+        foreach ($existingColumns as $existingCol) {
+            if (!in_array($existingCol, $entityColumnNames, true)) {
+                $upStatements[] = sprintf(
+                    'ALTER TABLE %s DROP %s',
+                    $this->dialect->quoteIdentifier($qualifiedName),
+                    $this->dialect->quoteIdentifier($existingCol)
+                );
+                // Down: we can't fully reconstruct the column definition, so use a comment
+                $downStatements[] = sprintf(
+                    '-- ALTER TABLE %s ADD %s (column definition unknown, was dropped)',
+                    $this->dialect->quoteIdentifier($qualifiedName),
+                    $this->dialect->quoteIdentifier($existingCol)
                 );
             }
         }

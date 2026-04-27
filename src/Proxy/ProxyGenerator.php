@@ -217,15 +217,7 @@ final class ProxyGenerator
 
             $type = $param->getType();
             if ($type !== null) {
-                if ($type instanceof \ReflectionNamedType) {
-                    if ($type->allowsNull() && $type->getName() !== 'mixed') {
-                        $part .= '?';
-                    }
-                    if (!$type->isBuiltin()) {
-                        $part .= '\\';
-                    }
-                    $part .= $type->getName() . ' ';
-                }
+                $part .= $this->getTypeString($type) . ' ';
             }
 
             $part .= '$' . $param->getName();
@@ -283,39 +275,60 @@ final class ProxyGenerator
             return '';
         }
 
-        $typeStr = '';
-        if ($returnType instanceof \ReflectionNamedType) {
-            if ($returnType->allowsNull() && $returnType->getName() !== 'mixed') {
-                $typeStr = '?';
+        return $this->getTypeString($returnType);
+    }
+
+    /**
+     * Converts a ReflectionType to its string representation.
+     * Handles named types, union types, and intersection types.
+     */
+    private function getTypeString(\ReflectionType $type): string
+    {
+        if ($type instanceof \ReflectionNamedType) {
+            $str = '';
+            if ($type->allowsNull() && $type->getName() !== 'mixed') {
+                $str = '?';
             }
-            if (!$returnType->isBuiltin()) {
-                $typeStr .= '\\';
+            if (!$type->isBuiltin()) {
+                $str .= '\\';
             }
-            $typeStr .= $returnType->getName();
-        } elseif ($returnType instanceof \ReflectionUnionType) {
-            $parts = [];
-            foreach ($returnType->getTypes() as $type) {
-                $part = '';
-                if (!$type->isBuiltin()) {
-                    $part .= '\\';
-                }
-                $part .= $type->getName();
-                $parts[] = $part;
-            }
-            $typeStr = implode('|', $parts);
-        } elseif ($returnType instanceof \ReflectionIntersectionType) {
-            $parts = [];
-            foreach ($returnType->getTypes() as $type) {
-                $part = '';
-                if (!$type->isBuiltin()) {
-                    $part .= '\\';
-                }
-                $part .= $type->getName();
-                $parts[] = $part;
-            }
-            $typeStr = implode('&', $parts);
+            $str .= $type->getName();
+
+            return $str;
         }
 
-        return $typeStr;
+        if ($type instanceof \ReflectionUnionType) {
+            $parts = [];
+            foreach ($type->getTypes() as $t) {
+                $part = '';
+                if ($t instanceof \ReflectionNamedType) {
+                    if (!$t->isBuiltin()) {
+                        $part .= '\\';
+                    }
+                    $part .= $t->getName();
+                }
+                $parts[] = $part;
+            }
+
+            return implode('|', $parts);
+        }
+
+        if ($type instanceof \ReflectionIntersectionType) {
+            $parts = [];
+            foreach ($type->getTypes() as $t) {
+                $part = '';
+                if ($t instanceof \ReflectionNamedType) {
+                    if (!$t->isBuiltin()) {
+                        $part .= '\\';
+                    }
+                    $part .= $t->getName();
+                }
+                $parts[] = $part;
+            }
+
+            return implode('&', $parts);
+        }
+
+        return '';
     }
 }

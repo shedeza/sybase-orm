@@ -833,8 +833,8 @@ final class OqlParser
 
         $this->expect('(');
 
-        // RAND and other no-arg functions (including user-registered ones)
-        if ($functionName !== 'CONVERT' && $this->isAt(')')) {
+        // No-arg functions: immediate closing paren
+        if ($this->isAt(')')) {
             $this->expect(')');
             return new CustomFunctionCall($functionName, [], null);
         }
@@ -853,9 +853,18 @@ final class OqlParser
             return new CustomFunctionCall('CONVERT', [$expr], $castType);
         }
 
-        // Generic function with no args — closing paren expected
+        // Generic function with arguments: FUNC(arg1, arg2, ...)
+        $arguments = [];
+        $arguments[] = $this->parseCustomFunctionArgument();
+
+        while ($this->isAt(',')) {
+            $this->advance();
+            $arguments[] = $this->parseCustomFunctionArgument();
+        }
+
         $this->expect(')');
-        return new CustomFunctionCall($functionName, [], null);
+
+        return new CustomFunctionCall($functionName, $arguments, null);
     }
 
     /**

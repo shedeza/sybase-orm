@@ -42,7 +42,7 @@ final class MetadataReader implements MetadataReaderInterface
         ManyToMany::class,
     ];
 
-    /** @var array<class-string, string> Mapa pre-computado de hook attribute class → shortName */
+    /** @var array<class-string, string> Mapa pre-computado de hook attribute class → shortName. Values must match HookDispatcher::VALID_HOOK_TYPES. */
     private const LIFECYCLE_HOOK_NAMES = [
         PrePersist::class => 'PrePersist',
         PostPersist::class => 'PostPersist',

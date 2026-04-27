@@ -48,6 +48,13 @@ final class ConnectionUrlParser
         }
 
         $host = $parts['host'] ?? 'localhost';
+
+        if ($host === '') {
+            throw new \InvalidArgumentException(
+                'La URL de conexión debe incluir un host (e.g. sybase://user:pass@host:port/database).',
+            );
+        }
+
         $port = $parts['port'] ?? 5000;
 
         if ((int) $port < 1 || (int) $port > 65535) {

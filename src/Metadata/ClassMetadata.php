@@ -176,6 +176,20 @@ final class ClassMetadata
     }
 
     /**
+     * Returns the RelationshipMetadata that uses the given join column name, or null.
+     */
+    public function getRelationshipByJoinColumn(string $joinColumnName): ?RelationshipMetadata
+    {
+        foreach ($this->relationships as $relationship) {
+            if ($relationship->joinColumn === $joinColumnName) {
+                return $relationship;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Returns all column property names.
      *
      * @return string[]

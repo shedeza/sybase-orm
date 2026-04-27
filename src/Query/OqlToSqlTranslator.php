@@ -272,17 +272,76 @@ final class OqlToSqlTranslator
      */
     private function resolveCustomFunctionCall(CustomFunctionCall $func, array &$parameters): string
     {
-        if ($func->functionName === 'RAND') {
-            return 'RAND()';
-        }
-
-        // User-registered custom functions (no-arg pattern)
         $upperName = strtoupper($func->functionName);
-        if ($upperName !== 'CONVERT' && isset($this->customFunctionSql[$upperName])) {
-            return $this->customFunctionSql[$upperName];
-        }
 
         // CONVERT: OQL uses CONVERT(expr AS type), Sybase SQL uses CONVERT(type, expr)
+        if ($upperName === 'CONVERT') {
+            $argParts = [];
+            foreach ($func->arguments as $arg) {
+                if ($arg instanceof CustomFunctionCall) {
+                    $argParts[] = $this->resolveCustomFunctionCall($arg, $parameters);
+                } elseif ($arg instanceof Parameter) {
+                    $parameters[] = $arg->name;
+                    $argParts[] = ':' . $arg->name;
+                } elseif ($arg instanceof PropertyAccess) {
+                    $argParts[] = $this->resolvePropertyToColumn($arg->alias, $arg->property);
+                } elseif ($arg instanceof Literal) {
+                    if ($arg->type === 'null') {
+                        $argParts[] = 'NULL';
+                    } elseif ($arg->type === 'string') {
+                        $argParts[] = "'" . str_replace("'", "''", (string) $arg->value) . "'";
+                    } else {
+                        $argParts[] = (string) $arg->value;
+                    }
+                }
+            }
+
+            return 'CONVERT(' . $func->castType . ', ' . implode(', ', $argParts) . ')';
+        }
+
+        // User-registered custom functions
+        if (isset($this->customFunctionSql[$upperName])) {
+            $template = $this->customFunctionSql[$upperName];
+
+            // If function has arguments, replace ? placeholders in the template
+            if (!empty($func->arguments)) {
+                $resolvedArgs = [];
+                foreach ($func->arguments as $arg) {
+                    if ($arg instanceof CustomFunctionCall) {
+                        $resolvedArgs[] = $this->resolveCustomFunctionCall($arg, $parameters);
+                    } elseif ($arg instanceof Parameter) {
+                        $parameters[] = $arg->name;
+                        $resolvedArgs[] = ':' . $arg->name;
+                    } elseif ($arg instanceof PropertyAccess) {
+                        $resolvedArgs[] = $this->resolvePropertyToColumn($arg->alias, $arg->property);
+                    } elseif ($arg instanceof Literal) {
+                        if ($arg->type === 'null') {
+                            $resolvedArgs[] = 'NULL';
+                        } elseif ($arg->type === 'string') {
+                            $resolvedArgs[] = "'" . str_replace("'", "''", (string) $arg->value) . "'";
+                        } else {
+                            $resolvedArgs[] = (string) $arg->value;
+                        }
+                    }
+                }
+
+                // Replace ? placeholders in template with resolved arguments
+                $result = $template;
+                foreach ($resolvedArgs as $resolved) {
+                    $pos = strpos($result, '?');
+                    if ($pos !== false) {
+                        $result = substr_replace($result, $resolved, $pos, 1);
+                    }
+                }
+
+                return $result;
+            }
+
+            // No-arg: return template as-is
+            return $template;
+        }
+
+        // Fallback: emit as FUNCNAME(args...)
         $argParts = [];
         foreach ($func->arguments as $arg) {
             if ($arg instanceof CustomFunctionCall) {
@@ -303,7 +362,7 @@ final class OqlToSqlTranslator
             }
         }
 
-        return 'CONVERT(' . $func->castType . ', ' . implode(', ', $argParts) . ')';
+        return $upperName . '(' . implode(', ', $argParts) . ')';
     }
 
     private function resolveFrom(FromClause $from): string

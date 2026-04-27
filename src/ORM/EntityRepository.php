@@ -185,6 +185,15 @@ class EntityRepository
         return $this->entityManager->query($oql, $params);
     }
 
+    /**
+     * Executes an OQL query and returns a Generator that yields results one by one.
+     * Useful for large result sets that don't fit in memory.
+     */
+    public function queryIterator(string $oql, array $params = []): \Generator
+    {
+        return $this->entityManager->queryIterator($oql, $params);
+    }
+
     // ── Conteo y existencia ────────────────────────────────────────
 
     /** @param array<string, mixed> $criteria */

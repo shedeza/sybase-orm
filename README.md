@@ -309,6 +309,30 @@ $repo->save($usuario);
 $repo->saveMany([$u1, $u2, $u3]);
 $repo->delete($usuario);
 $repo->deleteMany([$u1, $u2]);
+
+// Buscar o lanzar excepción
+$usuario = $repo->findOrFail(1);                              // PersistenceException si no existe
+$admin = $repo->findOneByOrFail(['email' => '[email]']);      // PersistenceException si no existe
+
+// Merge: re-asociar una entidad detached
+$managed = $repo->merge($detachedUsuario);
+
+// Transacciones
+$repo->transactional(function () use ($repo) {
+    $u1 = $repo->find(1);
+    $u1->setNombre('Nuevo nombre');
+    $repo->save($u1);
+    // flush + commit automático, rollback si hay excepción
+});
+
+// Streaming de resultados (para conjuntos grandes)
+$iterator = $repo->queryIterator(
+    'SELECT u FROM Usuario u WHERE u.activo = :activo',
+    ['activo' => true]
+);
+foreach ($iterator as $usuario) {
+    // Cada entidad se hidrata bajo demanda
+}
 ```
 
 ### QueryBuilder
@@ -386,6 +410,17 @@ $usuarios = $this->em->query(
     'SELECT u FROM Usuario u WHERE u.activo = :activo ORDER BY u.nombre ASC',
     ['activo' => true]
 );
+```
+
+### OQL: `queryOne()` — resultado único
+
+```php
+// Retorna un solo resultado o null
+$usuario = $this->em->queryOne(
+    'SELECT u FROM Usuario u WHERE u.email = :email',
+    ['email' => '[email]']
+);
+// Aplica TOP 1 automáticamente
 ```
 
 ### OQL: IS NULL / IS NOT NULL
@@ -771,6 +806,31 @@ try {
 
 Niveles de aislamiento soportados: `READ UNCOMMITTED`, `READ COMMITTED`, `REPEATABLE READ`, `SERIALIZABLE`.
 
+### `transactional()` — atajo para transacciones
+
+Ejecuta un callable con flush automático. Si ocurre una excepción, el rollback es automático:
+
+```php
+$this->em->transactional(function () {
+    $cuenta1 = $this->em->getRepository(Cuenta::class)->find(1);
+    $cuenta2 = $this->em->getRepository(Cuenta::class)->find(2);
+
+    $cuenta1->retirar(100);
+    $cuenta2->depositar(100);
+
+    $this->em->persist($cuenta1);
+    $this->em->persist($cuenta2);
+    // flush + commit automático al terminar el callback
+});
+
+// También disponible desde el repositorio
+$repo->transactional(function () use ($repo) {
+    $usuario = $repo->find(1);
+    $usuario->setActivo(false);
+    $repo->save($usuario);
+});
+```
+
 ## Migraciones
 
 ```bash
@@ -825,7 +885,7 @@ $conn = $this->em->getConnection();
 $stmt = $conn->executeQuery('SELECT @@version', []);
 ```
 
-### Conexión: `ping()` y `getServerVersion()`
+### Conexión: `ping()`, `getServerVersion()` y `reconnect()`
 
 ```php
 $conn = $this->em->getConnection();
@@ -837,6 +897,9 @@ if ($conn->ping()) {
 
 // Obtener la versión del servidor Sybase ASE
 $version = $conn->getServerVersion();
+
+// Forzar reconexión (útil para workers long-running)
+$conn->reconnect();
 ```
 
 ### Query logging (PSR-3)
