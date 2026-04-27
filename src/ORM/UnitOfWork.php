@@ -204,6 +204,23 @@ final class UnitOfWork implements UnitOfWorkInterface
             $snapshot[$column->propertyName] = $refProp->getValue($entity);
         }
 
+        // Capture relationship values for orphan removal detection
+        foreach ($metadata->relationships as $relationship) {
+            if (!$relationship->orphanRemoval) {
+                continue;
+            }
+
+            $refProp = $this->getReflectionProperty($entity::class, $relationship->propertyName);
+            $value = $refProp->getValue($entity);
+
+            // Deep-copy arrays so snapshot is independent of current state
+            if (is_array($value)) {
+                $snapshot[$relationship->propertyName] = [...$value];
+            } else {
+                $snapshot[$relationship->propertyName] = $value;
+            }
+        }
+
         return $snapshot;
     }
 

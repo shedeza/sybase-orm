@@ -474,11 +474,14 @@ final class EntityManager implements EntityManagerInterface
         if ($entityClass !== null) {
             $this->identityMap->clearClass($entityClass);
             $this->unitOfWork->clearClass($entityClass);
+            unset($this->repositories[$entityClass]);
             return;
         }
 
         $this->unitOfWork->clear();
         $this->identityMap->clear();
+        $this->repositories = [];
+        $this->queryCache = [];
     }
 
     public function merge(object $entity): object
@@ -558,26 +561,26 @@ final class EntityManager implements EntityManagerInterface
     }
 
     /**
-     * Executes a callable within a transaction. Flushes and commits on success, rolls back on exception.
+     * Executes a callable and flushes changes atomically.
      *
      * The callback should use persist()/remove() to register changes.
-     * flush() is called automatically after the callback returns.
+     * flush() is called automatically after the callback returns, which
+     * executes all pending changes within a database transaction (managed by UnitOfWork).
+     *
+     * If the callback or flush throws, the exception propagates and the
+     * UnitOfWork's internal transaction is rolled back automatically.
      *
      * @template T
      * @param callable(): T $callback
      * @return T The return value of the callback
-     * @throws \Throwable Re-throws any exception after rollback
+     * @throws \Throwable Re-throws any exception from callback or flush
      */
     public function transactional(callable $callback): mixed
     {
-        try {
-            $result = $callback();
-            $this->flush();
+        $result = $callback();
+        $this->flush();
 
-            return $result;
-        } catch (\Throwable $e) {
-            throw $e;
-        }
+        return $result;
     }
 
     public function getRepository(string $entityClass): EntityRepository
@@ -608,6 +611,14 @@ final class EntityManager implements EntityManagerInterface
     public function isManaged(object $entity): bool
     {
         return $this->unitOfWork->isManaged($entity);
+    }
+
+    /**
+     * Alias for isManaged() — Doctrine API compatibility.
+     */
+    public function contains(object $entity): bool
+    {
+        return $this->isManaged($entity);
     }
 
     public function detach(object $entity): void

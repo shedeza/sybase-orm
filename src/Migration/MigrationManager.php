@@ -300,8 +300,11 @@ final class MigrationManager
                 $targetMeta = $this->metadataReader->getClassMetadata($relationship->targetEntity);
                 $targetTable = $targetMeta->getQualifiedTableName();
 
+                $fkName = sprintf('fk_%s_%s', $metadata->tableName, $relationship->joinColumn);
+
                 $columnDefs[] = sprintf(
-                    'FOREIGN KEY (%s) REFERENCES %s (%s)',
+                    'CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)',
+                    $this->dialect->quoteIdentifier($fkName),
                     $this->dialect->quoteIdentifier($relationship->joinColumn),
                     $this->dialect->quoteIdentifier($targetTable),
                     $this->dialect->quoteIdentifier($relationship->referencedColumnName),

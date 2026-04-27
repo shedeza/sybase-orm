@@ -174,6 +174,7 @@ class ConnectionManager implements ConnectionManagerInterface
         try {
             $this->getConnection()->commit();
             $this->inTransaction = false;
+            $this->savepointStack = [];
         } catch (\PDOException $e) {
             $this->handlePdoException($e);
         }
@@ -188,6 +189,7 @@ class ConnectionManager implements ConnectionManagerInterface
         try {
             $this->getConnection()->rollBack();
             $this->inTransaction = false;
+            $this->savepointStack = [];
         } catch (\PDOException $e) {
             $this->handlePdoException($e);
         }

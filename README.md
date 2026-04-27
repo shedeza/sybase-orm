@@ -661,6 +661,53 @@ Tipos de relación soportados: `#[OneToOne]`, `#[OneToMany]`, `#[ManyToOne]`, `#
 
 La persistencia en cascada respeta automáticamente el orden de claves foráneas y propaga los IDs generados a las entidades dependientes.
 
+### Orphan Removal
+
+Cuando se remueve un hijo de la colección de un padre, `orphanRemoval: true` lo elimina automáticamente de la BD en el siguiente flush:
+
+```php
+#[Entity(table: 'usuarios')]
+class Usuario
+{
+    #[OneToMany(targetEntity: Orden::class, mappedBy: 'usuario', orphanRemoval: true)]
+    private array $ordenes = [];
+
+    public function removeOrden(Orden $orden): void
+    {
+        $this->ordenes = array_filter($this->ordenes, fn($o) => $o !== $orden);
+    }
+}
+
+// Uso:
+$usuario->removeOrden($orden);
+$repo->save($usuario);
+// La orden se elimina automáticamente de la BD (DELETE)
+```
+
+### Event Subscribers
+
+Para cross-cutting concerns (auditoría, logging) sin modificar entidades:
+
+```php
+use SybaseORM\Hook\EventSubscriberInterface;
+
+class AuditSubscriber implements EventSubscriberInterface
+{
+    public function getSubscribedEvents(): array
+    {
+        return ['PostPersist', 'PostUpdate', 'PostRemove'];
+    }
+
+    public function onEvent(object $entity, string $hookType): void
+    {
+        // Registrar cambio en tabla de auditoría
+    }
+}
+
+// Registrar en el HookDispatcher
+$hookDispatcher->addSubscriber(new AuditSubscriber());
+```
+
 ## Herencia
 
 ### Table Per Hierarchy (TPH)
@@ -829,6 +876,35 @@ $repo->transactional(function () use ($repo) {
     $usuario->setActivo(false);
     $repo->save($usuario);
 });
+```
+
+### Savepoints
+
+Para rollback parcial dentro de una transacción (Sybase ASE `SAVE TRANSACTION`):
+
+```php
+$conn = $this->em->getConnection();
+$conn->beginTransaction();
+
+try {
+    // Operación 1
+    $conn->executeStatement('INSERT INTO logs ...', [...]);
+
+    $sp = $conn->createSavepoint();
+
+    try {
+        // Operación 2 (puede fallar)
+        $conn->executeStatement('UPDATE cuentas ...', [...]);
+    } catch (\Throwable $e) {
+        $conn->rollbackToSavepoint($sp);
+        // Operación 1 sigue intacta
+    }
+
+    $conn->commit();
+} catch (\Throwable $e) {
+    $conn->rollback();
+    throw $e;
+}
 ```
 
 ## Migraciones
