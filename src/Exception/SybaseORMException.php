@@ -24,4 +24,21 @@ class SybaseORMException extends \RuntimeException
     ) {
         parent::__construct($message, $code, $previous);
     }
+
+    /**
+     * Wraps any Throwable into a SybaseORMException, preserving the original as previous.
+     * If the throwable is already a SybaseORMException, returns it unchanged.
+     */
+    public static function wrap(\Throwable $e, ?string $message = null): self
+    {
+        if ($e instanceof self && $message === null) {
+            return $e;
+        }
+
+        return new self(
+            $message ?? $e->getMessage(),
+            (int) $e->getCode(),
+            $e,
+        );
+    }
 }

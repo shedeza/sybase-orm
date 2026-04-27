@@ -54,4 +54,12 @@ final class RelationshipMetadata
     {
         return $this->type === 'OneToMany' || $this->type === 'ManyToMany';
     }
+
+    /**
+     * Returns a human-readable string representation of this relationship.
+     */
+    public function __toString(): string
+    {
+        return sprintf('%s %s → %s', $this->type, $this->propertyName, $this->targetEntity);
+    }
 }

@@ -42,4 +42,9 @@ interface CacheManagerInterface
      * Limpia todo el caché (primer y segundo nivel).
      */
     public function clear(): void;
+
+    /**
+     * Returns true if the second-level cache is currently available.
+     */
+    public function isSecondLevelAvailable(): bool;
 }

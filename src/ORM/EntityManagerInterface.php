@@ -99,4 +99,11 @@ interface EntityManagerInterface
      * @param string[] $directories
      */
     public function setEntityDirectories(array $directories): void;
+
+    /**
+     * Explicitly sets the list of entity classes (bypasses directory scanning).
+     *
+     * @param string[] $entityClasses Fully qualified class names
+     */
+    public function setEntityClasses(array $entityClasses): void;
 }

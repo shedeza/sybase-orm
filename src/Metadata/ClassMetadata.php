@@ -161,6 +161,40 @@ final class ClassMetadata
         return count($this->idFields) > 1;
     }
 
+    /**
+     * Returns all relationships of a given type.
+     *
+     * @param string $type One of: 'OneToOne', 'OneToMany', 'ManyToOne', 'ManyToMany'
+     * @return RelationshipMetadata[]
+     */
+    public function getRelationshipsByType(string $type): array
+    {
+        return array_values(array_filter(
+            $this->relationships,
+            fn(RelationshipMetadata $r) => $r->type === $type,
+        ));
+    }
+
+    /**
+     * Returns all column property names.
+     *
+     * @return string[]
+     */
+    public function getColumnPropertyNames(): array
+    {
+        return array_keys($this->columnsByProperty);
+    }
+
+    /**
+     * Returns all column database names.
+     *
+     * @return string[]
+     */
+    public function getColumnNames(): array
+    {
+        return array_keys($this->columnsByName);
+    }
+
     public function __toString(): string
     {
         return sprintf(
