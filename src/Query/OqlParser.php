@@ -50,6 +50,9 @@ final class OqlParser
     private array $tokens = [];
     private int $pos = 0;
 
+    /** @var string The original OQL string being parsed (for error messages) */
+    private string $originalOql = '';
+
     private const COMPARISON_OPERATORS = ['=', '!=', '<', '>', '<=', '>=', 'LIKE'];
 
     private const AGGREGATE_FUNCTIONS = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'];
@@ -70,6 +73,7 @@ final class OqlParser
 
     public function parse(string $oql): SelectStatement|UpdateStatement|DeleteStatement
     {
+        $this->originalOql = $oql;
         $this->tokenize($oql);
         $this->pos = 0;
 
@@ -1001,10 +1005,11 @@ final class OqlParser
         $token = $this->current();
         if (strtoupper($token) !== strtoupper($expected)) {
             throw new OqlParseException(sprintf(
-                'Expected "%s", got "%s" at position %d.',
+                'Expected "%s", got "%s" at position %d in OQL: %s',
                 $expected,
                 $token,
                 $this->pos,
+                $this->originalOql,
             ));
         }
         $this->advance();
