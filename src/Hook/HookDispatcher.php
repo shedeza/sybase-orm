@@ -69,4 +69,17 @@ final class HookDispatcher
             $entity->$method();
         }
     }
+
+    /**
+     * Dispatches multiple lifecycle hooks on the given entity in order.
+     *
+     * @param object   $entity    The entity instance.
+     * @param string[] $hookTypes The hook type names to dispatch in order.
+     */
+    public function dispatchAll(object $entity, array $hookTypes): void
+    {
+        foreach ($hookTypes as $hookType) {
+            $this->dispatch($entity, $hookType);
+        }
+    }
 }

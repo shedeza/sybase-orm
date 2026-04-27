@@ -195,6 +195,32 @@ final class ClassMetadata
         return array_keys($this->columnsByName);
     }
 
+    /**
+     * Returns all nullable columns.
+     *
+     * @return ColumnMetadata[]
+     */
+    public function getNullableColumns(): array
+    {
+        return array_values(array_filter(
+            $this->columns,
+            fn(ColumnMetadata $c) => $c->nullable,
+        ));
+    }
+
+    /**
+     * Returns all non-ID columns (useful for UPDATE SET clauses).
+     *
+     * @return ColumnMetadata[]
+     */
+    public function getNonIdColumns(): array
+    {
+        return array_values(array_filter(
+            $this->columns,
+            fn(ColumnMetadata $c) => !$c->isId,
+        ));
+    }
+
     public function __toString(): string
     {
         return sprintf(

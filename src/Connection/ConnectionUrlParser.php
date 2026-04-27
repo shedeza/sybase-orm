@@ -93,4 +93,36 @@ final class ConnectionUrlParser
             'charset_conversion' => $charsetConversion,
         ];
     }
+
+    /**
+     * Builds a connection URL from a config array (inverse of parse).
+     *
+     * @param array{host?: string, port?: int, dbname?: string, username?: string, password?: string, charset?: string, persistent?: bool} $config
+     */
+    public static function build(array $config): string
+    {
+        $password = urlencode($config['password'] ?? '');
+        $url = sprintf(
+            'sybase://%s:%s@%s:%d/%s',
+            urlencode($config['username'] ?? ''),
+            $password,
+            $config['host'] ?? 'localhost',
+            $config['port'] ?? 5000,
+            $config['dbname'] ?? '',
+        );
+
+        $queryParams = [];
+        if (isset($config['charset']) && $config['charset'] !== 'UTF-8') {
+            $queryParams['charset'] = $config['charset'];
+        }
+        if (!empty($config['persistent'])) {
+            $queryParams['persistent'] = 'true';
+        }
+
+        if ($queryParams !== []) {
+            $url .= '?' . http_build_query($queryParams);
+        }
+
+        return $url;
+    }
 }

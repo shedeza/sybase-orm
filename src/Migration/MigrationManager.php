@@ -181,6 +181,30 @@ final class MigrationManager
     }
 
     /**
+     * Returns migration status: total, executed, and pending counts.
+     *
+     * @return array{total: int, executed: int, pending: int}
+     */
+    public function getStatus(): array
+    {
+        $executed = $this->getExecutedVersions();
+        $all = $this->getAllMigrationFiles();
+
+        $pending = 0;
+        foreach ($all as $version => $filePath) {
+            if (!in_array((string) $version, $executed, true)) {
+                $pending++;
+            }
+        }
+
+        return [
+            'total' => count($all),
+            'executed' => count($executed),
+            'pending' => $pending,
+        ];
+    }
+
+    /**
      * Checks if a table exists in the database.
      */
     private function tableExists(string $tableName): bool
@@ -302,7 +326,7 @@ final class MigrationManager
             'smallint' => 'SMALLINT',
             'tinyint' => 'TINYINT',
             'bigint' => 'BIGINT',
-            'string' => sprintf('VARCHAR(%d)', $column->length ?? 255),
+            'string', 'varchar' => sprintf('VARCHAR(%d)', $column->length ?? 255),
             'text' => 'TEXT',
             'boolean', 'bool' => 'BIT',
             'float', 'double' => 'FLOAT',
