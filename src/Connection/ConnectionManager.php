@@ -515,4 +515,28 @@ class ConnectionManager implements ConnectionManagerInterface
 
         return is_array($row) ? ($row[0] ?? 'unknown') : 'unknown';
     }
+
+    /**
+     * Returns the current database name from the configuration.
+     */
+    public function getDatabaseName(): string
+    {
+        return $this->config['dbname'] ?? '';
+    }
+
+    /**
+     * Returns the configured host.
+     */
+    public function getHost(): string
+    {
+        return $this->config['host'] ?? 'localhost';
+    }
+
+    /**
+     * Returns the configured port.
+     */
+    public function getPort(): int
+    {
+        return (int) ($this->config['port'] ?? 5000);
+    }
 }

@@ -221,6 +221,19 @@ final class ClassMetadata
         ));
     }
 
+    /**
+     * Returns all columns with generated values (e.g. IDENTITY).
+     *
+     * @return ColumnMetadata[]
+     */
+    public function getGeneratedColumns(): array
+    {
+        return array_values(array_filter(
+            $this->columns,
+            fn(ColumnMetadata $c) => $c->isGenerated(),
+        ));
+    }
+
     public function __toString(): string
     {
         return sprintf(

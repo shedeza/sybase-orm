@@ -62,4 +62,21 @@ final class RelationshipMetadata
     {
         return sprintf('%s %s → %s', $this->type, $this->propertyName, $this->targetEntity);
     }
+
+    /**
+     * Returns true if this is the owning side of the relationship.
+     * The owning side has the join column or is not the mappedBy side.
+     */
+    public function isOwningSide(): bool
+    {
+        return $this->mappedBy === null;
+    }
+
+    /**
+     * Returns true if this is the inverse side of the relationship.
+     */
+    public function isInverseSide(): bool
+    {
+        return $this->mappedBy !== null;
+    }
 }

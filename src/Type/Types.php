@@ -59,6 +59,9 @@ final class Types
     /** REAL — punto flotante de precisión simple (Sybase ASE nativo) */
     public const REAL = 'real';
 
+    /** NUMERIC — alias de DECIMAL */
+    public const NUMERIC = 'numeric';
+
     // ── Boolean type ────────────────────────────────────────────────
 
     /** BIT — booleano (0/1) */

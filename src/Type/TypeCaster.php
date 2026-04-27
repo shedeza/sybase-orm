@@ -24,7 +24,7 @@ final class TypeCaster implements TypeCasterInterface
         'bool', 'boolean',
         'datetime',
         'int', 'integer', 'tinyint', 'smallint', 'bigint',
-        'float', 'double', 'decimal', 'real',
+        'float', 'double', 'decimal', 'real', 'numeric',
         'string', 'varchar', 'text',
     ];
 
@@ -64,7 +64,7 @@ final class TypeCaster implements TypeCasterInterface
             'bool', 'boolean' => $this->boolToDatabaseValue($value),
             'datetime' => $this->dateTimeToDatabaseValue($value),
             'int', 'integer', 'tinyint', 'smallint', 'bigint' => $this->intToDatabaseValue($value),
-            'float', 'double', 'decimal', 'real' => $this->floatToDatabaseValue($value),
+            'float', 'double', 'decimal', 'real', 'numeric' => $this->floatToDatabaseValue($value),
             'string', 'varchar', 'text' => $this->stringToDatabaseValue($value),
             default => $this->resolveCustomToDatabaseValue($value, $type),
         };
@@ -80,7 +80,7 @@ final class TypeCaster implements TypeCasterInterface
             'bool', 'boolean' => $this->boolToPhpValue($value),
             'datetime' => $this->dateTimeToPhpValue($value),
             'int', 'integer', 'tinyint', 'smallint', 'bigint' => $this->intToPhpValue($value),
-            'float', 'double', 'decimal', 'real' => $this->floatToPhpValue($value),
+            'float', 'double', 'decimal', 'real', 'numeric' => $this->floatToPhpValue($value),
             'string', 'varchar', 'text' => $this->stringToPhpValue($value),
             default => $this->resolveCustomToPhpValue($value, $type),
         };
@@ -103,7 +103,7 @@ final class TypeCaster implements TypeCasterInterface
     {
         // Built-in float types need explicit CONVERT for Sybase ASE
         // (Sybase rejects implicit VARCHAR → REAL/FLOAT conversion)
-        if (in_array($type, ['float', 'double', 'decimal', 'real'], true)) {
+        if (in_array($type, ['float', 'double', 'decimal', 'real', 'numeric'], true)) {
             return 'CONVERT(REAL, ' . $sqlExpr . ')';
         }
 
