@@ -16,4 +16,23 @@ final class TransactionException extends SybaseORMException
     ) {
         parent::__construct($message, $code, $previous);
     }
+
+    /**
+     * Creates a TransactionException for commit/rollback without an active transaction.
+     */
+    public static function noActiveTransaction(string $operation): self
+    {
+        return new self(sprintf(
+            'Cannot %s: no active transaction.',
+            $operation,
+        ));
+    }
+
+    /**
+     * Creates a TransactionException when a transaction is already active.
+     */
+    public static function alreadyActive(): self
+    {
+        return new self('A transaction is already active.');
+    }
 }

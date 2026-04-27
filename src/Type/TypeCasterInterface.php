@@ -35,4 +35,21 @@ interface TypeCasterInterface
      * si el tipo implementa SqlWrappingTypeInterface.
      */
     public function getDatabaseValueSQL(string $sqlExpr, string $type): string;
+
+    /**
+     * Returns true if the given type name is a built-in type.
+     */
+    public function isBuiltinType(string $type): bool;
+
+    /**
+     * Returns true if the given type name is registered as a custom type.
+     */
+    public function isRegisteredType(string $typeName): bool;
+
+    /**
+     * Returns the list of registered custom type names.
+     *
+     * @return string[]
+     */
+    public function getRegisteredTypeNames(): array;
 }

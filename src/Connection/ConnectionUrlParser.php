@@ -49,6 +49,14 @@ final class ConnectionUrlParser
 
         $host = $parts['host'] ?? 'localhost';
         $port = $parts['port'] ?? 5000;
+
+        if ((int) $port < 1 || (int) $port > 65535) {
+            throw new \InvalidArgumentException(sprintf(
+                'Puerto inválido: %d. Debe estar entre 1 y 65535.',
+                (int) $port,
+            ));
+        }
+
         $username = isset($parts['user']) ? urldecode($parts['user']) : '';
         $password = isset($parts['pass']) ? urldecode($parts['pass']) : '';
 

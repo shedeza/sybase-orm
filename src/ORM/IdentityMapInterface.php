@@ -26,4 +26,10 @@ interface IdentityMapInterface
 
     /** Limpia solo las entidades de una clase específica del mapa. */
     public function clearClass(string $entityClass): void;
+
+    /** Returns the total number of entities stored across all classes. */
+    public function count(): int;
+
+    /** Returns the number of entities stored for a specific class. */
+    public function countClass(string $entityClass): int;
 }

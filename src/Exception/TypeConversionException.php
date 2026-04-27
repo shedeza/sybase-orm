@@ -43,4 +43,17 @@ final class TypeConversionException extends SybaseORMException
     {
         return $this->problematicValue;
     }
+
+    /**
+     * Creates a TypeConversionException for an unsupported type.
+     */
+    public static function forUnsupportedType(string $type, mixed $value): self
+    {
+        return new self(
+            get_debug_type($value),
+            $type,
+            $value,
+            sprintf('Unsupported type "%s" for value of type "%s".', $type, get_debug_type($value)),
+        );
+    }
 }
