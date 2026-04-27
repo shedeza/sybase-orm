@@ -20,6 +20,7 @@ final class OneToOne
         public readonly ?string $inversedBy = null,
         public readonly array $cascade = [],
         public readonly string $fetch = 'LAZY',
+        public readonly bool $orphanRemoval = false,
     ) {
     }
 }

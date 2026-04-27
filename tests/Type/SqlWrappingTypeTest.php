@@ -91,9 +91,17 @@ final class SqlWrappingTypeTest extends TestCase
         return [
             'float' => ['float'],
             'double' => ['double'],
-            'decimal' => ['decimal'],
             'real' => ['real'],
         ];
+    }
+
+    public function testGetDatabaseValueSQLDoesNotWrapDecimalType(): void
+    {
+        $typeCaster = new TypeCaster();
+
+        // Decimal preserves precision as string, no CONVERT needed
+        $this->assertSame('?', $typeCaster->getDatabaseValueSQL('?', 'decimal'));
+        $this->assertSame('?', $typeCaster->getDatabaseValueSQL('?', 'numeric'));
     }
 
     public function testGetDatabaseValueSQLDoesNotWrapIntType(): void

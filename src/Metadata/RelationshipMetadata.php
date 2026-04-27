@@ -20,6 +20,7 @@ final class RelationshipMetadata
         public readonly ?string $joinTable = null,
         public readonly array $cascade = [],
         public readonly string $fetch = 'LAZY',
+        public readonly bool $orphanRemoval = false,
     ) {
     }
 

@@ -165,7 +165,20 @@ class TypeCasterTest extends TestCase
     {
         $this->assertSame(3.14, $this->caster->toDatabaseValue(3.14, 'float'));
         $this->assertSame(3.14, $this->caster->toDatabaseValue(3.14, 'double'));
-        $this->assertSame(3.14, $this->caster->toDatabaseValue(3.14, 'decimal'));
+    }
+
+    public function testDecimalToDatabaseValuePreservesPrecision(): void
+    {
+        // Decimal returns string to preserve precision
+        $this->assertIsString($this->caster->toDatabaseValue(3.14, 'decimal'));
+        $this->assertSame('99999.9999', $this->caster->toDatabaseValue('99999.9999', 'decimal'));
+        $this->assertSame('42', $this->caster->toDatabaseValue(42, 'decimal'));
+    }
+
+    public function testDecimalToPhpValueReturnsString(): void
+    {
+        $this->assertSame('3.14', $this->caster->toPhpValue('3.14', 'decimal'));
+        $this->assertSame('100', $this->caster->toPhpValue(100, 'decimal'));
     }
 
     public function testFloatToDatabaseValueFromInt(): void

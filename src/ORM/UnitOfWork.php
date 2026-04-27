@@ -115,6 +115,9 @@ final class UnitOfWork implements UnitOfWorkInterface
             // 2. Cascade: discover related entities marked with cascade=['remove']
             $this->processCascadeRemove();
 
+            // 2b. Orphan removal: detect removed items from orphanRemoval collections
+            $this->processOrphanRemoval();
+
             // 3. Snapshot managed entities BEFORE inserts to avoid iterating newly inserted ones
             $managedBeforeInsert = [];
             foreach ($this->entitySnapshots as $entity) {
@@ -304,6 +307,63 @@ final class UnitOfWork implements UnitOfWorkInterface
                     ) {
                         $this->deletedEntities->attach($relatedEntity);
                         $toProcess[] = $relatedEntity;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Detects orphaned entities in collections with orphanRemoval=true.
+     * Compares current collection state with snapshot to find removed items.
+     */
+    private function processOrphanRemoval(): void
+    {
+        foreach ($this->entitySnapshots as $entity) {
+            $metadata = $this->metadataReader->getClassMetadata($entity::class);
+
+            foreach ($metadata->relationships as $relationship) {
+                if (!$relationship->orphanRemoval) {
+                    continue;
+                }
+
+                // Only process to-many relationships (collections)
+                if ($relationship->type !== 'OneToMany' && $relationship->type !== 'OneToOne') {
+                    continue;
+                }
+
+                $refProp = $this->getReflectionProperty($entity::class, $relationship->propertyName);
+                $currentValue = $refProp->getValue($entity);
+                $snapshotValue = $this->entitySnapshots[$entity][$relationship->propertyName] ?? null;
+
+                if ($relationship->type === 'OneToOne') {
+                    // OneToOne: if old value was an object and new value is null or different, orphan the old
+                    if (is_object($snapshotValue) && $snapshotValue !== $currentValue) {
+                        if (!$this->deletedEntities->contains($snapshotValue)) {
+                            $this->deletedEntities->attach($snapshotValue);
+                        }
+                    }
+                    continue;
+                }
+
+                // OneToMany: compare arrays to find removed items
+                if (!is_array($currentValue) || !is_array($snapshotValue)) {
+                    continue;
+                }
+
+                // Find items in snapshot that are no longer in current collection
+                $currentSet = new \SplObjectStorage();
+                foreach ($currentValue as $item) {
+                    if (is_object($item)) {
+                        $currentSet->attach($item);
+                    }
+                }
+
+                foreach ($snapshotValue as $oldItem) {
+                    if (is_object($oldItem) && !$currentSet->contains($oldItem)) {
+                        if (!$this->deletedEntities->contains($oldItem)) {
+                            $this->deletedEntities->attach($oldItem);
+                        }
                     }
                 }
             }

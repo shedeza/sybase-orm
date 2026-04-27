@@ -34,9 +34,16 @@ class ConnectionManager implements ConnectionManagerInterface
     private ?\PDO $connection = null;
     private bool $inTransaction = false;
     private bool $charsetConversion;
+    private int $savepointCounter = 0;
+
+    /** @var string[] Stack of active savepoint names */
+    private array $savepointStack = [];
 
     /** @var array<string, \PDOStatement> Cache de sentencias preparadas por SQL */
     private array $stmtCache = [];
+
+    /** Maximum number of cached prepared statements (LRU eviction) */
+    private const STMT_CACHE_MAX_SIZE = 256;
 
     /** @var array{host: string, port: int, dbname: string, username: string, password: string, charset: string, persistent: bool} */
     private array $config;
@@ -116,12 +123,7 @@ class ConnectionManager implements ConnectionManagerInterface
             $pdo = $this->getConnection();
             [$sql, $params] = $this->expandArrayParams($sql, $params);
 
-            if (isset($this->stmtCache[$sql])) {
-                $stmt = $this->stmtCache[$sql];
-            } else {
-                $stmt = $pdo->prepare($sql);
-                $this->stmtCache[$sql] = $stmt;
-            }
+            $stmt = $this->getCachedStatement($pdo, $sql);
 
             $this->bindParams($stmt, $this->convertParams($params));
             $stmt->execute();
@@ -138,12 +140,7 @@ class ConnectionManager implements ConnectionManagerInterface
             $pdo = $this->getConnection();
             [$sql, $params] = $this->expandArrayParams($sql, $params);
 
-            if (isset($this->stmtCache[$sql])) {
-                $stmt = $this->stmtCache[$sql];
-            } else {
-                $stmt = $pdo->prepare($sql);
-                $this->stmtCache[$sql] = $stmt;
-            }
+            $stmt = $this->getCachedStatement($pdo, $sql);
 
             $this->bindParams($stmt, $this->convertParams($params));
             $stmt->execute();
@@ -221,6 +218,58 @@ class ConnectionManager implements ConnectionManagerInterface
     public function isInTransaction(): bool
     {
         return $this->inTransaction;
+    }
+
+    /**
+     * Creates a savepoint within the current transaction.
+     * Sybase ASE uses SAVE TRANSACTION name.
+     *
+     * @return string The savepoint name (auto-generated)
+     * @throws TransactionException If no transaction is active.
+     */
+    public function createSavepoint(): string
+    {
+        if (!$this->inTransaction) {
+            throw new TransactionException('Cannot create savepoint: no active transaction.');
+        }
+
+        $name = 'sp_' . (++$this->savepointCounter);
+        $this->getConnection()->exec('SAVE TRANSACTION ' . $name);
+        $this->savepointStack[] = $name;
+
+        return $name;
+    }
+
+    /**
+     * Rolls back to a savepoint within the current transaction.
+     * Sybase ASE uses ROLLBACK TRANSACTION name.
+     *
+     * @throws TransactionException If no transaction is active.
+     */
+    public function rollbackToSavepoint(string $name): void
+    {
+        if (!$this->inTransaction) {
+            throw new TransactionException('Cannot rollback to savepoint: no active transaction.');
+        }
+
+        $this->getConnection()->exec('ROLLBACK TRANSACTION ' . $name);
+
+        // Remove this savepoint and any created after it from the stack
+        $pos = array_search($name, $this->savepointStack, true);
+        if ($pos !== false) {
+            $this->savepointStack = array_slice($this->savepointStack, 0, $pos);
+        }
+    }
+
+    /**
+     * Releases a savepoint (no-op in Sybase ASE, but cleans up internal state).
+     */
+    public function releaseSavepoint(string $name): void
+    {
+        $pos = array_search($name, $this->savepointStack, true);
+        if ($pos !== false) {
+            array_splice($this->savepointStack, $pos, 1);
+        }
     }
 
     /**
@@ -491,6 +540,19 @@ class ConnectionManager implements ConnectionManagerInterface
     }
 
     /**
+     * Checks if a PDOException indicates a deadlock.
+     * Sybase ASE deadlock messages typically contain "deadlock" or error 1205.
+     */
+    public static function isDeadlock(\PDOException $e): bool
+    {
+        $message = strtolower($e->getMessage());
+
+        return str_contains($message, 'deadlock')
+            || str_contains($message, 'error 1205')
+            || str_contains($message, 'chosen as the deadlock victim');
+    }
+
+    /**
      * Factory method for PDO creation — allows overriding in tests.
      */
     protected function createPdo(string $dsn, string $username, string $password, array $options): \PDO
@@ -518,6 +580,37 @@ class ConnectionManager implements ConnectionManagerInterface
         $this->connection = null;
         $this->stmtCache = [];
         $this->inTransaction = false;
+        $this->savepointStack = [];
+        $this->savepointCounter = 0;
+    }
+
+    /**
+     * Gets or creates a cached prepared statement with LRU eviction.
+     */
+    private function getCachedStatement(\PDO $pdo, string $sql): \PDOStatement
+    {
+        if (isset($this->stmtCache[$sql])) {
+            // Move to end (most recently used) by re-inserting
+            $stmt = $this->stmtCache[$sql];
+            unset($this->stmtCache[$sql]);
+            $this->stmtCache[$sql] = $stmt;
+
+            return $stmt;
+        }
+
+        $stmt = $pdo->prepare($sql);
+
+        // Evict oldest entry if cache is full
+        if (count($this->stmtCache) >= self::STMT_CACHE_MAX_SIZE) {
+            $oldestKey = array_key_first($this->stmtCache);
+            if ($oldestKey !== null) {
+                unset($this->stmtCache[$oldestKey]);
+            }
+        }
+
+        $this->stmtCache[$sql] = $stmt;
+
+        return $stmt;
     }
 
     public function getServerVersion(): string

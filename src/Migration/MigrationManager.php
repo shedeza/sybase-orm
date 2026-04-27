@@ -206,6 +206,34 @@ final class MigrationManager
     }
 
     /**
+     * Generates migration SQL without writing to disk (dry-run / preview).
+     *
+     * @param string[] $entityClasses Fully qualified class names of entities to inspect
+     * @return array{up: string[], down: string[]} SQL statements that would be generated
+     */
+    public function preview(array $entityClasses): array
+    {
+        $upStatements = [];
+        $downStatements = [];
+
+        foreach ($entityClasses as $entityClass) {
+            $metadata = $this->metadataReader->getClassMetadata($entityClass);
+            $qualifiedTableName = $metadata->getQualifiedTableName();
+
+            if ($this->tableExists($metadata->tableName)) {
+                [$alterUp, $alterDown] = $this->generateAlterStatements($metadata);
+                $upStatements = array_merge($upStatements, $alterUp);
+                $downStatements = array_merge($downStatements, $alterDown);
+            } else {
+                $upStatements[] = $this->generateCreateTableSQL($metadata);
+                $downStatements[] = $this->generateDropTableSQL($qualifiedTableName);
+            }
+        }
+
+        return ['up' => $upStatements, 'down' => $downStatements];
+    }
+
+    /**
      * Checks if a table exists in the database.
      */
     private function tableExists(string $tableName): bool
@@ -230,6 +258,57 @@ final class MigrationManager
 
         foreach ($metadata->columns as $column) {
             $columnDefs[] = $this->buildColumnDefinition($column);
+        }
+
+        // Add PRIMARY KEY constraint for composite keys (single-key uses IDENTITY)
+        $idColumns = $metadata->getIdColumns();
+        $hasIdentity = false;
+        foreach ($idColumns as $idCol) {
+            if ($idCol->generatedValue !== null) {
+                $hasIdentity = true;
+                break;
+            }
+        }
+
+        if (count($idColumns) > 1 || (count($idColumns) === 1 && !$hasIdentity)) {
+            $pkCols = array_map(
+                fn($c) => $this->dialect->quoteIdentifier($c->columnName),
+                $idColumns,
+            );
+            if (!empty($pkCols)) {
+                $columnDefs[] = 'PRIMARY KEY (' . implode(', ', $pkCols) . ')';
+            }
+        }
+
+        // Add FOREIGN KEY constraints from relationships
+        foreach ($metadata->relationships as $relationship) {
+            if ($relationship->joinColumn === null || $relationship->referencedColumnName === null) {
+                continue;
+            }
+
+            // Only owning side (ManyToOne, OneToOne with joinColumn)
+            if ($relationship->type !== 'ManyToOne' && $relationship->type !== 'OneToOne') {
+                continue;
+            }
+
+            if ($relationship->isInverseSide()) {
+                continue;
+            }
+
+            // Resolve target table name
+            try {
+                $targetMeta = $this->metadataReader->getClassMetadata($relationship->targetEntity);
+                $targetTable = $targetMeta->getQualifiedTableName();
+
+                $columnDefs[] = sprintf(
+                    'FOREIGN KEY (%s) REFERENCES %s (%s)',
+                    $this->dialect->quoteIdentifier($relationship->joinColumn),
+                    $this->dialect->quoteIdentifier($targetTable),
+                    $this->dialect->quoteIdentifier($relationship->referencedColumnName),
+                );
+            } catch (\Throwable) {
+                // Skip FK if target entity metadata can't be resolved
+            }
         }
 
         return sprintf(

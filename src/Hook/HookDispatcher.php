@@ -16,9 +16,30 @@ use SybaseORM\Metadata\MetadataReaderInterface;
  */
 final class HookDispatcher
 {
+    /** @var EventSubscriberInterface[] */
+    private array $subscribers = [];
+
     public function __construct(
         private readonly MetadataReaderInterface $metadataReader,
     ) {
+    }
+
+    /**
+     * Registers an external event subscriber.
+     */
+    public function addSubscriber(EventSubscriberInterface $subscriber): void
+    {
+        $this->subscribers[] = $subscriber;
+    }
+
+    /**
+     * Returns all registered subscribers.
+     *
+     * @return EventSubscriberInterface[]
+     */
+    public function getSubscribers(): array
+    {
+        return $this->subscribers;
     }
 
     /** @var string[] Valid lifecycle hook type names */
@@ -55,6 +76,7 @@ final class HookDispatcher
     {
         $metadata = $this->metadataReader->getClassMetadata($entity::class);
 
+        // 1. Dispatch entity-level hooks (attribute-based)
         $methods = $metadata->lifecycleHooks[$hookType] ?? [];
 
         foreach ($methods as $method) {
@@ -67,6 +89,13 @@ final class HookDispatcher
                 ));
             }
             $entity->$method();
+        }
+
+        // 2. Notify external subscribers
+        foreach ($this->subscribers as $subscriber) {
+            if (in_array($hookType, $subscriber->getSubscribedEvents(), true)) {
+                $subscriber->onEvent($entity, $hookType);
+            }
         }
     }
 

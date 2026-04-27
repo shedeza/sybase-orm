@@ -20,6 +20,7 @@ final class OneToMany
         public readonly string $mappedBy,
         public readonly array $cascade = [],
         public readonly string $fetch = 'LAZY',
+        public readonly bool $orphanRemoval = false,
     ) {
     }
 }

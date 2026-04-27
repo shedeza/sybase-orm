@@ -13,6 +13,18 @@ final class TypeCaster implements TypeCasterInterface
 {
     private const DATETIME_FORMAT = 'Y-m-d H:i:s.v';
 
+    /** @var \DateTimeZone Timezone used for parsing database datetime values */
+    private static ?\DateTimeZone $utcTimezone = null;
+
+    private static function getUtcTimezone(): \DateTimeZone
+    {
+        if (self::$utcTimezone === null) {
+            self::$utcTimezone = new \DateTimeZone('UTC');
+        }
+
+        return self::$utcTimezone;
+    }
+
     /** @var array<string, string> Mapa de tipos registrados (nombre → clase) */
     private array $customTypes = [];
 
@@ -64,7 +76,8 @@ final class TypeCaster implements TypeCasterInterface
             'bool', 'boolean' => $this->boolToDatabaseValue($value),
             'datetime' => $this->dateTimeToDatabaseValue($value),
             'int', 'integer', 'tinyint', 'smallint', 'bigint' => $this->intToDatabaseValue($value),
-            'float', 'double', 'decimal', 'real', 'numeric' => $this->floatToDatabaseValue($value),
+            'decimal', 'numeric' => $this->decimalToDatabaseValue($value),
+            'float', 'double', 'real' => $this->floatToDatabaseValue($value),
             'string', 'varchar', 'text' => $this->stringToDatabaseValue($value),
             default => $this->resolveCustomToDatabaseValue($value, $type),
         };
@@ -80,7 +93,8 @@ final class TypeCaster implements TypeCasterInterface
             'bool', 'boolean' => $this->boolToPhpValue($value),
             'datetime' => $this->dateTimeToPhpValue($value),
             'int', 'integer', 'tinyint', 'smallint', 'bigint' => $this->intToPhpValue($value),
-            'float', 'double', 'decimal', 'real', 'numeric' => $this->floatToPhpValue($value),
+            'decimal', 'numeric' => $this->decimalToPhpValue($value),
+            'float', 'double', 'real' => $this->floatToPhpValue($value),
             'string', 'varchar', 'text' => $this->stringToPhpValue($value),
             default => $this->resolveCustomToPhpValue($value, $type),
         };
@@ -103,8 +117,12 @@ final class TypeCaster implements TypeCasterInterface
     {
         // Built-in float types need explicit CONVERT for Sybase ASE
         // (Sybase rejects implicit VARCHAR → REAL/FLOAT conversion)
-        if (in_array($type, ['float', 'double', 'decimal', 'real', 'numeric'], true)) {
+        if (in_array($type, ['float', 'double', 'real'], true)) {
             return 'CONVERT(REAL, ' . $sqlExpr . ')';
+        }
+
+        if (in_array($type, ['decimal', 'numeric'], true)) {
+            return $sqlExpr; // Decimal values are already strings, no CONVERT needed
         }
 
         if (isset($this->customTypes[$type])) {
@@ -309,19 +327,21 @@ final class TypeCaster implements TypeCasterInterface
         }
 
         if (is_string($value)) {
-            $dt = \DateTimeImmutable::createFromFormat(self::DATETIME_FORMAT, $value);
+            $tz = self::getUtcTimezone();
+
+            $dt = \DateTimeImmutable::createFromFormat(self::DATETIME_FORMAT, $value, $tz);
             if ($dt !== false) {
                 return $dt;
             }
 
             // Try standard datetime formats as fallback
-            $dt = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $value);
+            $dt = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $value, $tz);
             if ($dt !== false) {
                 return $dt;
             }
 
             try {
-                return new \DateTimeImmutable($value);
+                return new \DateTimeImmutable($value, $tz);
             } catch (\Exception) {
                 // Fall through to exception
             }
@@ -400,6 +420,46 @@ final class TypeCaster implements TypeCasterInterface
         }
 
         throw new TypeConversionException(get_debug_type($value), 'float', $value);
+    }
+
+    // ── Decimal (precision-preserving) ──────────────────────────
+
+    /**
+     * Converts a decimal value to database format, preserving precision as string.
+     * Accepts float, int, or numeric string.
+     */
+    private function decimalToDatabaseValue(mixed $value): string
+    {
+        if (is_string($value) && is_numeric($value)) {
+            return $value;
+        }
+
+        if (is_int($value)) {
+            return (string) $value;
+        }
+
+        if (is_float($value)) {
+            return sprintf('%.17g', $value);
+        }
+
+        throw new TypeConversionException(get_debug_type($value), 'decimal', $value);
+    }
+
+    /**
+     * Converts a database decimal value to PHP string to preserve precision.
+     * Returns string instead of float to avoid precision loss for DECIMAL(19,4) etc.
+     */
+    private function decimalToPhpValue(mixed $value): string
+    {
+        if (is_string($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return (string) $value;
+        }
+
+        throw new TypeConversionException(get_debug_type($value), 'decimal', $value);
     }
 
     // ── String ──────────────────────────────────────────────────

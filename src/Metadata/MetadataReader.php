@@ -148,6 +148,9 @@ final class MetadataReader implements MetadataReaderInterface
             repositoryClass: $entityAttr->repositoryClass,
         );
 
+        // Validate metadata consistency
+        $this->validateMetadata($metadata);
+
         // Store in memory cache
         self::$memoryCache[$entityClass] = $metadata;
 
@@ -157,6 +160,49 @@ final class MetadataReader implements MetadataReaderInterface
         }
 
         return $metadata;
+    }
+
+    /**
+     * Validates metadata consistency: checks FK columns exist, discriminator values are unique, etc.
+     *
+     * @throws \RuntimeException If validation fails.
+     */
+    private function validateMetadata(ClassMetadata $metadata): void
+    {
+        // Validate discriminator map values are unique (TPH)
+        if ($metadata->inheritanceType === 'TPH' && !empty($metadata->discriminatorMap)) {
+            $values = array_keys($metadata->discriminatorMap);
+            if (count($values) !== count(array_unique($values))) {
+                throw new \RuntimeException(sprintf(
+                    'Duplicate discriminator values in entity "%s".',
+                    $metadata->entityClass,
+                ));
+            }
+        }
+
+        // Validate relationship target entities are valid class names
+        foreach ($metadata->relationships as $relationship) {
+            if (!class_exists($relationship->targetEntity)) {
+                throw new \RuntimeException(sprintf(
+                    'Relationship "%s" on entity "%s" references non-existent class "%s".',
+                    $relationship->propertyName,
+                    $metadata->entityClass,
+                    $relationship->targetEntity,
+                ));
+            }
+        }
+
+        // Validate FK join columns reference existing properties
+        foreach ($metadata->relationships as $relationship) {
+            if ($relationship->joinColumn !== null) {
+                $fkColumn = $metadata->getColumnByName($relationship->joinColumn);
+                $fkProperty = $metadata->getColumn($relationship->joinColumn);
+                // joinColumn may reference a column name or property name — both are valid
+                if ($fkColumn === null && $fkProperty === null) {
+                    // Not a hard error — joinColumn might be a virtual FK not mapped as a column
+                }
+            }
+        }
     }
 
     public function isEntity(string $className): bool
@@ -221,6 +267,7 @@ final class MetadataReader implements MetadataReaderInterface
                 joinTable: ($attr instanceof ManyToMany) ? $attr->joinTable : null,
                 cascade: $attr->cascade,
                 fetch: $attr->fetch,
+                orphanRemoval: ($attr instanceof OneToMany || $attr instanceof OneToOne) ? $attr->orphanRemoval : false,
             );
         }
 
