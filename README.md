@@ -6,7 +6,7 @@ Symfony Bundle que implementa un ORM completo para **Sybase ASE** (Adaptive Serv
 
 - PHP 8.1+
 - Extensión `pdo_dblib` (FreeTDS)
-- Symfony 6.x o 7.x
+- Symfony 6.x, 7.x o 8.x
 
 ## Instalación
 
@@ -254,7 +254,8 @@ class UsuarioController
         $usuario = $this->em->getRepository(Usuario::class)->find($id);
 
         $this->em->isManaged($usuario); // true — rastreado por el UnitOfWork
-        $this->em->detach($usuario);    // Remueve del IdentityMap
+        $this->em->contains($usuario);  // true — alias Doctrine-compatible
+        $this->em->detach($usuario);    // Remueve del IdentityMap y del UnitOfWork
         $this->em->isManaged($usuario); // false — ya no está rastreado
     }
 
@@ -771,6 +772,16 @@ class Articulo
 
 Hooks disponibles: `#[PrePersist]`, `#[PostPersist]`, `#[PreUpdate]`, `#[PostUpdate]`, `#[PreRemove]`, `#[PostRemove]`.
 
+Cada hook acepta un parámetro `priority` opcional (mayor prioridad ejecuta primero, default: 0):
+
+```php
+#[PrePersist(priority: 10)]
+public function validar(): void { /* ejecuta primero */ }
+
+#[PrePersist(priority: -1)]
+public function log(): void { /* ejecuta después */ }
+```
+
 ## Conversión de tipos
 
 Conversiones automáticas entre PHP y Sybase ASE:
@@ -795,16 +806,23 @@ La clase `SybaseORM\Type\Types` provee constantes para todos los tipos soportado
 use SybaseORM\Type\Types;
 
 #[Column(type: Types::STRING, length: 100)]    // 'string'
+#[Column(type: Types::VARCHAR, length: 100)]   // 'varchar' (alias de STRING)
 #[Column(type: Types::INTEGER)]                 // 'integer'
+#[Column(type: Types::INT)]                     // 'int' (alias de INTEGER)
 #[Column(type: Types::BOOLEAN)]                 // 'boolean'
+#[Column(type: Types::BOOL)]                    // 'bool' (alias de BOOLEAN)
 #[Column(type: Types::DATETIME)]                // 'datetime'
-#[Column(type: Types::DECIMAL, precision: 10, scale: 2)]
+#[Column(type: Types::DATE)]                    // 'date'
+#[Column(type: Types::TIME)]                    // 'time'
+#[Column(type: Types::DECIMAL, precision: 10, scale: 2)]  // 'decimal' (retorna string PHP)
+#[Column(type: Types::NUMERIC, precision: 10, scale: 2)]  // 'numeric' (alias de DECIMAL)
 #[Column(type: Types::TEXT)]                    // 'text'
 #[Column(type: Types::FLOAT)]                   // 'float'
+#[Column(type: Types::DOUBLE)]                  // 'double' (alias de FLOAT)
+#[Column(type: Types::REAL)]                    // 'real'
 #[Column(type: Types::BIGINT)]                  // 'bigint'
 #[Column(type: Types::SMALLINT)]                // 'smallint'
 #[Column(type: Types::TINYINT)]                 // 'tinyint'
-#[Column(type: Types::REAL)]                    // 'real'
 ```
 
 Los literales string (`'string'`, `'integer'`, etc.) siguen funcionando. Las constantes son opcionales pero recomendadas para autocompletado y detección de errores en tiempo de compilación.
@@ -904,7 +922,7 @@ Niveles de aislamiento soportados: `READ UNCOMMITTED`, `READ COMMITTED`, `REPEAT
 
 ### `transactional()` — atajo para transacciones
 
-Ejecuta un callable con flush automático. Si ocurre una excepción, el rollback es automático:
+Ejecuta un callable y hace flush automático al terminar. La transacción es gestionada internamente por el UnitOfWork durante el flush:
 
 ```php
 $this->em->transactional(function () {
@@ -966,7 +984,7 @@ php bin/console sybase:migrations:generate
 php bin/console sybase:migrations:migrate
 ```
 
-Las migraciones generan SQL compatible con Sybase ASE (`CREATE TABLE`, `ALTER TABLE ADD/DROP`, con tipos `INT`, `VARCHAR`, `BIT`, `DECIMAL`, `DATETIME`, `IDENTITY`, etc.).
+Las migraciones generan SQL compatible con Sybase ASE (`CREATE TABLE` con `PRIMARY KEY` y `FOREIGN KEY` constraints, `ALTER TABLE ADD/DROP`, con tipos `INT`, `VARCHAR`, `BIT`, `DECIMAL`, `DATETIME`, `IDENTITY`, etc.). Detecta columnas nuevas y eliminadas automáticamente.
 
 ## Otros comandos
 
@@ -1044,21 +1062,21 @@ El `ConnectionManager` mantiene un caché interno de `PDOStatement` (`stmtCache`
 
 ```
 src/
-├── Attribute/           # PHP Attributes para mapeo de entidades
+├── Attribute/           # PHP Attributes para mapeo (Entity, Column, Id, relaciones, herencia, hooks, Embeddable)
 ├── Cache/               # Caché de dos niveles (IdentityMap + Redis)
 ├── Command/             # Comandos de consola Symfony
-├── Connection/          # Gestión de conexiones PDO dblib
+├── Connection/          # Gestión de conexiones PDO dblib, savepoints, charset conversion
 ├── DependencyInjection/ # Integración con el contenedor DI de Symfony
 ├── Dialect/             # Dialecto SQL para Sybase ASE
-├── Exception/           # Excepciones del dominio
-├── Hook/                # Dispatcher de hooks de ciclo de vida
-├── Hydrator/            # Conversión de filas DB → instancias de entidad
-├── Metadata/            # Lectura de metadatos desde PHP Attributes
-├── Migration/           # Gestión de migraciones de esquema
-├── ORM/                 # EntityManager, UnitOfWork, IdentityMap, Repository
+├── Exception/           # Excepciones del dominio con factory methods
+├── Hook/                # Dispatcher de hooks de ciclo de vida + EventSubscriberInterface
+├── Hydrator/            # Conversión de filas DB → instancias de entidad (con embeddables)
+├── Metadata/            # Lectura de metadatos, ClassMetadata, EmbeddedMetadata, EntityDiscovery
+├── Migration/           # Gestión de migraciones (PK/FK constraints, preview)
+├── ORM/                 # EntityManager, UnitOfWork, IdentityMap, Repository, PersistentCollection
 ├── Proxy/               # Generación de proxies para lazy loading
 ├── Query/               # QueryBuilder, OQL Parser/Printer/Translator, AST
-├── Type/                # Conversión de tipos PHP ↔ Sybase ASE
+├── Type/                # Conversión de tipos PHP ↔ Sybase ASE, Types dictionary
 └── SybaseORMBundle.php  # Punto de entrada del bundle
 ```
 
@@ -1080,7 +1098,7 @@ El `SybaseDialect` maneja las particularidades de Sybase ASE:
 vendor/bin/phpunit
 ```
 
-2955+ tests cubriendo todos los componentes.
+3031+ tests cubriendo todos los componentes.
 
 ## Licencia
 
