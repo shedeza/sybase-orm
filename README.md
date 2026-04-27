@@ -783,6 +783,8 @@ Conversiones automáticas entre PHP y Sybase ASE:
 | `float` | `FLOAT` / `REAL` | Conversión directa |
 | `string` | `DECIMAL` / `NUMERIC` | Preserva precisión como string PHP |
 | `string` | `VARCHAR` / `TEXT` | Conversión directa |
+| `DateTimeImmutable` | `DATE` | Solo fecha (sin hora) |
+| `DateTimeImmutable` | `TIME` | Solo hora (sin fecha) |
 | `BackedEnum` | Valor escalar | `->value` para DB, `::from()` para PHP |
 
 ### Diccionario de tipos (`Types`)
@@ -806,6 +808,52 @@ use SybaseORM\Type\Types;
 ```
 
 Los literales string (`'string'`, `'integer'`, etc.) siguen funcionando. Las constantes son opcionales pero recomendadas para autocompletado y detección de errores en tiempo de compilación.
+
+### Embeddable Value Objects
+
+Mapea objetos de valor a múltiples columnas en la tabla del padre:
+
+```php
+use SybaseORM\Attribute\Embeddable;
+use SybaseORM\Attribute\Embedded;
+use SybaseORM\Attribute\Column;
+
+#[Embeddable]
+class Direccion
+{
+    #[Column(type: Types::STRING, length: 200)]
+    public string $calle = '';
+
+    #[Column(type: Types::STRING, length: 100)]
+    public string $ciudad = '';
+
+    #[Column(type: Types::STRING, length: 10)]
+    public string $codigoPostal = '';
+}
+
+#[Entity(table: 'clientes')]
+class Cliente
+{
+    #[Id]
+    #[GeneratedValue]
+    #[Column(type: Types::INTEGER)]
+    private ?int $id = null;
+
+    #[Embedded(class: Direccion::class)]
+    private ?Direccion $direccion = null;
+
+    // Genera columnas: direccion_calle, direccion_ciudad, direccion_codigo_postal
+}
+
+// Prefijo personalizado
+#[Embedded(class: Direccion::class, columnPrefix: 'envio_')]
+private ?Direccion $direccionEnvio = null;
+// Genera: envio_calle, envio_ciudad, envio_codigo_postal
+```
+
+El Hydrator crea automáticamente el objeto embeddable durante la hidratación. Si todas las columnas del embeddable son NULL, la propiedad queda como `null`.
+
+> **Nota OQL:** En consultas OQL, las propiedades de embeddables se referencian por su nombre de columna (e.g. `u.direccion_calle`), no por la notación de punto (`u.direccion.calle`).
 
 ### Tipos personalizados (Value Objects)
 

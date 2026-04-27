@@ -257,6 +257,14 @@ final class Hydrator implements HydratorInterface
                 continue;
             }
 
+            // Don't wrap if the property is typed as 'array' — PersistentCollection
+            // is not assignable to array-typed properties. Only wrap untyped or
+            // PersistentCollection-typed properties.
+            $propertyType = $property->getType();
+            if ($propertyType instanceof \ReflectionNamedType && $propertyType->getName() === 'array') {
+                continue;
+            }
+
             $currentValue = $property->getValue($entity);
 
             // If already a PersistentCollection, skip

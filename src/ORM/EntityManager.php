@@ -531,13 +531,26 @@ final class EntityManager implements EntityManagerInterface
             return $entity;
         }
 
-        // Copy property values from detached to managed
+        // Copy property values from detached to managed (skip embedded dot-notation columns)
         foreach ($metadata->columns as $column) {
             if ($column->isId) {
                 continue;
             }
 
+            // Embedded columns use dot notation (address.street) — skip them,
+            // they'll be handled by copying the embedded object below
+            if (str_contains($column->propertyName, '.')) {
+                continue;
+            }
+
             $prop = $reflectionClass->getProperty($column->propertyName);
+            $value = $prop->getValue($entity);
+            $prop->setValue($managed, $value);
+        }
+
+        // Copy embedded objects as whole objects
+        foreach ($metadata->embeddeds as $embedded) {
+            $prop = $reflectionClass->getProperty($embedded->propertyName);
             $value = $prop->getValue($entity);
             $prop->setValue($managed, $value);
         }
@@ -698,9 +711,18 @@ final class EntityManager implements EntityManagerInterface
             throw new PersistenceException('Entity not found in database during refresh.');
         }
 
-        // Copy fresh values back to the original entity
+        // Copy fresh values back to the original entity (skip embedded dot-notation columns)
         foreach ($metadata->columns as $column) {
+            if (str_contains($column->propertyName, '.')) {
+                continue;
+            }
             $prop = $reflectionClass->getProperty($column->propertyName);
+            $prop->setValue($entity, $prop->getValue($fresh));
+        }
+
+        // Copy embedded objects as whole objects
+        foreach ($metadata->embeddeds as $embedded) {
+            $prop = $reflectionClass->getProperty($embedded->propertyName);
             $prop->setValue($entity, $prop->getValue($fresh));
         }
 

@@ -18,7 +18,7 @@ namespace SybaseORM\ORM;
  * @implements \Countable
  * @implements \ArrayAccess<int, T>
  */
-final class PersistentCollection implements \IteratorAggregate, \Countable, \ArrayAccess
+final class PersistentCollection implements \IteratorAggregate, \Countable, \ArrayAccess, \JsonSerializable
 {
     private bool $initialized = false;
 
@@ -255,5 +255,14 @@ final class PersistentCollection implements \IteratorAggregate, \Countable, \Arr
 
         unset($this->elements[$offset]);
         $this->elements = array_values($this->elements);
+    }
+
+    // ── JsonSerializable ────────────────────────────────────────
+
+    public function jsonSerialize(): array
+    {
+        $this->initialize();
+
+        return $this->elements;
     }
 }

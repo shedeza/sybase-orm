@@ -252,12 +252,18 @@ final class ClassMetadata
 
     public function __toString(): string
     {
-        return sprintf(
-            'ClassMetadata(%s → %s, %d columns, %d relationships)',
+        $parts = sprintf(
+            'ClassMetadata(%s → %s, %d columns, %d relationships',
             $this->entityClass,
             $this->getQualifiedTableName(),
             count($this->columns),
             count($this->relationships),
         );
+
+        if (!empty($this->embeddeds)) {
+            $parts .= sprintf(', %d embeddeds', count($this->embeddeds));
+        }
+
+        return $parts . ')';
     }
 }
