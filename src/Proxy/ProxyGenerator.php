@@ -193,15 +193,65 @@ final class ProxyGenerator
 
             $returnType = $this->getReturnTypeString($method);
             $returnTypeDecl = $returnType !== '' ? ": {$returnType}" : '';
+            $paramSignature = $this->getParameterSignature($method);
+            $paramForward = $this->getParameterForwardList($method);
 
-            $code .= "    public function {$name}(){$returnTypeDecl}\n";
+            $code .= "    public function {$name}({$paramSignature}){$returnTypeDecl}\n";
             $code .= "    {\n";
             $code .= "        \$this->__initialize();\n";
-            $code .= "        return parent::{$name}();\n";
+            $code .= "        return parent::{$name}({$paramForward});\n";
             $code .= "    }\n\n";
         }
 
         return $code;
+    }
+
+    /**
+     * Generates the parameter signature string for a method override.
+     */
+    private function getParameterSignature(ReflectionMethod $method): string
+    {
+        $params = [];
+        foreach ($method->getParameters() as $param) {
+            $part = '';
+
+            $type = $param->getType();
+            if ($type !== null) {
+                if ($type instanceof \ReflectionNamedType) {
+                    if ($type->allowsNull() && $type->getName() !== 'mixed') {
+                        $part .= '?';
+                    }
+                    if (!$type->isBuiltin()) {
+                        $part .= '\\';
+                    }
+                    $part .= $type->getName() . ' ';
+                }
+            }
+
+            $part .= '$' . $param->getName();
+
+            if ($param->isDefaultValueAvailable()) {
+                $default = $param->getDefaultValue();
+                $part .= ' = ' . var_export($default, true);
+            }
+
+            $params[] = $part;
+        }
+
+        return implode(', ', $params);
+    }
+
+    /**
+     * Generates the argument forwarding list for a parent:: call.
+     */
+    private function getParameterForwardList(ReflectionMethod $method): string
+    {
+        $args = [];
+        foreach ($method->getParameters() as $param) {
+            $args[] = '$' . $param->getName();
+        }
+
+        return implode(', ', $args);
     }
 
     /**

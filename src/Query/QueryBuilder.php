@@ -234,6 +234,10 @@ final class QueryBuilder implements QueryBuilderInterface
 
     public function getSQL(): string
     {
+        if ($this->fromTable === null) {
+            throw new \LogicException('Cannot generate SQL: from() has not been called.');
+        }
+
         $sql = $this->buildSelectClause();
         $sql .= $this->buildFromClause();
         $sql .= $this->buildJoinClauses();

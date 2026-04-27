@@ -135,6 +135,7 @@ final class UnitOfWork implements UnitOfWorkInterface
             // Clear tracked changes after successful commit
             $this->newEntities = new \SplObjectStorage();
             $this->deletedEntities = new \SplObjectStorage();
+            $this->insertedEntities = new \SplObjectStorage();
         } catch (PersistenceException $e) {
             $this->safeRollback();
             throw $e;
@@ -168,6 +169,22 @@ final class UnitOfWork implements UnitOfWorkInterface
         $this->newEntities->detach($entity);
         $this->deletedEntities->detach($entity);
         $this->insertedEntities->detach($entity);
+    }
+
+    /**
+     * Removes all entities of a specific class from tracking.
+     */
+    public function clearClass(string $entityClass): void
+    {
+        $toDetach = [];
+        foreach ($this->entitySnapshots as $entity) {
+            if ($entity::class === $entityClass) {
+                $toDetach[] = $entity;
+            }
+        }
+        foreach ($toDetach as $entity) {
+            $this->detach($entity);
+        }
     }
 
     /**
@@ -695,7 +712,6 @@ final class UnitOfWork implements UnitOfWorkInterface
     {
         if (!isset($this->reflectionCache[$className][$propertyName])) {
             $prop = new \ReflectionProperty($className, $propertyName);
-            $prop->setAccessible(true);
             $this->reflectionCache[$className][$propertyName] = $prop;
         }
 

@@ -276,7 +276,6 @@ final class Hydrator implements HydratorInterface
                 return null;
             }
             $prop = $reflectionClass->getProperty($propertyName);
-            $prop->setAccessible(true);
             $this->reflectionPropertyCache[$className][$propertyName] = $prop;
         }
 

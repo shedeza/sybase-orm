@@ -41,20 +41,20 @@ final class IdentityMap implements IdentityMapInterface
      *
      * Type prefixes prevent collisions between int 1 and string '1'.
      */
-    private function deriveKey(mixed $id): string
+    public static function deriveKey(mixed $id): string
     {
         if (is_array($id)) {
             ksort($id);
-            return implode('|', array_map(fn($v) => $this->typedValue($v), $id));
+            return implode('|', array_map(fn($v) => self::typedValue($v), $id));
         }
 
-        return $this->typedValue($id);
+        return self::typedValue($id);
     }
 
     /**
      * Returns a type-prefixed string representation of a value.
      */
-    private function typedValue(mixed $value): string
+    public static function typedValue(mixed $value): string
     {
         if ($value === null) {
             return 'n:';

@@ -265,6 +265,18 @@ class EntityRepository
         $this->entityManager->rollback();
     }
 
+    /**
+     * Executes a callable within a transaction. Commits on success, rolls back on exception.
+     *
+     * @template T
+     * @param callable(): T $callback
+     * @return T
+     */
+    public function transactional(callable $callback): mixed
+    {
+        return $this->entityManager->transactional($callback);
+    }
+
     // ── Utilidades ──────────────────────────────────────────────────
 
     public function getEntityClass(): string

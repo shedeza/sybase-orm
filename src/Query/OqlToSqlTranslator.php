@@ -69,11 +69,16 @@ final class OqlToSqlTranslator
         private readonly DialectInterface $dialect,
         private readonly MetadataReaderInterface $metadataReader,
         private readonly array $entityClasses = [],
+        array $precomputedEntityMap = [],
     ) {
-        $this->entityMap = [];
-        foreach ($this->entityClasses as $fqcn) {
-            $shortName = (new \ReflectionClass($fqcn))->getShortName();
-            $this->entityMap[$shortName] = $fqcn;
+        if ($precomputedEntityMap !== []) {
+            $this->entityMap = $precomputedEntityMap;
+        } else {
+            $this->entityMap = [];
+            foreach ($this->entityClasses as $fqcn) {
+                $shortName = (new \ReflectionClass($fqcn))->getShortName();
+                $this->entityMap[$shortName] = $fqcn;
+            }
         }
     }
 
@@ -122,7 +127,7 @@ final class OqlToSqlTranslator
         // Resolve JOINs
         $joinsSql = '';
         foreach ($statement->joins as $join) {
-            $joinsSql .= ' ' . $this->resolveJoin($join);
+            $joinsSql .= ' ' . $this->resolveJoin($join, $parameters);
         }
 
         // Resolve SELECT
@@ -313,11 +318,11 @@ final class OqlToSqlTranslator
             . ' ' . $this->dialect->quoteIdentifier($from->alias);
     }
 
-    private function resolveJoin(JoinClause $join): string
+    private function resolveJoin(JoinClause $join, array &$parameters): string
     {
         // Entity-based JOIN with WITH condition
         if ($join->entityName !== null) {
-            return $this->resolveEntityJoin($join);
+            return $this->resolveEntityJoin($join, $parameters);
         }
 
         $ownerAlias = $join->property->alias;
@@ -543,7 +548,7 @@ final class OqlToSqlTranslator
         return $this->resolveCondition($having->condition, $parameters);
     }
 
-    private function resolveEntityJoin(JoinClause $join): string
+    private function resolveEntityJoin(JoinClause $join, array &$parameters): string
     {
         $entityClass = $this->resolveEntityName($join->entityName);
         $targetMeta = $this->metadataReader->getClassMetadata($entityClass);
@@ -553,8 +558,7 @@ final class OqlToSqlTranslator
 
         $onCondition = '';
         if ($join->withCondition !== null) {
-            $params = [];
-            $onCondition = $this->resolveCondition($join->withCondition, $params);
+            $onCondition = $this->resolveCondition($join->withCondition, $parameters);
         }
 
         return sprintf(

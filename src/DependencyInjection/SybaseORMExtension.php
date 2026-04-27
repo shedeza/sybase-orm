@@ -85,7 +85,11 @@ final class SybaseORMExtension extends Extension
             // para soportar %env(DATABASE_URL)% que se resuelve después del compile
             $definition = new Definition(ConnectionManager::class);
             $definition->setFactory([self::class, 'createConnectionManagerFromUrl']);
-            $definition->setArguments([$connectionConfig['url'], $loggerRef]);
+            $definition->setArguments([
+                $connectionConfig['url'],
+                $connectionConfig['charset_conversion'],
+                $loggerRef,
+            ]);
         } else {
             // Parámetros individuales
             $connConfig = [
@@ -111,9 +115,14 @@ final class SybaseORMExtension extends Extension
      * Factory method para crear ConnectionManager desde una URL.
      * Se ejecuta en runtime, cuando las variables de entorno ya están resueltas.
      */
-    public static function createConnectionManagerFromUrl(string $url, ?LoggerInterface $logger = null): ConnectionManager
+    public static function createConnectionManagerFromUrl(string $url, bool $charsetConversion = false, ?LoggerInterface $logger = null): ConnectionManager
     {
         $config = ConnectionUrlParser::parse($url);
+
+        // YAML charset_conversion overrides URL query param if explicitly set
+        if ($charsetConversion) {
+            $config['charset_conversion'] = true;
+        }
 
         return new ConnectionManager($config, $logger);
     }

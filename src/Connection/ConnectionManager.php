@@ -101,8 +101,9 @@ class ConnectionManager implements ConnectionManagerInterface
             $this->connection = null;
             throw new ConnectionLostException(
                 sprintf('Failed to connect to Sybase ASE at %s:%d: %s', $this->config['host'], (int) $this->config['port'], $e->getMessage()),
-                (int) $e->getCode(),
+                0,
                 $e,
+                is_string($e->getCode()) ? (string) $e->getCode() : null,
             );
         }
 
@@ -454,15 +455,16 @@ class ConnectionManager implements ConnectionManagerInterface
 
             throw new ConnectionLostException(
                 'Connection to Sybase ASE was lost: ' . $e->getMessage(),
-                (int) $e->getCode(),
+                0,
                 $e,
+                (string) $sqlState,
             );
         }
 
         // Para errores no relacionados con la conexión (syntax error, constraint violation, etc.)
         throw new PersistenceException(
             'Database operation failed: ' . $e->getMessage(),
-            (int) $e->getCode(),
+            0,
             $e,
         );
     }
@@ -505,6 +507,17 @@ class ConnectionManager implements ConnectionManagerInterface
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    /**
+     * Forces a reconnection by closing the current connection.
+     * The next call to getConnection() will establish a new connection.
+     */
+    public function reconnect(): void
+    {
+        $this->connection = null;
+        $this->stmtCache = [];
+        $this->inTransaction = false;
     }
 
     public function getServerVersion(): string

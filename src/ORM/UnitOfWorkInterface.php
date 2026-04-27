@@ -36,4 +36,7 @@ interface UnitOfWorkInterface
 
     /** Removes an entity from tracking (snapshots and pending operations). */
     public function detach(object $entity): void;
+
+    /** Removes all entities of a specific class from tracking. */
+    public function clearClass(string $entityClass): void;
 }
