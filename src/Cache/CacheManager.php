@@ -140,6 +140,14 @@ final class CacheManager implements CacheManagerInterface
         }
     }
 
+    /**
+     * Checks if the second-level cache is currently available.
+     */
+    public function isSecondLevelAvailable(): bool
+    {
+        return $this->secondLevelAvailable;
+    }
+
     private function entityKey(string $entityClass, mixed $id): string
     {
         if (is_array($id)) {

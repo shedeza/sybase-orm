@@ -137,6 +137,30 @@ final class ClassMetadata
         return null;
     }
 
+    /**
+     * Returns true if this entity has any lifecycle hooks configured.
+     */
+    public function hasLifecycleHooks(): bool
+    {
+        return $this->lifecycleHooks !== [];
+    }
+
+    /**
+     * Returns true if this entity uses an inheritance strategy.
+     */
+    public function hasInheritance(): bool
+    {
+        return $this->inheritanceType !== null;
+    }
+
+    /**
+     * Returns true if this entity has a composite primary key (more than one ID field).
+     */
+    public function hasCompositeId(): bool
+    {
+        return count($this->idFields) > 1;
+    }
+
     public function __toString(): string
     {
         return sprintf(

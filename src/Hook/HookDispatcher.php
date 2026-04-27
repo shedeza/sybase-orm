@@ -21,12 +21,34 @@ final class HookDispatcher
     ) {
     }
 
+    /** @var string[] Valid lifecycle hook type names */
+    private const VALID_HOOK_TYPES = [
+        'PrePersist',
+        'PostPersist',
+        'PreUpdate',
+        'PostUpdate',
+        'PreRemove',
+        'PostRemove',
+    ];
+
+    /**
+     * Returns the list of supported lifecycle hook type names.
+     *
+     * @return string[]
+     */
+    public static function getSupportedHookTypes(): array
+    {
+        return self::VALID_HOOK_TYPES;
+    }
+
     /**
      * Dispatches a lifecycle hook on the given entity.
      *
      * @param object $entity   The entity instance whose hook methods will be called.
      * @param string $hookType The hook type name (e.g. "PrePersist", "PostPersist", etc.).
      *
+     * @throws \InvalidArgumentException If the hook type is not valid.
+     * @throws \RuntimeException If a hook method does not exist on the entity.
      * @throws \Throwable Re-throws any exception raised by a hook method.
      */
     public function dispatch(object $entity, string $hookType): void

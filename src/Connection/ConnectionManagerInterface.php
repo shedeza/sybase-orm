@@ -81,4 +81,9 @@ interface ConnectionManagerInterface
      * Returns the Sybase ASE server version string.
      */
     public function getServerVersion(): string;
+
+    /**
+     * Returns true if a transaction is currently active.
+     */
+    public function isInTransaction(): bool;
 }

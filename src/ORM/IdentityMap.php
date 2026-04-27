@@ -72,6 +72,27 @@ final class IdentityMap implements IdentityMapInterface
         return 's:' . $value;
     }
 
+    /**
+     * Returns the number of entities stored across all classes.
+     */
+    public function count(): int
+    {
+        $total = 0;
+        foreach ($this->map as $entities) {
+            $total += count($entities);
+        }
+
+        return $total;
+    }
+
+    /**
+     * Returns the number of entities stored for a specific class.
+     */
+    public function countClass(string $entityClass): int
+    {
+        return count($this->map[$entityClass] ?? []);
+    }
+
     public function clear(): void
     {
         $this->map = [];

@@ -214,6 +214,9 @@ class ConnectionManager implements ConnectionManagerInterface
         }
     }
 
+    /**
+     * Returns true if a transaction is currently active.
+     */
     public function isInTransaction(): bool
     {
         return $this->inTransaction;

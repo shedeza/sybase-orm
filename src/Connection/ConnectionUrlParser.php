@@ -72,6 +72,7 @@ final class ConnectionUrlParser
 
         $charset = $queryParams['charset'] ?? 'UTF-8';
         $persistent = filter_var($queryParams['persistent'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $charsetConversion = filter_var($queryParams['charset_conversion'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         return [
             'host' => $host,
@@ -81,6 +82,7 @@ final class ConnectionUrlParser
             'password' => $password,
             'charset' => $charset,
             'persistent' => $persistent,
+            'charset_conversion' => $charsetConversion,
         ];
     }
 }
