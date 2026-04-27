@@ -118,6 +118,9 @@ final class ConnectionUrlParser
         if (!empty($config['persistent'])) {
             $queryParams['persistent'] = 'true';
         }
+        if (!empty($config['charset_conversion'])) {
+            $queryParams['charset_conversion'] = 'true';
+        }
 
         if ($queryParams !== []) {
             $url .= '?' . http_build_query($queryParams);

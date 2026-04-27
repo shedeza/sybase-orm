@@ -113,14 +113,13 @@ SYBASE_PASSWORD=secret
 sybase_orm:
     connection:
         url: '%env(DATABASE_URL)%'
+        charset_conversion: false
 
     entity_directories:
         - '%kernel.project_dir%/src/Entity'
 
     proxy_directory: '%kernel.cache_dir%/sybase_orm/proxies'
     migrations_directory: '%kernel.project_dir%/sybase_ase/migrations'
-
-    charset_conversion: false
 
     cache:
         enabled: false
@@ -579,7 +578,7 @@ El ORM soporta conversión transparente de charset entre UTF-8 (PHP) e ISO-8859-
 sybase_orm:
     connection:
         url: '%env(DATABASE_URL)%'
-    charset_conversion: true
+        charset_conversion: true
 ```
 
 Cuando `charset_conversion` está habilitado:
@@ -893,7 +892,7 @@ El `SybaseDialect` maneja las particularidades de Sybase ASE:
 vendor/bin/phpunit
 ```
 
-2864 tests, 11749 assertions cubriendo todos los componentes.
+2955+ tests cubriendo todos los componentes.
 
 ## Licencia
 

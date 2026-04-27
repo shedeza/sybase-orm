@@ -59,6 +59,15 @@ interface EntityManagerInterface
     /** Revierte la transacción activa. */
     public function rollback(): void;
 
+    /**
+     * Executes a callable within a transaction. Commits on success, rolls back on exception.
+     *
+     * @template T
+     * @param callable(): T $callback
+     * @return T The return value of the callback
+     */
+    public function transactional(callable $callback): mixed;
+
     /** Obtiene la referencia al repositorio de una entidad. */
     public function getRepository(string $entityClass): EntityRepository;
 

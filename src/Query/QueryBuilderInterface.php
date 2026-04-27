@@ -33,6 +33,9 @@ interface QueryBuilderInterface
     /** Agrega un LEFT JOIN a la consulta. */
     public function leftJoin(string $join, string $alias, string $condition): static;
 
+    /** Agrega un RIGHT JOIN a la consulta. */
+    public function rightJoin(string $join, string $alias, string $condition): static;
+
     /** Define el ordenamiento de los resultados. */
     public function orderBy(string $column, string $direction = 'ASC'): static;
 

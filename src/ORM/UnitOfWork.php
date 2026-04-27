@@ -162,6 +162,14 @@ final class UnitOfWork implements UnitOfWorkInterface
         return $this->entitySnapshots->contains($entity);
     }
 
+    public function detach(object $entity): void
+    {
+        $this->entitySnapshots->detach($entity);
+        $this->newEntities->detach($entity);
+        $this->deletedEntities->detach($entity);
+        $this->insertedEntities->detach($entity);
+    }
+
     /**
      * Takes a snapshot of all mapped property values via Reflection.
      *

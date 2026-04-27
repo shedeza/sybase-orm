@@ -145,6 +145,18 @@ final class QueryBuilder implements QueryBuilderInterface
         return $this;
     }
 
+    public function rightJoin(string $join, string $alias, string $condition): static
+    {
+        $this->joins[] = [
+            'type' => 'RIGHT JOIN',
+            'table' => $join,
+            'alias' => $alias,
+            'condition' => $condition,
+        ];
+
+        return $this;
+    }
+
     public function orderBy(string $column, string $direction = 'ASC'): static
     {
         $this->orderByClauses[] = [

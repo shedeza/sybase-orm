@@ -539,4 +539,19 @@ class ConnectionManager implements ConnectionManagerInterface
     {
         return (int) ($this->config['port'] ?? 5000);
     }
+
+    /**
+     * Returns the connection configuration for inspection (password is masked).
+     *
+     * @return array<string, mixed>
+     */
+    public function getConfigSafe(): array
+    {
+        $safe = $this->config;
+        if (isset($safe['password'])) {
+            $safe['password'] = '***';
+        }
+
+        return $safe;
+    }
 }

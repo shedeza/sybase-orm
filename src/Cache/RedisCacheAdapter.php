@@ -58,7 +58,7 @@ final class RedisCacheAdapter implements SecondLevelCacheInterface
         // Use SCAN to find and delete only keys with our prefix
         $iterator = null;
         do {
-            $keys = $this->redis->scan($iterator, $this->prefix . '*');
+            $keys = $this->redis->scan($iterator, $this->prefix . '*', 1000);
             if ($keys !== false && count($keys) > 0) {
                 $this->redis->del(...$keys);
             }

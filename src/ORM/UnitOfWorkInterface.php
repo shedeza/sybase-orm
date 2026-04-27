@@ -33,4 +33,7 @@ interface UnitOfWorkInterface
 
     /** Verifica si una entidad está siendo gestionada (tiene snapshot). */
     public function isManaged(object $entity): bool;
+
+    /** Removes an entity from tracking (snapshots and pending operations). */
+    public function detach(object $entity): void;
 }

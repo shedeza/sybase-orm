@@ -176,6 +176,7 @@ final class MigrationManager
         while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             $versions[] = $row['version'];
         }
+        $stmt->closeCursor();
 
         return $versions;
     }
@@ -214,7 +215,10 @@ final class MigrationManager
             [$tableName]
         );
 
-        return $stmt->fetch(\PDO::FETCH_ASSOC) !== false;
+        $exists = $stmt->fetch(\PDO::FETCH_ASSOC) !== false;
+        $stmt->closeCursor();
+
+        return $exists;
     }
 
     /**
@@ -292,6 +296,7 @@ final class MigrationManager
         while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             $columns[] = $row['name'];
         }
+        $stmt->closeCursor();
 
         return $columns;
     }

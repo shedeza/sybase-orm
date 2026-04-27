@@ -159,6 +159,26 @@ class EntityRepository
         return $this->entityManager->queryOne($oql, $params);
     }
 
+    /**
+     * Finds a single entity by criteria or throws PersistenceException if not found.
+     *
+     * @param array<string, mixed> $criteria
+     * @throws \SybaseORM\Exception\PersistenceException If no entity matches the criteria.
+     */
+    public function findOneByOrFail(array $criteria): object
+    {
+        $entity = $this->findOneBy($criteria);
+
+        if ($entity === null) {
+            throw \SybaseORM\Exception\PersistenceException::forEntity(
+                $this->entityClass,
+                sprintf('findOneBy (criteria: %s)', json_encode($criteria)),
+            );
+        }
+
+        return $entity;
+    }
+
     /** @return object[] */
     public function query(string $oql, array $params = []): array
     {

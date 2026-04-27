@@ -253,6 +253,17 @@ final class ProxyGenerator
                 $parts[] = $part;
             }
             $typeStr = implode('|', $parts);
+        } elseif ($returnType instanceof \ReflectionIntersectionType) {
+            $parts = [];
+            foreach ($returnType->getTypes() as $type) {
+                $part = '';
+                if (!$type->isBuiltin()) {
+                    $part .= '\\';
+                }
+                $part .= $type->getName();
+                $parts[] = $part;
+            }
+            $typeStr = implode('&', $parts);
         }
 
         return $typeStr;

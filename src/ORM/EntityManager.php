@@ -53,6 +53,9 @@ final class EntityManager implements EntityManagerInterface
     /** @var array<string, array{sql: string, parameters: list<string>}> Cache de traducciones OQL→SQL */
     private array $queryCache = [];
 
+    /** @var array<string, \ReflectionClass<object>> Cached ReflectionClass instances */
+    private array $reflectionClassCache = [];
+
     public function __construct(
         private readonly ConnectionManagerInterface $connectionManager,
         private readonly MetadataReaderInterface $metadataReader,
@@ -81,7 +84,7 @@ final class EntityManager implements EntityManagerInterface
         $this->oqlTranslator = null;
         $this->entitiesDiscovered = true;
         foreach ($entityClasses as $fqcn) {
-            $shortName = (new \ReflectionClass($fqcn))->getShortName();
+            $shortName = $this->getReflectionClass($fqcn)->getShortName();
             $this->entityShortNameMap[$shortName] = $fqcn;
         }
     }
@@ -429,52 +432,8 @@ final class EntityManager implements EntityManagerInterface
         }
 
         $result = $this->oqlTranslator->translate($ast);
-        $sql = $result['sql'];
-        $parameterNames = $result['parameters'];
 
-        // Map named parameters to ordered values, expanding array params for IN clauses
-        $orderedParams = [];
-        foreach ($parameterNames as $name) {
-            $value = $params[$name] ?? null;
-            if (is_array($value)) {
-                $scalarValues = $this->normalizeArrayParam($value);
-                if (empty($scalarValues)) {
-                    // Empty IN list — replace :param with NULL (IN (NULL) matches nothing with ANSINULL ON)
-                    $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', 'NULL', $sql, 1);
-                    continue;
-                }
-                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
-                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($scalarValues as $item) {
-                    $orderedParams[] = $item;
-                }
-            } else {
-                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', '?', $sql, 1);
-                $orderedParams[] = $value;
-            }
-        }
-
-        // Safety: expand any remaining named params not reported by the translator
-        foreach ($params as $name => $value) {
-            if (in_array($name, $parameterNames, true)) {
-                continue;
-            }
-            if (is_array($value) && str_contains($sql, ':' . $name)) {
-                $scalarValues = $this->normalizeArrayParam($value);
-                if (empty($scalarValues)) {
-                    $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', 'NULL', $sql, 1);
-                    continue;
-                }
-                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
-                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($scalarValues as $item) {
-                    $orderedParams[] = $item;
-                }
-            } elseif (str_contains($sql, ':' . $name)) {
-                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', '?', $sql, 1);
-                $orderedParams[] = $value;
-            }
-        }
+        [$sql, $orderedParams] = $this->expandNamedParameters($result['sql'], $result['parameters'], $params);
 
         $this->logger?->debug('OQL→SQL', ['oql' => $oql, 'sql' => $sql, 'params' => $orderedParams]);
 
@@ -540,54 +499,7 @@ final class EntityManager implements EntityManagerInterface
             $this->queryCache[$oql] = $result;
         }
 
-        $sql = $result['sql'];
-        $parameterNames = $result['parameters'];
-
-        // Map named parameters to ordered values, expanding array params for IN clauses
-        $orderedParams = [];
-        foreach ($parameterNames as $name) {
-            $value = $params[$name] ?? null;
-            if (is_array($value)) {
-                $scalarValues = $this->normalizeArrayParam($value);
-                if (empty($scalarValues)) {
-                    // Empty IN list — replace :param with NULL (IN (NULL) matches nothing with ANSINULL ON)
-                    $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', 'NULL', $sql, 1);
-                    continue;
-                }
-                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
-                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($scalarValues as $item) {
-                    $orderedParams[] = $item;
-                }
-            } else {
-                // Replace named parameter with positional placeholder
-                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', '?', $sql, 1);
-                $orderedParams[] = $value;
-            }
-        }
-
-        // Safety: expand any remaining named params not reported by the translator
-        // This handles edge cases where params exist in SQL but weren't tracked
-        foreach ($params as $name => $value) {
-            if (in_array($name, $parameterNames, true)) {
-                continue; // Already processed above
-            }
-            if (is_array($value) && str_contains($sql, ':' . $name)) {
-                $scalarValues = $this->normalizeArrayParam($value);
-                if (empty($scalarValues)) {
-                    $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', 'NULL', $sql, 1);
-                    continue;
-                }
-                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
-                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($scalarValues as $item) {
-                    $orderedParams[] = $item;
-                }
-            } elseif (str_contains($sql, ':' . $name)) {
-                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', '?', $sql, 1);
-                $orderedParams[] = $value;
-            }
-        }
+        [$sql, $orderedParams] = $this->expandNamedParameters($result['sql'], $result['parameters'], $params);
 
         $this->logger?->debug('OQL→SQL', ['oql' => $oql, 'sql' => $sql, 'params' => $orderedParams]);
 
@@ -662,7 +574,7 @@ final class EntityManager implements EntityManagerInterface
             );
         }
 
-        $reflectionClass = new \ReflectionClass($entityClass);
+        $reflectionClass = $this->getReflectionClass($entityClass);
 
         if (count($idColumns) === 1) {
             // Single key
@@ -726,6 +638,34 @@ final class EntityManager implements EntityManagerInterface
         $this->connectionManager->rollback();
     }
 
+    /**
+     * Executes a callable within a transaction. Commits on success, rolls back on exception.
+     *
+     * @template T
+     * @param callable(): T $callback
+     * @return T The return value of the callback
+     * @throws \Throwable Re-throws any exception after rollback
+     */
+    public function transactional(callable $callback): mixed
+    {
+        $this->beginTransaction();
+
+        try {
+            $result = $callback();
+            $this->flush();
+            $this->commit();
+
+            return $result;
+        } catch (\Throwable $e) {
+            try {
+                $this->rollback();
+            } catch (\Throwable) {
+                // Suppress rollback errors — the original exception is more important
+            }
+            throw $e;
+        }
+    }
+
     public function getRepository(string $entityClass): EntityRepository
     {
         if (!isset($this->repositories[$entityClass])) {
@@ -758,11 +698,15 @@ final class EntityManager implements EntityManagerInterface
 
     public function detach(object $entity): void
     {
+        // Remove from UnitOfWork tracking (snapshots, pending operations)
+        $this->unitOfWork->detach($entity);
+
+        // Remove from IdentityMap
         $metadata = $this->metadataReader->getClassMetadata($entity::class);
         $idColumns = $metadata->getIdColumns();
 
         if (!empty($idColumns)) {
-            $reflectionClass = new \ReflectionClass($entity::class);
+            $reflectionClass = $this->getReflectionClass($entity::class);
             if (count($idColumns) === 1) {
                 $idProp = $reflectionClass->getProperty($idColumns[0]->propertyName);
                 $id = $idProp->getValue($entity);
@@ -808,7 +752,7 @@ final class EntityManager implements EntityManagerInterface
             throw new PersistenceException('Cannot refresh entity without ID.');
         }
 
-        $reflectionClass = new \ReflectionClass($entityClass);
+        $reflectionClass = $this->getReflectionClass($entityClass);
 
         // Build ID
         if (count($idColumns) === 1) {
@@ -860,6 +804,63 @@ final class EntityManager implements EntityManagerInterface
         }
 
         return $this->oqlTranslator;
+    }
+
+    /**
+     * Expands named parameters in SQL to positional placeholders, handling array expansion for IN clauses.
+     *
+     * @param string   $sql            SQL with named parameters (:name)
+     * @param string[] $parameterNames Parameter names reported by the translator
+     * @param array<string, mixed> $params User-provided parameter values
+     * @return array{0: string, 1: list<mixed>} [expandedSql, orderedParams]
+     */
+    private function expandNamedParameters(string $sql, array $parameterNames, array $params): array
+    {
+        $orderedParams = [];
+
+        // Process parameters reported by the translator
+        foreach ($parameterNames as $name) {
+            $value = $params[$name] ?? null;
+            if (is_array($value)) {
+                $scalarValues = $this->normalizeArrayParam($value);
+                if (empty($scalarValues)) {
+                    $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', 'NULL', $sql, 1);
+                    continue;
+                }
+                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
+                foreach ($scalarValues as $item) {
+                    $orderedParams[] = $item;
+                }
+            } else {
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', '?', $sql, 1);
+                $orderedParams[] = $value;
+            }
+        }
+
+        // Safety: expand any remaining named params not reported by the translator
+        foreach ($params as $name => $value) {
+            if (in_array($name, $parameterNames, true)) {
+                continue;
+            }
+            if (is_array($value) && str_contains($sql, ':' . $name)) {
+                $scalarValues = $this->normalizeArrayParam($value);
+                if (empty($scalarValues)) {
+                    $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', 'NULL', $sql, 1);
+                    continue;
+                }
+                $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
+                foreach ($scalarValues as $item) {
+                    $orderedParams[] = $item;
+                }
+            } elseif (str_contains($sql, ':' . $name)) {
+                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', '?', $sql, 1);
+                $orderedParams[] = $value;
+            }
+        }
+
+        return [$sql, $orderedParams];
     }
 
     /**
@@ -934,5 +935,20 @@ final class EntityManager implements EntityManagerInterface
         }
 
         return null;
+    }
+
+    /**
+     * Returns a cached ReflectionClass instance for the given class name.
+     *
+     * @param class-string $className
+     * @return \ReflectionClass<object>
+     */
+    private function getReflectionClass(string $className): \ReflectionClass
+    {
+        if (!isset($this->reflectionClassCache[$className])) {
+            $this->reflectionClassCache[$className] = new \ReflectionClass($className);
+        }
+
+        return $this->reflectionClassCache[$className];
     }
 }
