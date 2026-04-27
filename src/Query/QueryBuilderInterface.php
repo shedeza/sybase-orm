@@ -12,6 +12,9 @@ interface QueryBuilderInterface
     /** Define las columnas o expresiones a seleccionar. */
     public function select(string ...$columns): static;
 
+    /** Enables DISTINCT on the SELECT clause. */
+    public function distinct(bool $distinct = true): static;
+
     /** Define la tabla o entidad origen de la consulta. */
     public function from(string $from, ?string $alias = null): static;
 
@@ -38,6 +41,9 @@ interface QueryBuilderInterface
 
     /** Define la agrupación de los resultados. */
     public function groupBy(string ...$columns): static;
+
+    /** Adds additional GROUP BY columns without replacing existing ones. */
+    public function addGroupBy(string ...$columns): static;
 
     /** Define el límite de resultados (delegado al Dialect para TOP/ROW_NUMBER). */
     public function limit(int $limit): static;

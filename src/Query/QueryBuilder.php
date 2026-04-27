@@ -16,6 +16,8 @@ final class QueryBuilder implements QueryBuilderInterface
     /** @var string[] */
     private array $selectColumns = [];
 
+    private bool $distinct = false;
+
     private ?string $fromTable = null;
     private ?string $fromAlias = null;
 
@@ -53,6 +55,7 @@ final class QueryBuilder implements QueryBuilderInterface
     public function reset(): static
     {
         $this->selectColumns = [];
+        $this->distinct = false;
         $this->fromTable = null;
         $this->fromAlias = null;
         $this->whereClauses = [];
@@ -72,6 +75,16 @@ final class QueryBuilder implements QueryBuilderInterface
     public function select(string ...$columns): static
     {
         $this->selectColumns = $columns;
+
+        return $this;
+    }
+
+    /**
+     * Enables DISTINCT on the SELECT clause.
+     */
+    public function distinct(bool $distinct = true): static
+    {
+        $this->distinct = $distinct;
 
         return $this;
     }
@@ -154,6 +167,16 @@ final class QueryBuilder implements QueryBuilderInterface
         return $this;
     }
 
+    /**
+     * Adds additional GROUP BY columns without replacing existing ones.
+     */
+    public function addGroupBy(string ...$columns): static
+    {
+        $this->groupByColumns = array_merge($this->groupByColumns, $columns);
+
+        return $this;
+    }
+
     public function having(string $condition, array $params = []): static
     {
         $this->havingCondition = $condition;
@@ -225,8 +248,9 @@ final class QueryBuilder implements QueryBuilderInterface
     private function buildSelectClause(): string
     {
         $columns = $this->selectColumns ?: ['*'];
+        $distinctStr = $this->distinct ? 'DISTINCT ' : '';
 
-        return 'SELECT ' . implode(', ', $columns);
+        return 'SELECT ' . $distinctStr . implode(', ', $columns);
     }
 
     private function buildFromClause(): string

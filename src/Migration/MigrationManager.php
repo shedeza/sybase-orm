@@ -306,6 +306,7 @@ final class MigrationManager
             'text' => 'TEXT',
             'boolean', 'bool' => 'BIT',
             'float', 'double' => 'FLOAT',
+            'real' => 'REAL',
             'decimal' => sprintf('DECIMAL(%d,%d)', $column->precision ?? 10, $column->scale ?? 2),
             'datetime' => 'DATETIME',
             'date' => 'DATE',
