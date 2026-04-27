@@ -41,4 +41,12 @@ final class ColumnMetadata
 
         return implode(' ', $parts);
     }
+
+    /**
+     * Returns true if this column has a generated value (e.g. IDENTITY).
+     */
+    public function isGenerated(): bool
+    {
+        return $this->generatedValue !== null;
+    }
 }

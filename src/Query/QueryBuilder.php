@@ -243,6 +243,40 @@ final class QueryBuilder implements QueryBuilderInterface
         return array_merge($this->parameters, $this->havingParameters);
     }
 
+    /**
+     * Returns the current FROM table name, or null if not set.
+     */
+    public function getFrom(): ?string
+    {
+        return $this->fromTable;
+    }
+
+    /**
+     * Returns the current FROM alias, or null if not set.
+     */
+    public function getFromAlias(): ?string
+    {
+        return $this->fromAlias;
+    }
+
+    /**
+     * Returns the current SELECT columns.
+     *
+     * @return string[]
+     */
+    public function getSelectColumns(): array
+    {
+        return $this->selectColumns;
+    }
+
+    /**
+     * Returns true if DISTINCT is enabled.
+     */
+    public function isDistinct(): bool
+    {
+        return $this->distinct;
+    }
+
     // ── Private SQL-building helpers ────────────────────────────────
 
     private function buildSelectClause(): string

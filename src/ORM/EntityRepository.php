@@ -80,6 +80,25 @@ class EntityRepository
         return $this->entityManager->find($this->entityClass, $id);
     }
 
+    /**
+     * Finds an entity by its primary key or throws PersistenceException if not found.
+     *
+     * @throws \SybaseORM\Exception\PersistenceException If the entity is not found.
+     */
+    public function findOrFail(mixed $id): object
+    {
+        $entity = $this->find($id);
+
+        if ($entity === null) {
+            throw \SybaseORM\Exception\PersistenceException::forEntity(
+                $this->entityClass,
+                sprintf('find (id: %s)', is_array($id) ? json_encode($id) : (string) $id),
+            );
+        }
+
+        return $entity;
+    }
+
     /** @return object[] */
     public function findAll(): array
     {

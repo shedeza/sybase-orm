@@ -283,4 +283,29 @@ final class SybaseDialect implements DialectInterface
     {
         return 'TRUNCATE TABLE ' . $this->quoteIdentifier($table);
     }
+
+    /**
+     * Generates a SELECT TOP N query for simple top-N retrieval.
+     *
+     * @param int      $top     Number of rows to return
+     * @param string[] $columns Columns to select
+     * @param string   $from    Table name
+     * @param string|null $alias Table alias
+     */
+    public function generateSelectTop(int $top, array $columns, string $from, ?string $alias = null): string
+    {
+        $quotedColumns = array_map(
+            fn(string $col) => $col === '*' ? '*' : $this->quoteIdentifier($col),
+            $columns,
+        );
+        $quotedFrom = $this->quoteIdentifier($from);
+
+        $sql = 'SELECT TOP ' . $top . ' ' . implode(', ', $quotedColumns) . ' FROM ' . $quotedFrom;
+
+        if ($alias !== null) {
+            $sql .= ' AS ' . $this->quoteIdentifier($alias);
+        }
+
+        return $sql;
+    }
 }
