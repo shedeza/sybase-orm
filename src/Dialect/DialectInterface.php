@@ -39,4 +39,7 @@ interface DialectInterface
 
     /** Generates a SELECT CASE WHEN EXISTS (...) query. */
     public function generateExists(string $from, string $whereClause): string;
+
+    /** Generates a TRUNCATE TABLE statement. */
+    public function generateTruncate(string $table): string;
 }

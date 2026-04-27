@@ -275,4 +275,12 @@ final class SybaseDialect implements DialectInterface
 
         return $sql;
     }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function generateTruncate(string $table): string
+    {
+        return 'TRUNCATE TABLE ' . $this->quoteIdentifier($table);
+    }
 }

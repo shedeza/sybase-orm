@@ -16,4 +16,16 @@ final class ConnectionLostException extends SybaseORMException
     ) {
         parent::__construct($message, $code, $previous);
     }
+
+    /**
+     * Creates a ConnectionLostException from a PDOException.
+     */
+    public static function fromPdoException(\PDOException $e): self
+    {
+        return new self(
+            'Connection to Sybase ASE was lost: ' . $e->getMessage(),
+            (int) $e->getCode(),
+            $e,
+        );
+    }
 }

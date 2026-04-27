@@ -16,4 +16,17 @@ final class OqlParseException extends SybaseORMException
     ) {
         parent::__construct($message, $code, $previous);
     }
+
+    /**
+     * Creates an OqlParseException for an unexpected token.
+     */
+    public static function unexpectedToken(string $expected, string $actual, string $oql): self
+    {
+        return new self(sprintf(
+            'Expected "%s" but found "%s" in OQL: %s',
+            $expected,
+            $actual,
+            $oql,
+        ));
+    }
 }

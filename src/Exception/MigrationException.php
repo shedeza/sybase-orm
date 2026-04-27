@@ -16,4 +16,16 @@ final class MigrationException extends SybaseORMException
     ) {
         parent::__construct($message, $code, $previous);
     }
+
+    /**
+     * Creates a MigrationException for a specific version failure.
+     */
+    public static function forVersion(string $version, string $reason, ?\Throwable $previous = null): self
+    {
+        return new self(
+            sprintf('Migration "%s" failed: %s', $version, $reason),
+            0,
+            $previous,
+        );
+    }
 }

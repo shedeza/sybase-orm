@@ -16,4 +16,16 @@ final class PersistenceException extends SybaseORMException
     ) {
         parent::__construct($message, $code, $previous);
     }
+
+    /**
+     * Creates a PersistenceException for a failed entity operation.
+     */
+    public static function forEntity(string $entityClass, string $operation, ?\Throwable $previous = null): self
+    {
+        return new self(
+            sprintf('Failed to %s entity "%s".', $operation, $entityClass),
+            0,
+            $previous,
+        );
+    }
 }
