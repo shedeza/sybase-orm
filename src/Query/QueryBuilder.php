@@ -142,6 +142,11 @@ final class QueryBuilder implements QueryBuilderInterface
         return $this;
     }
 
+    public function addOrderBy(string $column, string $direction = 'ASC'): static
+    {
+        return $this->orderBy($column, $direction);
+    }
+
     public function groupBy(string ...$columns): static
     {
         $this->groupByColumns = $columns;

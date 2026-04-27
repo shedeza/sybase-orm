@@ -33,6 +33,9 @@ interface QueryBuilderInterface
     /** Define el ordenamiento de los resultados. */
     public function orderBy(string $column, string $direction = 'ASC'): static;
 
+    /** Adds an additional ORDER BY clause without replacing existing ones. */
+    public function addOrderBy(string $column, string $direction = 'ASC'): static;
+
     /** Define la agrupación de los resultados. */
     public function groupBy(string ...$columns): static;
 

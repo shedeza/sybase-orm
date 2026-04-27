@@ -300,6 +300,7 @@ final class MigrationManager
         return match ($column->type) {
             'integer', 'int' => 'INT',
             'smallint' => 'SMALLINT',
+            'tinyint' => 'TINYINT',
             'bigint' => 'BIGINT',
             'string' => sprintf('VARCHAR(%d)', $column->length ?? 255),
             'text' => 'TEXT',

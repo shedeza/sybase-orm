@@ -72,6 +72,12 @@ final class Types
     /** DATETIME — fecha y hora con milisegundos */
     public const DATETIME = 'datetime';
 
+    /** DATE — solo fecha (sin hora) */
+    public const DATE = 'date';
+
+    /** TIME — solo hora (sin fecha) */
+    public const TIME = 'time';
+
     // ── Prevent instantiation ───────────────────────────────────────
 
     private function __construct()

@@ -19,6 +19,41 @@ final class TypeCaster implements TypeCasterInterface
     /** @var array<string, CustomTypeInterface> Instancias cacheadas de tipos personalizados */
     private array $customTypeInstances = [];
 
+    /** @var string[] Built-in type names */
+    private const BUILTIN_TYPES = [
+        'bool', 'boolean',
+        'datetime',
+        'int', 'integer', 'tinyint', 'smallint', 'bigint',
+        'float', 'double', 'decimal', 'real',
+        'string', 'varchar', 'text',
+    ];
+
+    /**
+     * Returns true if the given type name is a built-in type.
+     */
+    public function isBuiltinType(string $type): bool
+    {
+        return in_array($type, self::BUILTIN_TYPES, true);
+    }
+
+    /**
+     * Returns true if the given type name is registered as a custom type.
+     */
+    public function isRegisteredType(string $typeName): bool
+    {
+        return isset($this->customTypes[$typeName]);
+    }
+
+    /**
+     * Returns the list of registered custom type names.
+     *
+     * @return string[]
+     */
+    public function getRegisteredTypeNames(): array
+    {
+        return array_keys($this->customTypes);
+    }
+
     public function toDatabaseValue(mixed $value, string $type): mixed
     {
         if ($value === null) {
