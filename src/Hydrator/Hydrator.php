@@ -55,6 +55,9 @@ final class Hydrator implements HydratorInterface
         // Hydrate eager-loaded relationships
         $this->hydrateEagerRelationships($entity, $row, $metadata, $reflectionClass);
 
+        // Wrap to-many relationship arrays in PersistentCollection
+        $this->wrapCollectionRelationships($entity, $metadata, $reflectionClass);
+
         // Store in Identity Map if available
         if ($this->identityMap !== null) {
             $this->storeInIdentityMap($entity, $metadata);
@@ -124,10 +127,13 @@ final class Hydrator implements HydratorInterface
         ClassMetadata $metadata,
         ReflectionClass $reflectionClass,
     ): void {
+        // Collect embedded property values grouped by embedded name
+        /** @var array<string, array<string, mixed>> */
+        $embeddedValues = [];
+
         foreach ($row as $columnName => $rawValue) {
             $column = $metadata->getColumnByName($columnName);
             if ($column === null) {
-                // Columna no mapeada — ignorar silenciosamente
                 continue;
             }
 
@@ -135,7 +141,43 @@ final class Hydrator implements HydratorInterface
                 ? $this->typeCaster->toPhpValue($rawValue, $column->type)
                 : null;
 
-            $this->setPropertyValue($entity, $column->propertyName, $phpValue, $reflectionClass);
+            // Check if this is an embedded property (dot notation: "address.street")
+            if (str_contains($column->propertyName, '.')) {
+                [$embeddedProp, $innerProp] = explode('.', $column->propertyName, 2);
+                $embeddedValues[$embeddedProp][$innerProp] = $phpValue;
+            } else {
+                $this->setPropertyValue($entity, $column->propertyName, $phpValue, $reflectionClass);
+            }
+        }
+
+        // Hydrate embedded objects
+        foreach ($metadata->embeddeds as $embedded) {
+            $values = $embeddedValues[$embedded->propertyName] ?? [];
+            if (empty($values)) {
+                continue;
+            }
+
+            // If all values are null, don't create the embedded object
+            $allNull = true;
+            foreach ($values as $v) {
+                if ($v !== null) {
+                    $allNull = false;
+                    break;
+                }
+            }
+
+            if ($allNull) {
+                continue;
+            }
+
+            $embReflection = $this->getReflectionClass($embedded->class);
+            $embObject = $embReflection->newInstanceWithoutConstructor();
+
+            foreach ($values as $innerProp => $value) {
+                $this->setPropertyValue($embObject, $innerProp, $value, $embReflection);
+            }
+
+            $this->setPropertyValue($entity, $embedded->propertyName, $embObject, $reflectionClass);
         }
     }
 
@@ -187,6 +229,49 @@ final class Hydrator implements HydratorInterface
             // Hydrate the related entity (recursively uses Identity Map)
             $relatedEntity = $this->hydrate($relatedRow, $relationship->targetEntity);
             $this->setPropertyValue($entity, $relationship->propertyName, $relatedEntity, $this->getReflectionClass($entity::class));
+        }
+    }
+
+    /**
+     * Wraps to-many relationship properties in PersistentCollection.
+     *
+     * For properties that are currently arrays, wraps them in PersistentCollection::fromArray().
+     * For properties that are null (lazy relationships), sets an empty PersistentCollection
+     * that could be initialized later with a loader.
+     *
+     * @param ReflectionClass<object> $reflectionClass
+     */
+    private function wrapCollectionRelationships(
+        object $entity,
+        ClassMetadata $metadata,
+        ReflectionClass $reflectionClass,
+    ): void {
+        foreach ($metadata->relationships as $relationship) {
+            // Only wrap to-many relationships
+            if ($relationship->type !== 'OneToMany' && $relationship->type !== 'ManyToMany') {
+                continue;
+            }
+
+            $property = $this->getReflectionProperty($reflectionClass->getName(), $relationship->propertyName);
+            if ($property === null) {
+                continue;
+            }
+
+            $currentValue = $property->getValue($entity);
+
+            // If already a PersistentCollection, skip
+            if ($currentValue instanceof \SybaseORM\ORM\PersistentCollection) {
+                continue;
+            }
+
+            if (is_array($currentValue)) {
+                $collection = \SybaseORM\ORM\PersistentCollection::fromArray($currentValue);
+            } else {
+                // Null or uninitialized — set empty initialized collection
+                $collection = \SybaseORM\ORM\PersistentCollection::fromArray([]);
+            }
+
+            $property->setValue($entity, $collection);
         }
     }
 

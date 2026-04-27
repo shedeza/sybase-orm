@@ -47,6 +47,8 @@ final class ClassMetadata
         public readonly array $lifecycleHooks = [],
         array $idFields = [],
         public readonly ?string $repositoryClass = null,
+        /** @var EmbeddedMetadata[] */
+        public readonly array $embeddeds = [],
     ) {
         // Compute idFields and idField for backward compatibility
         if ($idFields !== []) {

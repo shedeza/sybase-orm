@@ -10,6 +10,8 @@ use ReflectionProperty;
 use SybaseORM\Attribute\Column;
 use SybaseORM\Attribute\DiscriminatorColumn;
 use SybaseORM\Attribute\DiscriminatorMap;
+use SybaseORM\Attribute\Embeddable;
+use SybaseORM\Attribute\Embedded;
 use SybaseORM\Attribute\Entity;
 use SybaseORM\Attribute\GeneratedValue;
 use SybaseORM\Attribute\HasLifecycleHooks;
@@ -115,6 +117,7 @@ final class MetadataReader implements MetadataReaderInterface
         $columns = [];
         $idFields = [];
         $relationships = [];
+        $embeddeds = [];
 
         // Recorrer toda la jerarquía de clases para incluir propiedades privadas heredadas
         $classHierarchy = [];
@@ -145,6 +148,16 @@ final class MetadataReader implements MetadataReaderInterface
                 if ($relationMeta !== null) {
                     $relationships[] = $relationMeta;
                 }
+
+                // Read #[Embedded] properties
+                $embeddedMeta = $this->readEmbeddedMetadata($property);
+                if ($embeddedMeta !== null) {
+                    $embeddeds[] = $embeddedMeta;
+                    // Expand embeddable columns into the parent entity's column list
+                    foreach ($embeddedMeta->columns as $embCol) {
+                        $columns[] = $embCol;
+                    }
+                }
             }
         }
 
@@ -163,6 +176,7 @@ final class MetadataReader implements MetadataReaderInterface
             lifecycleHooks: $lifecycleHooks,
             idFields: $idFields,
             repositoryClass: $entityAttr->repositoryClass,
+            embeddeds: $embeddeds,
         );
 
         // Validate metadata consistency
@@ -295,6 +309,69 @@ final class MetadataReader implements MetadataReaderInterface
     }
 
     /**
+     * Reads #[Embedded] attribute from a property and expands the embeddable's columns.
+     */
+    private function readEmbeddedMetadata(ReflectionProperty $property): ?EmbeddedMetadata
+    {
+        $embeddedAttr = $this->getPropertyAttribute($property, Embedded::class);
+        if ($embeddedAttr === null) {
+            return null;
+        }
+
+        $embeddableClass = $embeddedAttr->class;
+        $prefix = $embeddedAttr->columnPrefix ?? ($this->toSnakeCase($property->getName()) . '_');
+
+        // Verify the target class has #[Embeddable]
+        if (!class_exists($embeddableClass)) {
+            throw new \RuntimeException(sprintf(
+                'Embedded class "%s" on property "%s" does not exist.',
+                $embeddableClass,
+                $property->getName(),
+            ));
+        }
+
+        $embReflection = new \ReflectionClass($embeddableClass);
+        $embeddableAttr = $this->getClassAttribute($embReflection, Embeddable::class);
+        if ($embeddableAttr === null) {
+            throw new \RuntimeException(sprintf(
+                'Class "%s" used in #[Embedded] on property "%s" is not annotated with #[Embeddable].',
+                $embeddableClass,
+                $property->getName(),
+            ));
+        }
+
+        // Read columns from the embeddable class and prefix them
+        $expandedColumns = [];
+        foreach ($embReflection->getProperties() as $embProperty) {
+            $columnAttr = $this->getPropertyAttribute($embProperty, Column::class);
+            if ($columnAttr === null) {
+                continue;
+            }
+
+            $columnName = $columnAttr->name ?? $this->toSnakeCase($embProperty->getName());
+
+            // The propertyName uses dot notation: "address.street" so the Hydrator
+            // knows to set it on the embedded object, not directly on the entity
+            $expandedColumns[] = new ColumnMetadata(
+                propertyName: $property->getName() . '.' . $embProperty->getName(),
+                columnName: $prefix . $columnName,
+                type: $columnAttr->type,
+                nullable: $columnAttr->nullable,
+                length: $columnAttr->length,
+                precision: $columnAttr->precision,
+                scale: $columnAttr->scale,
+            );
+        }
+
+        return new EmbeddedMetadata(
+            propertyName: $property->getName(),
+            class: $embeddableClass,
+            columnPrefix: $prefix,
+            columns: $expandedColumns,
+        );
+    }
+
+    /**
      * @return array{?string, ?string, array<string, string>}
      */
     private function readInheritanceMetadata(ReflectionClass $reflectionClass): array
@@ -370,7 +447,7 @@ final class MetadataReader implements MetadataReaderInterface
 
         $data = @unserialize(
             file_get_contents($path),
-            ['allowed_classes' => [ClassMetadata::class, ColumnMetadata::class, RelationshipMetadata::class]],
+            ['allowed_classes' => [ClassMetadata::class, ColumnMetadata::class, RelationshipMetadata::class, EmbeddedMetadata::class]],
         );
         if ($data instanceof ClassMetadata) {
             return $data;

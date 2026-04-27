@@ -89,8 +89,7 @@ final class UnitOfWork implements UnitOfWorkInterface
         $changeset = [];
 
         foreach ($metadata->columns as $column) {
-            $refProp = $this->getReflectionProperty($entity::class, $column->propertyName);
-            $currentValue = $refProp->getValue($entity);
+            $currentValue = $this->getEntityPropertyValue($entity, $column->propertyName);
             $oldValue = $snapshot[$column->propertyName] ?? null;
 
             if ($currentValue !== $oldValue) {
@@ -200,8 +199,7 @@ final class UnitOfWork implements UnitOfWorkInterface
         $snapshot = [];
 
         foreach ($metadata->columns as $column) {
-            $refProp = $this->getReflectionProperty($entity::class, $column->propertyName);
-            $snapshot[$column->propertyName] = $refProp->getValue($entity);
+            $snapshot[$column->propertyName] = $this->getEntityPropertyValue($entity, $column->propertyName);
         }
 
         // Capture relationship values for orphan removal detection
@@ -213,8 +211,10 @@ final class UnitOfWork implements UnitOfWorkInterface
             $refProp = $this->getReflectionProperty($entity::class, $relationship->propertyName);
             $value = $refProp->getValue($entity);
 
-            // Deep-copy arrays so snapshot is independent of current state
-            if (is_array($value)) {
+            // Deep-copy collections/arrays so snapshot is independent of current state
+            if ($value instanceof PersistentCollection) {
+                $snapshot[$relationship->propertyName] = [...$value->toArray()];
+            } elseif (is_array($value)) {
                 $snapshot[$relationship->propertyName] = [...$value];
             } else {
                 $snapshot[$relationship->propertyName] = $value;
@@ -255,13 +255,7 @@ final class UnitOfWork implements UnitOfWorkInterface
                 $refProp = $this->getReflectionProperty($entity::class, $relationship->propertyName);
                 $relatedValue = $refProp->getValue($entity);
 
-                if ($relatedValue === null) {
-                    continue;
-                }
-
-                $relatedEntities = is_array($relatedValue) ? $relatedValue : [$relatedValue];
-
-                foreach ($relatedEntities as $relatedEntity) {
+                foreach ($this->extractRelatedEntities($relatedValue) as $relatedEntity) {
                     if (!is_object($relatedEntity)) {
                         continue;
                     }
@@ -308,13 +302,7 @@ final class UnitOfWork implements UnitOfWorkInterface
                 $refProp = $this->getReflectionProperty($entity::class, $relationship->propertyName);
                 $relatedValue = $refProp->getValue($entity);
 
-                if ($relatedValue === null) {
-                    continue;
-                }
-
-                $relatedEntities = is_array($relatedValue) ? $relatedValue : [$relatedValue];
-
-                foreach ($relatedEntities as $relatedEntity) {
+                foreach ($this->extractRelatedEntities($relatedValue) as $relatedEntity) {
                     if (!is_object($relatedEntity)) {
                         continue;
                     }
@@ -363,20 +351,29 @@ final class UnitOfWork implements UnitOfWorkInterface
                     continue;
                 }
 
-                // OneToMany: compare arrays to find removed items
-                if (!is_array($currentValue) || !is_array($snapshotValue)) {
+                // OneToMany: compare collections/arrays to find removed items
+                $currentItems = $currentValue;
+                if ($currentValue instanceof PersistentCollection) {
+                    $currentItems = $currentValue->toArray();
+                }
+                $snapshotItems = $snapshotValue;
+                if ($snapshotValue instanceof PersistentCollection) {
+                    $snapshotItems = $snapshotValue->toArray();
+                }
+
+                if (!is_array($currentItems) || !is_array($snapshotItems)) {
                     continue;
                 }
 
                 // Find items in snapshot that are no longer in current collection
                 $currentSet = new \SplObjectStorage();
-                foreach ($currentValue as $item) {
+                foreach ($currentItems as $item) {
                     if (is_object($item)) {
                         $currentSet->attach($item);
                     }
                 }
 
-                foreach ($snapshotValue as $oldItem) {
+                foreach ($snapshotItems as $oldItem) {
                     if (is_object($oldItem) && !$currentSet->contains($oldItem)) {
                         if (!$this->deletedEntities->contains($oldItem)) {
                             $this->deletedEntities->attach($oldItem);
@@ -432,8 +429,7 @@ final class UnitOfWork implements UnitOfWorkInterface
                 // Get SQL-wrapping expression for this column's type
                 $valueExpressions[] = $this->typeCaster->getDatabaseValueSQL('?', $column->type);
 
-                $refProp = $this->getReflectionProperty($entity::class, $column->propertyName);
-                $phpValue = $refProp->getValue($entity);
+                $phpValue = $this->getEntityPropertyValue($entity, $column->propertyName);
                 $values[] = $this->typeCaster->toDatabaseValue($phpValue, $column->type);
             }
 
@@ -780,6 +776,32 @@ final class UnitOfWork implements UnitOfWorkInterface
     }
 
     /**
+     * Extracts entities from a relationship value (handles arrays, PersistentCollection, single objects).
+     *
+     * @return object[]
+     */
+    private function extractRelatedEntities(mixed $value): array
+    {
+        if ($value === null) {
+            return [];
+        }
+
+        if ($value instanceof PersistentCollection) {
+            return $value->toArray();
+        }
+
+        if (is_array($value)) {
+            return $value;
+        }
+
+        if (is_object($value)) {
+            return [$value];
+        }
+
+        return [];
+    }
+
+    /**
      * Obtiene un ReflectionProperty cacheado para evitar recrearlo en cada operación.
      *
      * @param class-string $className    Nombre completo de la clase
@@ -793,5 +815,31 @@ final class UnitOfWork implements UnitOfWorkInterface
         }
 
         return $this->reflectionCache[$className][$propertyName];
+    }
+
+    /**
+     * Reads a property value from an entity, supporting dot notation for embedded objects.
+     * For "address.street", reads $entity->address then ->street.
+     */
+    private function getEntityPropertyValue(object $entity, string $propertyName): mixed
+    {
+        if (!str_contains($propertyName, '.')) {
+            $refProp = $this->getReflectionProperty($entity::class, $propertyName);
+
+            return $refProp->getValue($entity);
+        }
+
+        // Dot notation: embedded property
+        [$embeddedProp, $innerProp] = explode('.', $propertyName, 2);
+        $refProp = $this->getReflectionProperty($entity::class, $embeddedProp);
+        $embeddedObject = $refProp->getValue($entity);
+
+        if ($embeddedObject === null) {
+            return null;
+        }
+
+        $innerRefProp = $this->getReflectionProperty($embeddedObject::class, $innerProp);
+
+        return $innerRefProp->getValue($embeddedObject);
     }
 }
