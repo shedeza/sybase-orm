@@ -780,7 +780,8 @@ Conversiones automáticas entre PHP y Sybase ASE:
 | `bool` | `BIT` | `true` → `1`, `false` → `0` |
 | `DateTime` | `DATETIME` | Formato `YYYY-MM-DD HH:MM:SS.mmm` |
 | `int` | `INT` | Conversión directa |
-| `float` | `FLOAT` / `DECIMAL` | Conversión directa |
+| `float` | `FLOAT` / `REAL` | Conversión directa |
+| `string` | `DECIMAL` / `NUMERIC` | Preserva precisión como string PHP |
 | `string` | `VARCHAR` / `TEXT` | Conversión directa |
 | `BackedEnum` | Valor escalar | `->value` para DB, `::from()` para PHP |
 

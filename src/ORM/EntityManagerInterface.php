@@ -80,6 +80,9 @@ interface EntityManagerInterface
     /** Checks if an entity is managed by the UnitOfWork. */
     public function isManaged(object $entity): bool;
 
+    /** Alias for isManaged() — Doctrine API compatibility. */
+    public function contains(object $entity): bool;
+
     /** Detaches an entity from the persistence context. */
     public function detach(object $entity): void;
 

@@ -52,11 +52,15 @@ final class MetadataReader implements MetadataReaderInterface
         PostRemove::class => 'PostRemove',
     ];
 
-    /** @var array<string, ClassMetadata> In-memory metadata cache keyed by class name. */
+    /** @var array<string, ClassMetadata> In-memory metadata cache keyed by class name (shared across instances). */
     private static array $memoryCache = [];
+
+    /** @var array<string, ClassMetadata> Instance-level cache (isolated per MetadataReader instance). */
+    private array $instanceCache = [];
 
     public function __construct(
         private readonly ?string $cacheDir = null,
+        private readonly bool $useInstanceCache = false,
     ) {
     }
 
@@ -68,9 +72,22 @@ final class MetadataReader implements MetadataReaderInterface
         self::$memoryCache = [];
     }
 
+    /**
+     * Clears this instance's local cache.
+     */
+    public function clearInstanceCache(): void
+    {
+        $this->instanceCache = [];
+    }
+
     public function getClassMetadata(string $entityClass): ClassMetadata
     {
-        // 1. Check in-memory cache
+        // 1a. Check instance-level cache (if enabled)
+        if ($this->useInstanceCache && isset($this->instanceCache[$entityClass])) {
+            return $this->instanceCache[$entityClass];
+        }
+
+        // 1b. Check shared in-memory cache
         if (isset(self::$memoryCache[$entityClass])) {
             return self::$memoryCache[$entityClass];
         }
@@ -153,6 +170,9 @@ final class MetadataReader implements MetadataReaderInterface
 
         // Store in memory cache
         self::$memoryCache[$entityClass] = $metadata;
+        if ($this->useInstanceCache) {
+            $this->instanceCache[$entityClass] = $metadata;
+        }
 
         // Store in file cache
         if ($this->cacheDir !== null) {
@@ -311,15 +331,28 @@ final class MetadataReader implements MetadataReaderInterface
             return [];
         }
 
-        $hooks = [];
+        /** @var array<string, array<int, array{method: string, priority: int}>> */
+        $hookEntries = [];
 
         foreach ($reflectionClass->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
             foreach (self::LIFECYCLE_HOOK_NAMES as $hookAttrClass => $hookName) {
                 $attrs = $method->getAttributes($hookAttrClass);
                 if (!empty($attrs)) {
-                    $hooks[$hookName][] = $method->getName();
+                    $attrInstance = $attrs[0]->newInstance();
+                    $priority = $attrInstance->priority ?? 0;
+                    $hookEntries[$hookName][] = [
+                        'method' => $method->getName(),
+                        'priority' => $priority,
+                    ];
                 }
             }
+        }
+
+        // Sort by priority descending (higher priority executes first)
+        $hooks = [];
+        foreach ($hookEntries as $hookName => $entries) {
+            usort($entries, fn($a, $b) => $b['priority'] <=> $a['priority']);
+            $hooks[$hookName] = array_map(fn($e) => $e['method'], $entries);
         }
 
         return $hooks;

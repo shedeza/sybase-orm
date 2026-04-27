@@ -145,17 +145,18 @@ final class OqlPrinter
 
     private function printCustomFunctionCall(CustomFunctionCall $func): string
     {
-        if ($func->functionName === 'RAND') {
-            return 'RAND()';
-        }
-
-        // CONVERT(expr AS type)
         $args = array_map(
             fn(PropertyAccess|Literal|Parameter|CustomFunctionCall $arg) => $this->printCustomFunctionArgument($arg),
             $func->arguments,
         );
 
-        return 'CONVERT(' . implode(', ', $args) . ' AS ' . $func->castType . ')';
+        // CONVERT has special syntax: CONVERT(expr AS type)
+        if ($func->functionName === 'CONVERT' && $func->castType !== null) {
+            return 'CONVERT(' . implode(', ', $args) . ' AS ' . $func->castType . ')';
+        }
+
+        // Generic function: FUNCNAME(arg1, arg2, ...) or FUNCNAME()
+        return $func->functionName . '(' . implode(', ', $args) . ')';
     }
 
     private function printCustomFunctionArgument(PropertyAccess|Literal|Parameter|CustomFunctionCall $arg): string
