@@ -999,6 +999,69 @@ php bin/console sybase:proxy:generate
 php bin/console sybase:cache:clear
 ```
 
+## Colecciones
+
+El ORM provee una jerarquía de colecciones para manejar relaciones to-many:
+
+```php
+use SybaseORM\Collection\Collection;          // Interfaz base
+use SybaseORM\Collection\ArrayCollection;     // Colección en memoria (sin BD)
+use SybaseORM\ORM\PersistentCollection;       // Colección lazy-loading (desde BD)
+```
+
+### ArrayCollection — colecciones en código de aplicación
+
+Para colecciones que no provienen de la base de datos:
+
+```php
+use SybaseORM\Collection\ArrayCollection;
+
+$items = new ArrayCollection([$producto1, $producto2]);
+
+$items->add($producto3);
+$items->remove($producto1);
+$items->contains($producto2);  // true
+$items->count();               // 2
+$items->isEmpty();             // false
+$items->first();               // $producto2
+$items->last();                // $producto3
+
+// Filtrar y mapear
+$caros = $items->filter(fn($p) => $p->getPrecio() > '100.00');
+$nombres = $items->map(fn($p) => $p->getNombre());
+
+// Iterable y JSON-serializable
+foreach ($items as $item) { /* ... */ }
+json_encode($items); // [...]
+```
+
+### PersistentCollection — colecciones desde la BD
+
+El Hydrator asigna automáticamente `PersistentCollection` a relaciones OneToMany/ManyToMany. La colección se carga lazy (al primer acceso):
+
+```php
+// La colección NO se carga hasta que se accede
+$ordenes = $cliente->getOrdenes(); // PersistentCollection (no inicializada)
+
+// Primer acceso dispara la carga desde BD
+foreach ($ordenes as $orden) { /* carga aquí */ }
+```
+
+### Interfaz Collection
+
+Ambas implementan `Collection`, permitiendo código polimórfico:
+
+```php
+use SybaseORM\Collection\Collection;
+
+function procesarItems(Collection $items): void
+{
+    foreach ($items as $item) {
+        // Funciona con ArrayCollection y PersistentCollection
+    }
+}
+```
+
 ## Caché
 
 El ORM implementa dos niveles de caché:
@@ -1064,6 +1127,7 @@ El `ConnectionManager` mantiene un caché interno de `PDOStatement` (`stmtCache`
 src/
 ├── Attribute/           # PHP Attributes para mapeo (Entity, Column, Id, relaciones, herencia, hooks, Embeddable)
 ├── Cache/               # Caché de dos niveles (IdentityMap + Redis)
+├── Collection/          # Collection interface, ArrayCollection (base para colecciones)
 ├── Command/             # Comandos de consola Symfony
 ├── Connection/          # Gestión de conexiones PDO dblib, savepoints, charset conversion
 ├── DependencyInjection/ # Integración con el contenedor DI de Symfony
@@ -1098,7 +1162,7 @@ El `SybaseDialect` maneja las particularidades de Sybase ASE:
 vendor/bin/phpunit
 ```
 
-3031+ tests cubriendo todos los componentes.
+3048+ tests cubriendo todos los componentes.
 
 ## Licencia
 

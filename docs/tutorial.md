@@ -21,7 +21,8 @@
 17. [Caché](#17-caché)
 18. [Manejo de errores](#18-manejo-de-errores)
 19. [Claves primarias compuestas](#19-claves-primarias-compuestas)
-20. [Buenas prácticas](#20-buenas-prácticas)
+20. [Colecciones](#20-colecciones)
+21. [Buenas prácticas](#21-buenas-prácticas)
 
 ---
 
@@ -770,7 +771,31 @@ $inscripcion = $this->em->find(Inscripcion::class, [
 
 ---
 
-## 20. Buenas prácticas
+## 20. Colecciones
+
+```php
+use SybaseORM\Collection\Collection;
+use SybaseORM\Collection\ArrayCollection;
+use SybaseORM\ORM\PersistentCollection;
+
+// ArrayCollection: para colecciones en código de aplicación (sin BD)
+$items = new ArrayCollection([$item1, $item2]);
+$items->add($item3);
+$items->remove($item1);
+$items->filter(fn($i) => $i->isActivo());
+
+// PersistentCollection: asignada automáticamente por el Hydrator a relaciones to-many
+// Se carga lazy al primer acceso (iteración, count, etc.)
+
+// Ambas implementan Collection — código polimórfico:
+function procesar(Collection $items): void {
+    foreach ($items as $item) { /* ... */ }
+}
+```
+
+---
+
+## 21. Buenas prácticas
 
 1. **Usa `saveMany()`** en vez de `save()` en loops — un solo flush para todo el lote
 2. **Usa `queryIterator()`** para conjuntos grandes — evita cargar todo en memoria
