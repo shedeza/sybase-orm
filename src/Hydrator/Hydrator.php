@@ -257,9 +257,9 @@ final class Hydrator implements HydratorInterface
                 continue;
             }
 
-            // Don't wrap if the property is typed as 'array' — PersistentCollection
+            // Don't wrap if the property is typed as 'array' — Collection
             // is not assignable to array-typed properties. Only wrap untyped or
-            // PersistentCollection-typed properties.
+            // Collection-typed properties.
             $propertyType = $property->getType();
             if ($propertyType instanceof \ReflectionNamedType && $propertyType->getName() === 'array') {
                 continue;
@@ -267,8 +267,8 @@ final class Hydrator implements HydratorInterface
 
             $currentValue = $property->getValue($entity);
 
-            // If already a PersistentCollection, skip
-            if ($currentValue instanceof \SybaseORM\ORM\PersistentCollection) {
+            // If already a Collection, skip
+            if ($currentValue instanceof \SybaseORM\Collection\Collection) {
                 continue;
             }
 

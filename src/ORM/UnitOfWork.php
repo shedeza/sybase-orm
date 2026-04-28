@@ -212,7 +212,7 @@ final class UnitOfWork implements UnitOfWorkInterface
             $value = $refProp->getValue($entity);
 
             // Deep-copy collections/arrays so snapshot is independent of current state
-            if ($value instanceof PersistentCollection) {
+            if ($value instanceof \SybaseORM\Collection\Collection) {
                 $snapshot[$relationship->propertyName] = [...$value->toArray()];
             } elseif (is_array($value)) {
                 $snapshot[$relationship->propertyName] = [...$value];
@@ -353,11 +353,11 @@ final class UnitOfWork implements UnitOfWorkInterface
 
                 // OneToMany: compare collections/arrays to find removed items
                 $currentItems = $currentValue;
-                if ($currentValue instanceof PersistentCollection) {
+                if ($currentValue instanceof \SybaseORM\Collection\Collection) {
                     $currentItems = $currentValue->toArray();
                 }
                 $snapshotItems = $snapshotValue;
-                if ($snapshotValue instanceof PersistentCollection) {
+                if ($snapshotValue instanceof \SybaseORM\Collection\Collection) {
                     $snapshotItems = $snapshotValue->toArray();
                 }
 
@@ -786,7 +786,7 @@ final class UnitOfWork implements UnitOfWorkInterface
             return [];
         }
 
-        if ($value instanceof PersistentCollection) {
+        if ($value instanceof \SybaseORM\Collection\Collection) {
             return $value->toArray();
         }
 

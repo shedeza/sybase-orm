@@ -4,26 +4,22 @@ declare(strict_types=1);
 
 namespace SybaseORM\ORM;
 
+use SybaseORM\Collection\ArrayCollection;
+
 /**
- * A collection wrapper that supports lazy loading for OneToMany/ManyToMany relationships.
+ * A database-backed collection that supports lazy loading.
  *
  * When accessed for the first time (iteration, count, array access), the collection
  * triggers its initializer closure to load the related entities from the database.
  *
- * This prevents N+1 queries when the collection is never accessed, and loads all
- * related entities in a single query when it is.
+ * Extends ArrayCollection with lazy initialization behavior.
  *
  * @template T of object
- * @implements \IteratorAggregate<int, T>
- * @implements \Countable
- * @implements \ArrayAccess<int, T>
+ * @extends ArrayCollection<T>
  */
-final class PersistentCollection implements \IteratorAggregate, \Countable, \ArrayAccess, \JsonSerializable
+final class PersistentCollection extends ArrayCollection
 {
     private bool $initialized = false;
-
-    /** @var T[] */
-    private array $elements = [];
 
     /** @var (\Closure(): T[])|null */
     private ?\Closure $initializer;
@@ -33,6 +29,7 @@ final class PersistentCollection implements \IteratorAggregate, \Countable, \Arr
      */
     public function __construct(?\Closure $initializer = null)
     {
+        parent::__construct([]);
         $this->initializer = $initializer;
     }
 
@@ -60,7 +57,7 @@ final class PersistentCollection implements \IteratorAggregate, \Countable, \Arr
     }
 
     /**
-     * Forces initialization of the collection.
+     * Forces initialization of the collection (loads from DB if not yet loaded).
      */
     public function initialize(): void
     {
@@ -76,193 +73,121 @@ final class PersistentCollection implements \IteratorAggregate, \Countable, \Arr
         }
     }
 
-    /**
-     * Returns all elements as a plain array.
-     *
-     * @return T[]
-     */
+    // ── Override all access methods to trigger initialization ────
+
     public function toArray(): array
     {
         $this->initialize();
 
-        return $this->elements;
+        return parent::toArray();
     }
 
-    /**
-     * Adds an element to the collection.
-     *
-     * @param T $element
-     */
     public function add(object $element): void
     {
         $this->initialize();
-        $this->elements[] = $element;
+        parent::add($element);
     }
 
-    /**
-     * Removes an element from the collection.
-     *
-     * @param T $element
-     * @return bool True if the element was found and removed
-     */
     public function remove(object $element): bool
     {
         $this->initialize();
 
-        foreach ($this->elements as $key => $existing) {
-            if ($existing === $element) {
-                unset($this->elements[$key]);
-                $this->elements = array_values($this->elements);
-
-                return true;
-            }
-        }
-
-        return false;
+        return parent::remove($element);
     }
 
-    /**
-     * Checks if the collection contains the given element.
-     *
-     * @param T $element
-     */
     public function contains(object $element): bool
     {
         $this->initialize();
 
-        foreach ($this->elements as $existing) {
-            if ($existing === $element) {
-                return true;
-            }
-        }
-
-        return false;
+        return parent::contains($element);
     }
 
-    /**
-     * Returns true if the collection is empty.
-     */
     public function isEmpty(): bool
     {
         $this->initialize();
 
-        return $this->elements === [];
+        return parent::isEmpty();
     }
 
-    /**
-     * Returns the first element or null if empty.
-     *
-     * @return T|null
-     */
     public function first(): ?object
     {
         $this->initialize();
 
-        return $this->elements[0] ?? null;
+        return parent::first();
     }
 
-    /**
-     * Returns the last element or null if empty.
-     *
-     * @return T|null
-     */
     public function last(): ?object
     {
         $this->initialize();
 
-        if ($this->elements === []) {
-            return null;
-        }
-
-        return $this->elements[array_key_last($this->elements)];
+        return parent::last();
     }
 
-    /**
-     * Filters the collection using a callback.
-     *
-     * @param callable(T): bool $predicate
-     * @return self<T>
-     */
-    public function filter(callable $predicate): self
+    public function filter(callable $predicate): static
     {
         $this->initialize();
 
         return self::fromArray(array_values(array_filter($this->elements, $predicate)));
     }
 
-    /**
-     * Maps the collection using a callback.
-     *
-     * @template U
-     * @param callable(T): U $callback
-     * @return U[]
-     */
     public function map(callable $callback): array
     {
         $this->initialize();
 
-        return array_map($callback, $this->elements);
+        return parent::map($callback);
     }
 
-    // ── IteratorAggregate ───────────────────────────────────────
+    public function clear(): void
+    {
+        $this->initialized = true;
+        $this->initializer = null;
+        parent::clear();
+    }
 
     public function getIterator(): \ArrayIterator
     {
         $this->initialize();
 
-        return new \ArrayIterator($this->elements);
+        return parent::getIterator();
     }
-
-    // ── Countable ───────────────────────────────────────────────
 
     public function count(): int
     {
         $this->initialize();
 
-        return count($this->elements);
+        return parent::count();
     }
-
-    // ── ArrayAccess ─────────────────────────────────────────────
 
     public function offsetExists(mixed $offset): bool
     {
         $this->initialize();
 
-        return isset($this->elements[$offset]);
+        return parent::offsetExists($offset);
     }
 
     public function offsetGet(mixed $offset): mixed
     {
         $this->initialize();
 
-        return $this->elements[$offset] ?? null;
+        return parent::offsetGet($offset);
     }
 
     public function offsetSet(mixed $offset, mixed $value): void
     {
         $this->initialize();
-
-        if ($offset === null) {
-            $this->elements[] = $value;
-        } else {
-            $this->elements[$offset] = $value;
-        }
+        parent::offsetSet($offset, $value);
     }
 
     public function offsetUnset(mixed $offset): void
     {
         $this->initialize();
-
-        unset($this->elements[$offset]);
-        $this->elements = array_values($this->elements);
+        parent::offsetUnset($offset);
     }
-
-    // ── JsonSerializable ────────────────────────────────────────
 
     public function jsonSerialize(): array
     {
         $this->initialize();
 
-        return $this->elements;
+        return parent::jsonSerialize();
     }
 }
