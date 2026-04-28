@@ -83,10 +83,11 @@ final class ConnectionManagerPingTest extends TestCase
         $mockPdo->method('exec')->willReturn(0);
 
         $mockStmt = $this->createMock(\PDOStatement::class);
+        $mockStmt->method('execute')->willReturn(true);
         $mockStmt->method('fetch')->with(\PDO::FETCH_NUM)->willReturn(['Adaptive Server Enterprise/16.0']);
         $mockStmt->expects($this->once())->method('closeCursor');
 
-        $mockPdo->method('query')->with('SELECT @@version')->willReturn($mockStmt);
+        $mockPdo->method('prepare')->with('SELECT @@version')->willReturn($mockStmt);
 
         $manager->setMockPdo($mockPdo);
 
@@ -100,10 +101,11 @@ final class ConnectionManagerPingTest extends TestCase
         $mockPdo->method('exec')->willReturn(0);
 
         $mockStmt = $this->createMock(\PDOStatement::class);
+        $mockStmt->method('execute')->willReturn(true);
         $mockStmt->method('fetch')->with(\PDO::FETCH_NUM)->willReturn(false);
         $mockStmt->expects($this->once())->method('closeCursor');
 
-        $mockPdo->method('query')->with('SELECT @@version')->willReturn($mockStmt);
+        $mockPdo->method('prepare')->with('SELECT @@version')->willReturn($mockStmt);
 
         $manager->setMockPdo($mockPdo);
 

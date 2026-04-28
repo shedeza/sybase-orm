@@ -35,14 +35,15 @@ final class StmtCacheTest extends TestCase
         return $pdo;
     }
 
-    public function testExecuteQueryCachesPreparedStatement(): void
+    public function testExecuteQueryDoesNotCacheStatements(): void
     {
         $manager = $this->createManager();
         $mockPdo = $this->createMockPdo();
         $mockStmt = $this->createMock(\PDOStatement::class);
 
-        // prepare() should be called only ONCE for the same SQL
-        $mockPdo->expects($this->once())
+        // prepare() should be called TWICE — executeQuery doesn't cache
+        // to avoid cursor conflicts when the caller holds the statement open
+        $mockPdo->expects($this->exactly(2))
             ->method('prepare')
             ->with('SELECT * FROM users WHERE id = ?')
             ->willReturn($mockStmt);
@@ -52,10 +53,7 @@ final class StmtCacheTest extends TestCase
 
         $manager->setMockPdo($mockPdo);
 
-        // First call — prepares and caches
         $manager->executeQuery('SELECT * FROM users WHERE id = ?', [1]);
-
-        // Second call — reuses cached statement
         $manager->executeQuery('SELECT * FROM users WHERE id = ?', [2]);
     }
 
@@ -163,12 +161,13 @@ final class StmtCacheTest extends TestCase
         $manager->executeQuery('SELECT 1', []);
     }
 
-    public function testCachedStatementRecesNewBindParams(): void
+    public function testCachedStatementRebindsParamsOnExecuteStatement(): void
     {
         $manager = $this->createManager();
         $mockPdo = $this->createMockPdo();
         $mockStmt = $this->createMock(\PDOStatement::class);
 
+        // executeStatement caches — prepare called once
         $mockPdo->expects($this->once())
             ->method('prepare')
             ->willReturn($mockStmt);
@@ -181,46 +180,50 @@ final class StmtCacheTest extends TestCase
             },
         );
         $mockStmt->method('execute')->willReturn(true);
+        $mockStmt->method('rowCount')->willReturn(1);
+        $mockStmt->method('closeCursor')->willReturn(true);
 
         $manager->setMockPdo($mockPdo);
 
         // First call
-        $manager->executeQuery('SELECT * FROM t WHERE id = ?', [1]);
+        $manager->executeStatement('UPDATE t SET x = ? WHERE id = ?', ['a', 1]);
 
-        $this->assertCount(1, $boundValues);
-        $this->assertSame(1, $boundValues[0]['val']);
+        $this->assertCount(2, $boundValues);
 
         // Reset tracking
         $boundValues = [];
 
-        // Second call with different params — should rebind
-        $manager->executeQuery('SELECT * FROM t WHERE id = ?', [42]);
+        // Second call with different params — should rebind on cached statement
+        $manager->executeStatement('UPDATE t SET x = ? WHERE id = ?', ['b', 42]);
 
-        $this->assertCount(1, $boundValues);
-        $this->assertSame(42, $boundValues[0]['val']);
+        $this->assertCount(2, $boundValues);
+        $this->assertSame('b', $boundValues[0]['val']);
+        $this->assertSame(42, $boundValues[1]['val']);
     }
 
-    public function testCacheWorksWithExpandedArrayParams(): void
+    public function testExecuteStatementCachesWithExpandedArrayParams(): void
     {
         $manager = $this->createManager();
         $mockPdo = $this->createMockPdo();
         $mockStmt = $this->createMock(\PDOStatement::class);
 
-        // After expansion, SQL becomes "SELECT * FROM t WHERE id IN (?, ?, ?)"
+        // After expansion, SQL becomes "UPDATE t SET x = 1 WHERE id IN (?, ?, ?)"
         $mockPdo->expects($this->once())
             ->method('prepare')
-            ->with('SELECT * FROM t WHERE id IN (?, ?, ?)')
+            ->with('UPDATE t SET x = 1 WHERE id IN (?, ?, ?)')
             ->willReturn($mockStmt);
 
         $mockStmt->method('execute')->willReturn(true);
         $mockStmt->method('bindValue')->willReturn(true);
+        $mockStmt->method('rowCount')->willReturn(3);
+        $mockStmt->method('closeCursor')->willReturn(true);
 
         $manager->setMockPdo($mockPdo);
 
         // First call with array param
-        $manager->executeQuery('SELECT * FROM t WHERE id IN (?)', [[1, 2, 3]]);
+        $manager->executeStatement('UPDATE t SET x = 1 WHERE id IN (?)', [[1, 2, 3]]);
 
         // Second call with same expanded SQL — should reuse cached statement
-        $manager->executeQuery('SELECT * FROM t WHERE id IN (?, ?, ?)', [4, 5, 6]);
+        $manager->executeStatement('UPDATE t SET x = 1 WHERE id IN (?, ?, ?)', [4, 5, 6]);
     }
 }

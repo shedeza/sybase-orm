@@ -123,7 +123,10 @@ class ConnectionManager implements ConnectionManagerInterface
             $pdo = $this->getConnection();
             [$sql, $params] = $this->expandArrayParams($sql, $params);
 
-            $stmt = $this->getCachedStatement($pdo, $sql);
+            // Don't use statement cache for queries — the returned statement
+            // has an open cursor that the caller will read from. Reusing it
+            // would cause "cursor already open" errors in Sybase ASE.
+            $stmt = $pdo->prepare($sql);
 
             $this->bindParams($stmt, $this->convertParams($params));
             $stmt->execute();
@@ -617,7 +620,9 @@ class ConnectionManager implements ConnectionManagerInterface
 
     public function getServerVersion(): string
     {
-        $stmt = $this->getConnection()->query('SELECT @@version');
+        $pdo = $this->getConnection();
+        $stmt = $this->getCachedStatement($pdo, 'SELECT @@version');
+        $stmt->execute();
         $row = $stmt->fetch(\PDO::FETCH_NUM);
         $stmt->closeCursor();
 
