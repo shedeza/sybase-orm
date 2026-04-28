@@ -24,7 +24,7 @@ Symfony Bundle que implementa un ORM completo para **Sybase ASE** (Adaptive Serv
 ```
 
 ```bash
-composer require sybase-orm/sybase-ase-orm-bundle
+composer require shedeza/sybase-orm
 ```
 
 **Paso 2:** Ejecutar el comando de instalación:

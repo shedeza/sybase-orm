@@ -27,7 +27,7 @@ final class InstallCommand extends Command
 {
     private const CONFIG_TEMPLATE = <<<'YAML'
 # Configuración de SybaseORM Bundle
-# Documentación: https://github.com/sybase-orm/sybase-ase-orm-bundle
+# Documentación: https://github.com/shedeza/sybase-orm
 sybase_orm:
     connection:
         # Opción 1 (recomendada): URL de conexión única
