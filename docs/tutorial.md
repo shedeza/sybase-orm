@@ -171,50 +171,47 @@ Notas:
 ## 5. Operaciones CRUD
 
 ```php
-use SybaseORM\ORM\EntityManagerInterface;
+use App\Entity\Producto;
+use SybaseORM\ORM\EntityRepository;
 
 class ProductoController
 {
     public function __construct(
-        private readonly EntityManagerInterface $em,
+        private readonly EntityRepository $productoRepo,
     ) {}
 
     public function crear(): void
     {
-        $repo = $this->em->getRepository(Producto::class);
-
         $producto = new Producto();
         $producto->setNombre('Widget');
         $producto->setPrecio('29.99');
 
-        $repo->save($producto);
+        $this->productoRepo->save($producto);
         // ID asignado automáticamente via @@identity
     }
 
     public function buscar(int $id): ?Producto
     {
-        return $this->em->getRepository(Producto::class)->find($id);
+        return $this->productoRepo->find($id);
     }
 
     public function buscarOFallar(int $id): Producto
     {
         // Lanza PersistenceException si no existe
-        return $this->em->getRepository(Producto::class)->findOrFail($id);
+        return $this->productoRepo->findOrFail($id);
     }
 
     public function actualizar(int $id): void
     {
-        $repo = $this->em->getRepository(Producto::class);
-        $producto = $repo->find($id);
+        $producto = $this->productoRepo->find($id);
         $producto->setPrecio('34.99');
-        $repo->save($producto); // Dirty checking detecta el cambio
+        $this->productoRepo->save($producto); // Dirty checking detecta el cambio
     }
 
     public function eliminar(int $id): void
     {
-        $repo = $this->em->getRepository(Producto::class);
-        $producto = $repo->find($id);
-        $repo->delete($producto);
+        $producto = $this->productoRepo->find($id);
+        $this->productoRepo->delete($producto);
     }
 }
 ```

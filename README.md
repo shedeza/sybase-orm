@@ -204,23 +204,22 @@ Cada entidad se gestiona a través de su propio repositorio:
 ```php
 <?php
 
-use SybaseORM\ORM\EntityManagerInterface;
+use App\Entity\Usuario;
+use SybaseORM\ORM\EntityRepository;
 
 class UsuarioController
 {
     public function __construct(
-        private readonly EntityManagerInterface $em,
+        private readonly EntityRepository $usuarioRepo,
     ) {}
 
     public function crear(): void
     {
-        $repo = $this->em->getRepository(Usuario::class);
-
         $usuario = new Usuario();
         $usuario->setNombre('Juan');
         $usuario->setEmail('[email]');
 
-        $repo->save($usuario);
+        $this->usuarioRepo->save($usuario);
 
         // El ID se asigna automáticamente via @@identity
         echo $usuario->getId(); // 1
@@ -228,44 +227,32 @@ class UsuarioController
 
     public function buscar(int $id): ?Usuario
     {
-        return $this->em->getRepository(Usuario::class)->find($id);
+        return $this->usuarioRepo->find($id);
     }
 
     public function modificar(int $id): void
     {
-        $repo = $this->em->getRepository(Usuario::class);
-        $usuario = $repo->find($id);
+        $usuario = $this->usuarioRepo->find($id);
         $usuario->setNombre('Pedro');
 
         // save() detecta el cambio automáticamente (dirty checking)
-        $repo->save($usuario);
+        $this->usuarioRepo->save($usuario);
         // Genera: UPDATE [usuarios] SET [nombre] = ? WHERE [id] = ?
     }
 
     public function eliminar(int $id): void
     {
-        $repo = $this->em->getRepository(Usuario::class);
-        $usuario = $repo->find($id);
-        $repo->delete($usuario);
-    }
-
-    public function desvincular(int $id): void
-    {
-        $usuario = $this->em->getRepository(Usuario::class)->find($id);
-
-        $this->em->isManaged($usuario); // true — rastreado por el UnitOfWork
-        $this->em->contains($usuario);  // true — alias Doctrine-compatible
-        $this->em->detach($usuario);    // Remueve del IdentityMap y del UnitOfWork
-        $this->em->isManaged($usuario); // false — ya no está rastreado
+        $usuario = $this->usuarioRepo->find($id);
+        $this->usuarioRepo->delete($usuario);
     }
 
     public function refrescar(int $id): void
     {
-        $usuario = $this->em->getRepository(Usuario::class)->find($id);
+        $usuario = $this->usuarioRepo->find($id);
         $usuario->setNombre('cambio temporal');
 
         // Descarta cambios en memoria y recarga desde la BD
-        $this->em->refresh($usuario);
+        $this->usuarioRepo->refresh($usuario);
         // $usuario->getNombre() retorna el valor original de la BD
     }
 }
@@ -274,7 +261,10 @@ class UsuarioController
 ### Repositorios
 
 ```php
-$repo = $this->em->getRepository(Usuario::class);
+// Inyectar el repositorio directamente en el constructor del servicio:
+// public function __construct(private readonly EntityRepository $usuarioRepo) {}
+
+$repo = $this->usuarioRepo;
 
 // Consultas
 $usuario = $repo->find(1);
@@ -956,8 +946,9 @@ Ejecuta un callable y hace flush automático al terminar. La transacción es ges
 
 ```php
 $this->em->transactional(function () {
-    $cuenta1 = $this->em->getRepository(Cuenta::class)->find(1);
-    $cuenta2 = $this->em->getRepository(Cuenta::class)->find(2);
+    $cuentaRepo = $this->em->getRepository(Cuenta::class);
+    $cuenta1 = $cuentaRepo->find(1);
+    $cuenta2 = $cuentaRepo->find(2);
 
     $cuenta1->retirar(100);
     $cuenta2->depositar(100);
