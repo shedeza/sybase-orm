@@ -23,7 +23,7 @@ final class ProxyGenerator
         private readonly ?IdentityMapInterface $identityMap = null,
     ) {
         if (!is_dir($this->proxyDir)) {
-            mkdir($this->proxyDir, 0777, true);
+            mkdir($this->proxyDir, 0755, true);
         }
     }
 
@@ -52,7 +52,7 @@ final class ProxyGenerator
 
             $dir = dirname($filePath);
             if (!is_dir($dir)) {
-                mkdir($dir, 0777, true);
+                mkdir($dir, 0755, true);
             }
 
             file_put_contents($filePath, $code);
@@ -99,7 +99,9 @@ final class ProxyGenerator
      */
     private function getProxyFilePath(string $entityClass): string
     {
-        return $this->proxyDir . '/' . str_replace('\\', '_', $entityClass) . 'Proxy.php';
+        $safeName = str_replace(['\\', '/', '..'], '_', $entityClass);
+
+        return $this->proxyDir . '/' . $safeName . 'Proxy.php';
     }
 
     /**

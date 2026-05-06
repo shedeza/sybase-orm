@@ -28,7 +28,17 @@ final class RedisCacheAdapter implements SecondLevelCacheInterface
             return null;
         }
 
-        return unserialize($value);
+        // Use allowed_classes=true because the cache stores entity objects.
+        // SECURITY NOTE: Ensure Redis is properly secured (authentication, network isolation)
+        // to prevent PHP Object Injection via crafted serialized payloads.
+        $result = @unserialize($value, ['allowed_classes' => true]);
+
+        if ($result === false && $value !== serialize(false)) {
+            // Deserialization failed — corrupted or tampered data
+            return null;
+        }
+
+        return $result;
     }
 
     public function put(string $key, mixed $value, ?int $ttl = null): void

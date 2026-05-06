@@ -406,11 +406,17 @@ $sql2 = $qb->reset()
 
 ### OQL (Object Query Language)
 
+> **Seguridad:** Los valores de usuario SIEMPRE deben pasarse como parámetros (`:param`), nunca concatenados como literales en la query OQL. Los parámetros se bindean via PDO y son inmunes a SQL injection.
+
 ```php
+// ✅ CORRECTO — parámetro bindeado (seguro)
 $usuarios = $this->em->query(
     'SELECT u FROM Usuario u WHERE u.activo = :activo ORDER BY u.nombre ASC',
     ['activo' => true]
 );
+
+// ❌ INCORRECTO — nunca concatenar input del usuario en OQL
+// $this->em->query("SELECT u FROM Usuario u WHERE u.nombre = '$userInput'");
 ```
 
 ### OQL: `queryOne()` — resultado único
@@ -1070,6 +1076,8 @@ El ORM implementa dos niveles de caché:
 - **Segundo nivel (Redis)**: opcional, comparte resultados entre sesiones con TTL configurable
 
 Si Redis no está disponible, el sistema continúa operando solo con el primer nivel y registra una advertencia en el log.
+
+> **Seguridad:** El caché de segundo nivel almacena entidades serializadas en Redis. Asegúrate de que Redis esté protegido con autenticación y aislamiento de red para prevenir ataques de inyección de objetos PHP.
 
 ### Limpiar caché programáticamente
 

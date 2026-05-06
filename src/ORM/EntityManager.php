@@ -202,7 +202,7 @@ final class EntityManager implements EntityManagerInterface
         );
         $sql .= ' WHERE ' . $whereClause;
 
-        $this->logger?->debug('SQL', ['sql' => $sql, 'params' => $dbValues]);
+        $this->logger?->debug('SQL', ['sql' => $sql, 'param_count' => count($dbValues)]);
 
         $stmt = $this->connectionManager->executeQuery($sql, $dbValues);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
@@ -353,7 +353,7 @@ final class EntityManager implements EntityManagerInterface
 
         [$sql, $orderedParams] = $this->expandNamedParameters($result['sql'], $result['parameters'], $params);
 
-        $this->logger?->debug('OQL→SQL', ['oql' => $oql, 'sql' => $sql, 'params' => $orderedParams]);
+        $this->logger?->debug('OQL→SQL', ['oql' => $oql, 'sql' => $sql, 'param_count' => count($orderedParams)]);
 
         return $this->connectionManager->executeStatement($sql, $orderedParams);
     }
@@ -419,7 +419,7 @@ final class EntityManager implements EntityManagerInterface
 
         [$sql, $orderedParams] = $this->expandNamedParameters($result['sql'], $result['parameters'], $params);
 
-        $this->logger?->debug('OQL→SQL', ['oql' => $oql, 'sql' => $sql, 'params' => $orderedParams]);
+        $this->logger?->debug('OQL→SQL', ['oql' => $oql, 'sql' => $sql, 'param_count' => count($orderedParams)]);
 
         return ['sql' => $sql, 'params' => $orderedParams, 'ast' => $ast];
     }

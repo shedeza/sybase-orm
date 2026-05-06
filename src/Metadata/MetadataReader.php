@@ -465,7 +465,7 @@ final class MetadataReader implements MetadataReaderInterface
         $dir = dirname($path);
 
         if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+            mkdir($dir, 0755, true);
         }
 
         file_put_contents($path, serialize($metadata));

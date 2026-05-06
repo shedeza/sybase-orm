@@ -2,7 +2,7 @@
     "name": "shedeza/sybase-orm",
     "description": "Symfony Bundle ORM for Sybase ASE",
     "type": "symfony-bundle",
-    "version": "2.2.0",
+    "version": "2.2.1",
     "license": "MIT",
     "minimum-stability": "stable",
     "homepage": "https://github.com/shedeza/sybase-orm",
