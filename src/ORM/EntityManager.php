@@ -69,6 +69,68 @@ final class EntityManager implements EntityManagerInterface
         private readonly ?LoggerInterface $logger = null,
     ) {
         $this->oqlParser = new OqlParser();
+
+        // Configure lazy-loading for to-many relationships
+        if ($this->hydrator instanceof \SybaseORM\Hydrator\Hydrator) {
+            $this->hydrator->setCollectionLoader($this->loadRelatedCollection(...));
+        }
+    }
+
+    /**
+     * Loads related entities for a to-many relationship (used as PersistentCollection initializer).
+     *
+     * @return object[]
+     */
+    private function loadRelatedCollection(string $ownerClass, string $propertyName, object $owner): array
+    {
+        $metadata = $this->metadataReader->getClassMetadata($ownerClass);
+        $relationship = $metadata->getRelationship($propertyName);
+
+        if ($relationship === null) {
+            return [];
+        }
+
+        $targetEntity = $relationship->targetEntity;
+        $targetMeta = $this->metadataReader->getClassMetadata($targetEntity);
+        $targetShortName = $this->getReflectionClass($targetEntity)->getShortName();
+
+        // Determine the FK column on the target entity that points back to the owner
+        if ($relationship->mappedBy !== null) {
+            // Inverse side: the target entity has a ManyToOne with joinColumn pointing to us
+            $targetRelMeta = $targetMeta->getRelationship($relationship->mappedBy);
+            if ($targetRelMeta === null || $targetRelMeta->joinColumn === null) {
+                return [];
+            }
+
+            // Get the owner's ID to query by
+            $ownerIdColumns = $metadata->getIdColumns();
+            if (empty($ownerIdColumns)) {
+                return [];
+            }
+
+            $ownerReflection = $this->getReflectionClass($ownerClass);
+            $ownerId = $ownerReflection->getProperty($ownerIdColumns[0]->propertyName)->getValue($owner);
+
+            if ($ownerId === null) {
+                return [];
+            }
+
+            // Query: SELECT t FROM TargetEntity t WHERE t.fkProperty = :ownerId
+            $fkPropertyName = $targetRelMeta->joinColumn;
+            // Find the property name that maps to this join column
+            $fkColumn = $targetMeta->getColumnByName($fkPropertyName);
+            $fkProp = $fkColumn !== null ? $fkColumn->propertyName : $fkPropertyName;
+
+            $oql = sprintf(
+                'SELECT t FROM %s t WHERE t.%s = :ownerId',
+                $targetShortName,
+                $fkProp,
+            );
+
+            return $this->query($oql, ['ownerId' => $ownerId]);
+        }
+
+        return [];
     }
 
     /**
@@ -270,6 +332,38 @@ final class EntityManager implements EntityManagerInterface
         }
 
         return $this->hydrator->hydrateAll($rows, $entityClass);
+    }
+
+    /**
+     * Executes an OQL query with second-level cache support.
+     *
+     * If the query result is cached, returns it directly without hitting the database.
+     * Otherwise, executes the query, caches the result, and returns it.
+     *
+     * @param string $oql       OQL query string
+     * @param array  $params    Named parameters
+     * @param int    $ttl       Cache TTL in seconds (default: 3600)
+     * @param int    $hydrationMode Hydration mode
+     * @return array Cached or fresh query results
+     */
+    public function queryCached(string $oql, array $params = [], int $ttl = 3600, int $hydrationMode = HydrationMode::HYDRATE_OBJECT): array
+    {
+        // Build a deterministic cache key from OQL + params
+        $cacheKey = md5($oql . '|' . serialize($params) . '|' . $hydrationMode);
+
+        // Check second-level cache
+        $cached = $this->cacheManager->getQueryResult($cacheKey);
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        // Execute query normally
+        $result = $this->query($oql, $params, $hydrationMode);
+
+        // Store in second-level cache
+        $this->cacheManager->putQueryResult($cacheKey, $result, $ttl);
+
+        return $result;
     }
 
     public function queryOne(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): mixed

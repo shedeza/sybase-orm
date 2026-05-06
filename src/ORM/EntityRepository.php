@@ -194,6 +194,16 @@ class EntityRepository
         return $this->entityManager->queryIterator($oql, $params);
     }
 
+    /**
+     * Executes an OQL query with second-level cache support.
+     *
+     * @param int $ttl Cache TTL in seconds (default: 3600)
+     */
+    public function queryCached(string $oql, array $params = [], int $ttl = 3600): array
+    {
+        return $this->entityManager->queryCached($oql, $params, $ttl);
+    }
+
     // ── Conteo y existencia ────────────────────────────────────────
 
     /** @param array<string, mixed> $criteria */

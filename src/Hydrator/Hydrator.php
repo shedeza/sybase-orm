@@ -25,12 +25,27 @@ final class Hydrator implements HydratorInterface
     /** @var array<string, array<string, \ReflectionProperty>> Caché de ReflectionProperty por clase y propiedad */
     private array $reflectionPropertyCache = [];
 
+    /** @var (callable(string $entityClass, string $propertyName, object $owner): array)|null */
+    private $collectionLoader = null;
+
     public function __construct(
         private readonly MetadataReaderInterface $metadataReader,
         private readonly TypeCasterInterface $typeCaster,
         private readonly ?IdentityMapInterface $identityMap = null,
         private readonly ?UnitOfWorkInterface $unitOfWork = null,
     ) {
+    }
+
+    /**
+     * Sets a callable that loads related entities for a collection relationship.
+     * Signature: fn(string $entityClass, string $propertyName, object $owner): array
+     *
+     * When set, PersistentCollections will use this loader as their initializer,
+     * enabling lazy loading of to-many relationships.
+     */
+    public function setCollectionLoader(callable $loader): void
+    {
+        $this->collectionLoader = $loader;
     }
 
     public function hydrate(array $row, string $entityClass): object
@@ -272,10 +287,22 @@ final class Hydrator implements HydratorInterface
                 continue;
             }
 
-            if (is_array($currentValue)) {
+            if (is_array($currentValue) && !empty($currentValue)) {
                 $collection = \SybaseORM\ORM\PersistentCollection::fromArray($currentValue);
+            } elseif ($this->collectionLoader !== null) {
+                // Set up lazy loading — the collection will load on first access
+                $loader = $this->collectionLoader;
+                $ownerEntity = $entity;
+                $relPropName = $relationship->propertyName;
+                $ownerClass = $metadata->entityClass;
+
+                $collection = new \SybaseORM\ORM\PersistentCollection(
+                    function () use ($loader, $ownerClass, $relPropName, $ownerEntity): array {
+                        return ($loader)($ownerClass, $relPropName, $ownerEntity);
+                    }
+                );
             } else {
-                // Null or uninitialized — set empty initialized collection
+                // No loader available — set empty initialized collection
                 $collection = \SybaseORM\ORM\PersistentCollection::fromArray([]);
             }
 

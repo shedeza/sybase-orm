@@ -35,6 +35,14 @@ interface EntityManagerInterface
      */
     public function queryIterator(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): \Generator;
 
+    /**
+     * Executes an OQL query with second-level cache support.
+     * Returns cached results if available, otherwise executes and caches.
+     *
+     * @param int $ttl Cache TTL in seconds
+     */
+    public function queryCached(string $oql, array $params = [], int $ttl = 3600, int $hydrationMode = HydrationMode::HYDRATE_OBJECT): array;
+
     /** Executes an OQL query and returns a single result or null. */
     public function queryOne(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): mixed;
 
