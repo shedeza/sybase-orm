@@ -172,12 +172,12 @@ Notas:
 
 ```php
 use App\Entity\Producto;
-use SybaseORM\ORM\EntityRepository;
+use App\Repository\ProductoRepository;
 
 class ProductoController
 {
     public function __construct(
-        private readonly EntityRepository $productoRepo,
+        private readonly ProductoRepository $productoRepo,
     ) {}
 
     public function crear(): void

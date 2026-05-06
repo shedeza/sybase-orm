@@ -205,12 +205,12 @@ Cada entidad se gestiona a través de su propio repositorio:
 <?php
 
 use App\Entity\Usuario;
-use SybaseORM\ORM\EntityRepository;
+use App\Repository\UsuarioRepository;
 
 class UsuarioController
 {
     public function __construct(
-        private readonly EntityRepository $usuarioRepo,
+        private readonly UsuarioRepository $usuarioRepo,
     ) {}
 
     public function crear(): void
