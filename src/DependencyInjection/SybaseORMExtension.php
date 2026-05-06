@@ -26,6 +26,7 @@ use SybaseORM\Metadata\MetadataReaderInterface;
 use SybaseORM\Migration\MigrationManager;
 use SybaseORM\ORM\EntityManager;
 use SybaseORM\ORM\EntityManagerInterface;
+use SybaseORM\ORM\EntityManagerRegistry;
 use SybaseORM\ORM\IdentityMap;
 use SybaseORM\ORM\IdentityMapInterface;
 use SybaseORM\ORM\UnitOfWork;
@@ -44,18 +45,45 @@ final class SybaseORMExtension extends Extension
         $configuration = new Configuration();
         $config = $this->processConfiguration($configuration, $configs);
 
-        $this->registerConnectionManager($container, $config);
+        // Normalize connections: if 'connection' (singular) is set, treat as 'default'
+        $connections = $config['connections'] ?? [];
+        if (!empty($config['connection'])) {
+            $connections = array_merge(['default' => $config['connection']], $connections);
+        }
+
+        if (empty($connections)) {
+            throw new \RuntimeException('SybaseORM requires at least one connection configured (sybase_orm.connection or sybase_orm.connections).');
+        }
+
+        // Register shared services (dialect, typecaster, metadata, hooks)
         $this->registerDialect($container);
         $this->registerTypeCaster($container);
         $this->registerMetadataReader($container, $config);
-        $this->registerIdentityMap($container);
-        $this->registerCacheManager($container);
-        $this->registerHydrator($container);
-        $this->registerUnitOfWork($container);
         $this->registerHookDispatcher($container);
         $this->registerProxyGenerator($container, $config);
+
+        // Register per-connection services (connection manager, identity map, cache, hydrator, uow, em)
+        $managerServiceIds = [];
+        $isFirst = true;
+
+        foreach ($connections as $name => $connectionConfig) {
+            $this->registerConnectionServices($container, $config, (string) $name, $connectionConfig, $isFirst);
+            $managerServiceIds[(string) $name] = 'sybase_orm.entity_manager.' . $name;
+            $isFirst = false;
+        }
+
+        // Register EntityManagerRegistry
+        $registryDef = new Definition(EntityManagerRegistry::class);
+        $registryDef->setPublic(true);
+        $managerRefs = [];
+        foreach ($managerServiceIds as $name => $serviceId) {
+            $managerRefs[$name] = new Reference($serviceId);
+        }
+        $registryDef->setArguments([$managerRefs, array_key_first($connections)]);
+        $container->setDefinition(EntityManagerRegistry::class, $registryDef);
+
+        // Register migration manager (uses default connection)
         $this->registerMigrationManager($container, $config);
-        $this->registerEntityManager($container, $config);
 
         // Store config parameters for commands
         $container->setParameter('sybase_orm.entity_directories', $config['entity_directories']);
@@ -73,44 +101,6 @@ final class SybaseORMExtension extends Extension
         return 'sybase_orm';
     }
 
-    private function registerConnectionManager(ContainerBuilder $container, array $config): void
-    {
-        $connectionConfig = $config['connection'];
-
-        // Create a logger reference if the service exists
-        $loggerRef = new Reference(LoggerInterface::class, ContainerInterface::IGNORE_ON_INVALID_REFERENCE);
-
-        if ($connectionConfig['url'] !== null) {
-            // URL mode: registrar un factory que parsee la URL en runtime
-            // para soportar %env(DATABASE_URL)% que se resuelve después del compile
-            $definition = new Definition(ConnectionManager::class);
-            $definition->setFactory([self::class, 'createConnectionManagerFromUrl']);
-            $definition->setArguments([
-                $connectionConfig['url'],
-                $connectionConfig['charset_conversion'],
-                $loggerRef,
-            ]);
-        } else {
-            // Parámetros individuales
-            $connConfig = [
-                'host' => $connectionConfig['host'],
-                'port' => $connectionConfig['port'],
-                'dbname' => $connectionConfig['database'],
-                'username' => $connectionConfig['username'],
-                'password' => $connectionConfig['password'],
-                'charset' => $connectionConfig['charset'],
-                'persistent' => $connectionConfig['persistent'],
-                'charset_conversion' => $connectionConfig['charset_conversion'],
-            ];
-            $definition = new Definition(ConnectionManager::class, [$connConfig, $loggerRef]);
-        }
-
-        $definition->setPublic(false);
-
-        $container->setDefinition(ConnectionManager::class, $definition);
-        $container->setAlias(ConnectionManagerInterface::class, ConnectionManager::class);
-    }
-
     /**
      * Factory method para crear ConnectionManager desde una URL.
      * Se ejecuta en runtime, cuando las variables de entorno ya están resueltas.
@@ -119,7 +109,6 @@ final class SybaseORMExtension extends Extension
     {
         $config = ConnectionUrlParser::parse($url);
 
-        // YAML charset_conversion overrides URL query param if explicitly set
         if ($charsetConversion) {
             $config['charset_conversion'] = true;
         }
@@ -156,58 +145,6 @@ final class SybaseORMExtension extends Extension
         $container->setAlias(MetadataReaderInterface::class, MetadataReader::class);
     }
 
-    private function registerIdentityMap(ContainerBuilder $container): void
-    {
-        $definition = new Definition(IdentityMap::class);
-        $definition->setPublic(false);
-
-        $container->setDefinition(IdentityMap::class, $definition);
-        $container->setAlias(IdentityMapInterface::class, IdentityMap::class);
-    }
-
-    private function registerCacheManager(ContainerBuilder $container): void
-    {
-        $definition = new Definition(CacheManager::class, [
-            new Reference(IdentityMapInterface::class),
-            null,
-            null,
-        ]);
-        $definition->setPublic(false);
-
-        $container->setDefinition(CacheManager::class, $definition);
-        $container->setAlias(CacheManagerInterface::class, CacheManager::class);
-    }
-
-    private function registerHydrator(ContainerBuilder $container): void
-    {
-        $definition = new Definition(Hydrator::class, [
-            new Reference(MetadataReaderInterface::class),
-            new Reference(TypeCasterInterface::class),
-            new Reference(IdentityMapInterface::class),
-            new Reference(UnitOfWorkInterface::class),
-        ]);
-        $definition->setPublic(false);
-
-        $container->setDefinition(Hydrator::class, $definition);
-        $container->setAlias(HydratorInterface::class, Hydrator::class);
-    }
-
-    private function registerUnitOfWork(ContainerBuilder $container): void
-    {
-        $definition = new Definition(UnitOfWork::class, [
-            new Reference(ConnectionManagerInterface::class),
-            new Reference(MetadataReaderInterface::class),
-            new Reference(DialectInterface::class),
-            new Reference(TypeCasterInterface::class),
-            new Reference(IdentityMapInterface::class),
-            new Reference(HookDispatcher::class),
-        ]);
-        $definition->setPublic(false);
-
-        $container->setDefinition(UnitOfWork::class, $definition);
-        $container->setAlias(UnitOfWorkInterface::class, UnitOfWork::class);
-    }
-
     private function registerHookDispatcher(ContainerBuilder $container): void
     {
         $definition = new Definition(HookDispatcher::class, [
@@ -242,30 +179,104 @@ final class SybaseORMExtension extends Extension
         $container->setDefinition(MigrationManager::class, $definition);
     }
 
-    private function registerEntityManager(ContainerBuilder $container, array $config): void
+    private function registerConnectionServices(ContainerBuilder $container, array $globalConfig, string $name, array $connectionConfig, bool $isFirst): void
     {
+        $suffix = '.' . $name;
         $loggerRef = new Reference(LoggerInterface::class, ContainerInterface::IGNORE_ON_INVALID_REFERENCE);
 
-        $definition = new Definition(EntityManager::class, [
-            new Reference(ConnectionManagerInterface::class),
+        // 1. ConnectionManager
+        if (isset($connectionConfig['url']) && $connectionConfig['url'] !== null) {
+            $connDef = new Definition(ConnectionManager::class);
+            $connDef->setFactory([self::class, 'createConnectionManagerFromUrl']);
+            $connDef->setArguments([
+                $connectionConfig['url'],
+                $connectionConfig['charset_conversion'] ?? false,
+                $loggerRef,
+            ]);
+        } else {
+            $connConfig = [
+                'host' => $connectionConfig['host'],
+                'port' => $connectionConfig['port'],
+                'dbname' => $connectionConfig['database'],
+                'username' => $connectionConfig['username'],
+                'password' => $connectionConfig['password'],
+                'charset' => $connectionConfig['charset'],
+                'persistent' => $connectionConfig['persistent'],
+                'charset_conversion' => $connectionConfig['charset_conversion'] ?? false,
+            ];
+            $connDef = new Definition(ConnectionManager::class, [$connConfig, $loggerRef]);
+        }
+        $connDef->setPublic(false);
+        $container->setDefinition('sybase_orm.connection_manager' . $suffix, $connDef);
+
+        // 2. IdentityMap (per-connection)
+        $imDef = new Definition(IdentityMap::class);
+        $imDef->setPublic(false);
+        $container->setDefinition('sybase_orm.identity_map' . $suffix, $imDef);
+
+        // 3. CacheManager (per-connection)
+        $cacheDef = new Definition(CacheManager::class, [
+            new Reference('sybase_orm.identity_map' . $suffix),
+            null,
+            null,
+        ]);
+        $cacheDef->setPublic(false);
+        $container->setDefinition('sybase_orm.cache_manager' . $suffix, $cacheDef);
+
+        // 4. Hydrator (per-connection)
+        $hydDef = new Definition(Hydrator::class, [
+            new Reference(MetadataReaderInterface::class),
+            new Reference(TypeCasterInterface::class),
+            new Reference('sybase_orm.identity_map' . $suffix),
+            new Reference('sybase_orm.unit_of_work' . $suffix),
+        ]);
+        $hydDef->setPublic(false);
+        $hydDef->setLazy(true);
+        $container->setDefinition('sybase_orm.hydrator' . $suffix, $hydDef);
+
+        // 5. UnitOfWork (per-connection)
+        $uowDef = new Definition(UnitOfWork::class, [
+            new Reference('sybase_orm.connection_manager' . $suffix),
             new Reference(MetadataReaderInterface::class),
             new Reference(DialectInterface::class),
             new Reference(TypeCasterInterface::class),
-            new Reference(HydratorInterface::class),
-            new Reference(UnitOfWorkInterface::class),
-            new Reference(IdentityMapInterface::class),
+            new Reference('sybase_orm.identity_map' . $suffix),
             new Reference(HookDispatcher::class),
-            new Reference(CacheManagerInterface::class),
+        ]);
+        $uowDef->setPublic(false);
+        $container->setDefinition('sybase_orm.unit_of_work' . $suffix, $uowDef);
+
+        // 6. EntityManager (per-connection)
+        $emDef = new Definition(EntityManager::class, [
+            new Reference('sybase_orm.connection_manager' . $suffix),
+            new Reference(MetadataReaderInterface::class),
+            new Reference(DialectInterface::class),
+            new Reference(TypeCasterInterface::class),
+            new Reference('sybase_orm.hydrator' . $suffix),
+            new Reference('sybase_orm.unit_of_work' . $suffix),
+            new Reference('sybase_orm.identity_map' . $suffix),
+            new Reference(HookDispatcher::class),
+            new Reference('sybase_orm.cache_manager' . $suffix),
             $loggerRef,
         ]);
-        $definition->setPublic(true);
-        $definition->setAutowired(true);
+        $emDef->setPublic(true);
+        $emDef->addMethodCall('setEntityDirectories', [$globalConfig['entity_directories']]);
+        $container->setDefinition('sybase_orm.entity_manager' . $suffix, $emDef);
 
-        // Auto-discover entities from configured directories
-        $definition->addMethodCall('setEntityDirectories', [$config['entity_directories']]);
-
-        $container->setDefinition(EntityManager::class, $definition);
-        $container->setAlias(EntityManagerInterface::class, EntityManager::class)
-            ->setPublic(true);
+        // 7. If this is the first (default) connection, register as the primary services
+        if ($isFirst) {
+            $container->setAlias(ConnectionManagerInterface::class, 'sybase_orm.connection_manager' . $suffix);
+            $container->setAlias(ConnectionManager::class, 'sybase_orm.connection_manager' . $suffix);
+            $container->setAlias(IdentityMapInterface::class, 'sybase_orm.identity_map' . $suffix);
+            $container->setAlias(IdentityMap::class, 'sybase_orm.identity_map' . $suffix);
+            $container->setAlias(CacheManagerInterface::class, 'sybase_orm.cache_manager' . $suffix);
+            $container->setAlias(CacheManager::class, 'sybase_orm.cache_manager' . $suffix);
+            $container->setAlias(HydratorInterface::class, 'sybase_orm.hydrator' . $suffix);
+            $container->setAlias(Hydrator::class, 'sybase_orm.hydrator' . $suffix);
+            $container->setAlias(UnitOfWorkInterface::class, 'sybase_orm.unit_of_work' . $suffix);
+            $container->setAlias(UnitOfWork::class, 'sybase_orm.unit_of_work' . $suffix);
+            $container->setAlias(EntityManagerInterface::class, 'sybase_orm.entity_manager' . $suffix)->setPublic(true);
+            $container->setAlias(EntityManager::class, 'sybase_orm.entity_manager' . $suffix)->setPublic(true);
+        }
     }
 }

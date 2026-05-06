@@ -148,11 +148,12 @@ final class ConfigurationTest extends TestCase
 
     // --- Validación ---
 
-    public function testConnectionIsRequired(): void
+    public function testEmptyConfigIsValid(): void
     {
-        $this->expectException(\Symfony\Component\Config\Definition\Exception\InvalidConfigurationException::class);
+        // connection is now optional at config level (validated in Extension)
+        $config = $this->processor->processConfiguration($this->configuration, [[]]);
 
-        $this->processor->processConfiguration($this->configuration, [[]]);
+        $this->assertArrayNotHasKey('connection', $config);
     }
 
     public function testThrowsWhenNoUrlAndMissingHost(): void

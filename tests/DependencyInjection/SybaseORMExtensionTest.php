@@ -61,10 +61,10 @@ final class SybaseORMExtensionTest extends TestCase
     {
         $this->loadMinimalConfig();
 
-        $this->assertTrue($this->container->hasDefinition(ConnectionManager::class));
+        $this->assertTrue($this->container->has(ConnectionManager::class));
         $this->assertTrue($this->container->hasAlias(ConnectionManagerInterface::class));
 
-        $definition = $this->container->getDefinition(ConnectionManager::class);
+        $definition = $this->container->findDefinition(ConnectionManager::class);
         $this->assertSame(ConnectionManager::class, $definition->getClass());
 
         $args = $definition->getArguments();
@@ -78,7 +78,7 @@ final class SybaseORMExtensionTest extends TestCase
     {
         $this->loadMinimalConfig();
 
-        $this->assertTrue($this->container->hasDefinition(SybaseDialect::class));
+        $this->assertTrue($this->container->has(SybaseDialect::class));
         $this->assertTrue($this->container->hasAlias(DialectInterface::class));
     }
 
@@ -86,7 +86,7 @@ final class SybaseORMExtensionTest extends TestCase
     {
         $this->loadMinimalConfig();
 
-        $this->assertTrue($this->container->hasDefinition(TypeCaster::class));
+        $this->assertTrue($this->container->has(TypeCaster::class));
         $this->assertTrue($this->container->hasAlias(TypeCasterInterface::class));
     }
 
@@ -94,7 +94,7 @@ final class SybaseORMExtensionTest extends TestCase
     {
         $this->loadMinimalConfig();
 
-        $this->assertTrue($this->container->hasDefinition(MetadataReader::class));
+        $this->assertTrue($this->container->has(MetadataReader::class));
         $this->assertTrue($this->container->hasAlias(MetadataReaderInterface::class));
     }
 
@@ -102,7 +102,7 @@ final class SybaseORMExtensionTest extends TestCase
     {
         $this->loadMinimalConfig();
 
-        $this->assertTrue($this->container->hasDefinition(IdentityMap::class));
+        $this->assertTrue($this->container->has(IdentityMap::class));
         $this->assertTrue($this->container->hasAlias(IdentityMapInterface::class));
     }
 
@@ -110,7 +110,7 @@ final class SybaseORMExtensionTest extends TestCase
     {
         $this->loadMinimalConfig();
 
-        $this->assertTrue($this->container->hasDefinition(CacheManager::class));
+        $this->assertTrue($this->container->has(CacheManager::class));
         $this->assertTrue($this->container->hasAlias(CacheManagerInterface::class));
     }
 
@@ -118,7 +118,7 @@ final class SybaseORMExtensionTest extends TestCase
     {
         $this->loadMinimalConfig();
 
-        $this->assertTrue($this->container->hasDefinition(Hydrator::class));
+        $this->assertTrue($this->container->has(Hydrator::class));
         $this->assertTrue($this->container->hasAlias(HydratorInterface::class));
     }
 
@@ -126,7 +126,7 @@ final class SybaseORMExtensionTest extends TestCase
     {
         $this->loadMinimalConfig();
 
-        $this->assertTrue($this->container->hasDefinition(UnitOfWork::class));
+        $this->assertTrue($this->container->has(UnitOfWork::class));
         $this->assertTrue($this->container->hasAlias(UnitOfWorkInterface::class));
     }
 
@@ -134,33 +134,32 @@ final class SybaseORMExtensionTest extends TestCase
     {
         $this->loadMinimalConfig();
 
-        $this->assertTrue($this->container->hasDefinition(HookDispatcher::class));
+        $this->assertTrue($this->container->has(HookDispatcher::class));
     }
 
     public function testRegistersProxyGenerator(): void
     {
         $this->loadMinimalConfig();
 
-        $this->assertTrue($this->container->hasDefinition(ProxyGenerator::class));
+        $this->assertTrue($this->container->has(ProxyGenerator::class));
     }
 
     public function testRegistersMigrationManager(): void
     {
         $this->loadMinimalConfig();
 
-        $this->assertTrue($this->container->hasDefinition(MigrationManager::class));
+        $this->assertTrue($this->container->has(MigrationManager::class));
     }
 
     public function testRegistersEntityManager(): void
     {
         $this->loadMinimalConfig();
 
-        $this->assertTrue($this->container->hasDefinition(EntityManager::class));
+        $this->assertTrue($this->container->has(EntityManager::class));
         $this->assertTrue($this->container->hasAlias(EntityManagerInterface::class));
 
-        $definition = $this->container->getDefinition(EntityManager::class);
+        $definition = $this->container->findDefinition(EntityManager::class);
         $this->assertTrue($definition->isPublic());
-        $this->assertTrue($definition->isAutowired());
     }
 
     public function testEntityManagerInterfaceAliasIsPublic(): void
@@ -207,7 +206,7 @@ final class SybaseORMExtensionTest extends TestCase
             ],
         ], $this->container);
 
-        $definition = $this->container->getDefinition(ConnectionManager::class);
+        $definition = $this->container->findDefinition(ConnectionManager::class);
         $args = $definition->getArguments();
 
         $this->assertSame('db.example.com', $args[0]['host']);
@@ -232,7 +231,7 @@ final class SybaseORMExtensionTest extends TestCase
             ],
         ], $this->container);
 
-        $definition = $this->container->getDefinition(ProxyGenerator::class);
+        $definition = $this->container->findDefinition(ProxyGenerator::class);
         $args = $definition->getArguments();
         $this->assertSame('/custom/proxies', $args[0]);
     }
@@ -250,7 +249,7 @@ final class SybaseORMExtensionTest extends TestCase
             ],
         ], $this->container);
 
-        $definition = $this->container->getDefinition(MigrationManager::class);
+        $definition = $this->container->findDefinition(MigrationManager::class);
         $args = $definition->getArguments();
         $this->assertSame('/custom/migrations', $args[3]);
     }
@@ -265,7 +264,7 @@ final class SybaseORMExtensionTest extends TestCase
             ],
         ], $this->container);
 
-        $definition = $this->container->getDefinition(ConnectionManager::class);
+        $definition = $this->container->findDefinition(ConnectionManager::class);
 
         // URL mode usa factory para resolver en runtime
         $factory = $definition->getFactory();
@@ -294,7 +293,7 @@ final class SybaseORMExtensionTest extends TestCase
             ],
         ], $this->container);
 
-        $definition = $this->container->getDefinition(ConnectionManager::class);
+        $definition = $this->container->findDefinition(ConnectionManager::class);
 
         // Debe usar factory (URL mode), no parámetros directos
         $factory = $definition->getFactory();

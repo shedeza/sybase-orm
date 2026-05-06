@@ -177,6 +177,7 @@ final class MetadataReader implements MetadataReaderInterface
             idFields: $idFields,
             repositoryClass: $entityAttr->repositoryClass,
             embeddeds: $embeddeds,
+            connection: $entityAttr->connection,
         );
 
         // Validate metadata consistency

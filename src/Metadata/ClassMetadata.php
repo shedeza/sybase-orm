@@ -49,6 +49,7 @@ final class ClassMetadata
         public readonly ?string $repositoryClass = null,
         /** @var EmbeddedMetadata[] */
         public readonly array $embeddeds = [],
+        public readonly string $connection = 'default',
     ) {
         // Compute idFields and idField for backward compatibility
         if ($idFields !== []) {

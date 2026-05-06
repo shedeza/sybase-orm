@@ -27,7 +27,7 @@ final class Configuration implements ConfigurationInterface
         $rootNode
             ->children()
                 ->arrayNode('connection')
-                    ->isRequired()
+                    ->info('Single connection configuration (shorthand for connections.default)')
                     ->children()
                         ->scalarNode('url')
                             ->defaultNull()
@@ -66,11 +66,27 @@ final class Configuration implements ConfigurationInterface
                     ->end()
                     ->validate()
                         ->ifTrue(function (array $v) {
-                            // Si no hay URL, host/database/username son obligatorios
                             return $v['url'] === null
                                 && ($v['host'] === null || $v['database'] === null || $v['username'] === null);
                         })
                         ->thenInvalid('La conexión requiere "url" o los parámetros "host", "database" y "username".')
+                    ->end()
+                ->end()
+                ->arrayNode('connections')
+                    ->info('Multiple named connections for multi-database support')
+                    ->useAttributeAsKey('name')
+                    ->arrayPrototype()
+                        ->children()
+                            ->scalarNode('url')->defaultNull()->end()
+                            ->scalarNode('host')->defaultNull()->end()
+                            ->scalarNode('port')->defaultValue(5000)->end()
+                            ->scalarNode('database')->defaultNull()->end()
+                            ->scalarNode('username')->defaultNull()->end()
+                            ->scalarNode('password')->defaultValue('')->end()
+                            ->scalarNode('charset')->defaultValue('UTF-8')->end()
+                            ->booleanNode('persistent')->defaultFalse()->end()
+                            ->booleanNode('charset_conversion')->defaultFalse()->end()
+                        ->end()
                     ->end()
                 ->end()
                 ->arrayNode('entity_directories')

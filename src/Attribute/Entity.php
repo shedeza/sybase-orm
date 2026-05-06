@@ -19,6 +19,7 @@ final class Entity
         public readonly ?string $table = null,
         public readonly ?string $schema = null,
         public readonly ?string $repositoryClass = null,
+        public readonly string $connection = 'default',
     ) {
     }
 }
