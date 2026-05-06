@@ -497,6 +497,30 @@ foreach ($iterator as $usuario) {
 }
 ```
 
+### OQL: queryCached() — consultas con caché de segundo nivel
+
+Ejecuta una consulta OQL con soporte de caché. Si el resultado está cacheado, lo retorna sin ir a la BD:
+
+```php
+// TTL de 1 hora (default)
+$productos = $this->em->queryCached(
+    'SELECT p FROM Producto p WHERE p.activo = :activo',
+    ['activo' => true]
+);
+
+// TTL personalizado (5 minutos)
+$stats = $this->em->queryCached(
+    'SELECT COUNT(*) FROM Producto p',
+    [],
+    300
+);
+
+// También disponible desde el repositorio
+$repo->queryCached('SELECT p FROM Producto p WHERE p.precio > :min', ['min' => '100'], 1800);
+```
+
+El cache key se genera automáticamente a partir del OQL + parámetros. Se invalida por TTL.
+
 ### OQL: JOIN con entidad (WITH)
 
 ```php
@@ -1043,15 +1067,20 @@ json_encode($items); // [...]
 
 ### PersistentCollection — colecciones desde la BD
 
-El Hydrator asigna automáticamente `PersistentCollection` a relaciones OneToMany/ManyToMany. La colección se carga lazy (al primer acceso):
+El Hydrator asigna automáticamente `PersistentCollection` a relaciones OneToMany/ManyToMany. La colección se carga lazy (al primer acceso), ejecutando una sola query para cargar todos los elementos relacionados:
 
 ```php
-// La colección NO se carga hasta que se accede
-$ordenes = $cliente->getOrdenes(); // PersistentCollection (no inicializada)
+// La colección NO se carga hasta que se accede (previene N+1 queries)
+$ordenes = $cliente->getOrdenes(); // PersistentCollection (no inicializada, 0 queries)
 
-// Primer acceso dispara la carga desde BD
+// Primer acceso dispara UNA query: SELECT o FROM Orden o WHERE o.clienteId = :id
 foreach ($ordenes as $orden) { /* carga aquí */ }
+
+// Accesos posteriores usan los datos ya cargados (0 queries adicionales)
+$ordenes->count(); // No re-ejecuta la query
 ```
+
+Esto previene el problema N+1: si iteras 100 clientes y accedes a sus órdenes, se ejecutan 100+1 queries en vez de cargar todo en memoria de una vez.
 
 ### Interfaz Collection
 
@@ -1170,7 +1199,7 @@ El `SybaseDialect` maneja las particularidades de Sybase ASE:
 vendor/bin/phpunit
 ```
 
-3048+ tests cubriendo todos los componentes.
+3051+ tests cubriendo todos los componentes.
 
 ## Licencia
 

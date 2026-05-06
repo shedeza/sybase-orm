@@ -716,6 +716,16 @@ Dos niveles:
 ```php
 $this->em->clear();                  // Limpia todo
 $this->em->clear(Producto::class);   // Limpia solo Producto
+
+// Query result caching (usa segundo nivel)
+$productos = $this->em->queryCached(
+    'SELECT p FROM Producto p WHERE p.activo = :a',
+    ['a' => true],
+    3600  // TTL en segundos
+);
+
+// También desde el repositorio
+$repo->queryCached('SELECT p FROM Producto p', [], 1800);
 ```
 
 ---
@@ -785,7 +795,8 @@ $items->remove($item1);
 $items->filter(fn($i) => $i->isActivo());
 
 // PersistentCollection: asignada automáticamente por el Hydrator a relaciones to-many
-// Se carga lazy al primer acceso (iteración, count, etc.)
+// Se carga lazy al primer acceso (ejecuta UNA query, previene N+1)
+// Ejemplo: $cliente->getOrdenes()->count() → carga todas las órdenes en 1 query
 
 // Ambas implementan Collection — código polimórfico:
 function procesar(Collection $items): void {
