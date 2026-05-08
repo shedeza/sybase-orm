@@ -231,7 +231,6 @@ final class SybaseORMExtension extends Extension
             new Reference('sybase_orm.unit_of_work' . $suffix),
         ]);
         $hydDef->setPublic(false);
-        $hydDef->setLazy(true);
         $container->setDefinition('sybase_orm.hydrator' . $suffix, $hydDef);
 
         // 5. UnitOfWork (per-connection)
