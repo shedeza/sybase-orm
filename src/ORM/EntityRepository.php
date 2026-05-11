@@ -35,6 +35,23 @@ class EntityRepository
 
     // ── Persistencia ────────────────────────────────────────────────
 
+    /**
+     * Registers an entity for insertion/update without flushing.
+     * Call flush() manually when ready to commit all pending changes.
+     */
+    public function persist(object $entity): void
+    {
+        $this->entityManager->persist($entity);
+    }
+
+    /**
+     * Flushes all pending changes (INSERTs, UPDATEs, DELETEs) to the database.
+     */
+    public function flush(): void
+    {
+        $this->entityManager->flush();
+    }
+
     public function save(object $entity): void
     {
         $this->entityManager->persist($entity);
