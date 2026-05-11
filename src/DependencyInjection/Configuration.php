@@ -63,6 +63,10 @@ final class Configuration implements ConfigurationInterface
                             ->defaultFalse()
                             ->info('Habilita conversión transparente UTF-8 ↔ ISO-8859-1.')
                         ->end()
+                        ->booleanNode('read_only')
+                            ->defaultFalse()
+                            ->info('Marca la conexión como solo lectura. Bloquea INSERT/UPDATE/DELETE y transacciones.')
+                        ->end()
                     ->end()
                     ->validate()
                         ->ifTrue(function (array $v) {
@@ -86,6 +90,7 @@ final class Configuration implements ConfigurationInterface
                             ->scalarNode('charset')->defaultValue('UTF-8')->end()
                             ->booleanNode('persistent')->defaultFalse()->end()
                             ->booleanNode('charset_conversion')->defaultFalse()->end()
+                            ->booleanNode('read_only')->defaultFalse()->end()
                         ->end()
                     ->end()
                 ->end()

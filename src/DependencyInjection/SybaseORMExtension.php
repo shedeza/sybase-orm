@@ -203,6 +203,7 @@ final class SybaseORMExtension extends Extension
                 'charset' => $connectionConfig['charset'],
                 'persistent' => $connectionConfig['persistent'],
                 'charset_conversion' => $connectionConfig['charset_conversion'] ?? false,
+                'read_only' => $connectionConfig['read_only'] ?? false,
             ];
             $connDef = new Definition(ConnectionManager::class, [$connConfig, $loggerRef]);
         }

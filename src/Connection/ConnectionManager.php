@@ -35,6 +35,7 @@ class ConnectionManager implements ConnectionManagerInterface
     private bool $inTransaction = false;
     private bool $charsetConversion;
     private int $savepointCounter = 0;
+    private bool $readOnly;
 
     /** @var string[] Stack of active savepoint names */
     private array $savepointStack = [];
@@ -51,6 +52,7 @@ class ConnectionManager implements ConnectionManagerInterface
     public function __construct(array $config, private readonly ?LoggerInterface $logger = null)
     {
         $this->charsetConversion = (bool) ($config['charset_conversion'] ?? false);
+        $this->readOnly = (bool) ($config['read_only'] ?? false);
 
         $this->config = array_merge([
             'host' => 'localhost',
@@ -139,6 +141,12 @@ class ConnectionManager implements ConnectionManagerInterface
 
     public function executeStatement(string $sql, array $params = []): int
     {
+        if ($this->readOnly) {
+            throw new PersistenceException(
+                sprintf('Cannot execute write operation on read-only connection "%s": %s', $this->config['dbname'], mb_substr($sql, 0, 80)),
+            );
+        }
+
         try {
             $pdo = $this->getConnection();
             [$sql, $params] = $this->expandArrayParams($sql, $params);
@@ -158,6 +166,12 @@ class ConnectionManager implements ConnectionManagerInterface
 
     public function beginTransaction(): void
     {
+        if ($this->readOnly) {
+            throw new PersistenceException(
+                sprintf('Cannot begin transaction on read-only connection "%s".', $this->config['dbname']),
+            );
+        }
+
         $pdo = $this->getConnection();
 
         try {
@@ -654,6 +668,15 @@ class ConnectionManager implements ConnectionManagerInterface
     }
 
     /**
+     * Returns true if this connection is configured as read-only.
+     * Read-only connections reject executeStatement() and beginTransaction().
+     */
+    public function isReadOnly(): bool
+    {
+        return $this->readOnly;
+    }
+
+    /**
      * Returns the connection configuration for inspection (password is masked).
      *
      * @return array<string, mixed>
@@ -664,6 +687,7 @@ class ConnectionManager implements ConnectionManagerInterface
         if (isset($safe['password'])) {
             $safe['password'] = '***';
         }
+        $safe['read_only'] = $this->readOnly;
 
         return $safe;
     }
