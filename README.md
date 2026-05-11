@@ -130,6 +130,90 @@ sybase_orm:
 
 Cuando se proporciona `url`, los parámetros individuales (`host`, `port`, `database`, etc.) se ignoran. Los caracteres especiales en el password deben ir URL-encoded (e.g. `p@ss` → `p%40ss`).
 
+## Múltiples conexiones
+
+Para conectar a varias bases de datos Sybase ASE simultáneamente:
+
+```yaml
+sybase_orm:
+    connections:
+        default:
+            url: '%env(DATABASE_URL)%'
+        reporting:
+            url: '%env(REPORTING_DB_URL)%'
+            read_only: true
+        legacy:
+            host: '%env(LEGACY_HOST)%'
+            database: '%env(LEGACY_DB)%'
+            username: '%env(LEGACY_USER)%'
+            password: '%env(LEGACY_PASS)%'
+```
+
+### Asociar entidades a conexiones
+
+```php
+use SybaseORM\Attribute as ORM;
+
+#[ORM\Entity(table: 'reportes', connection: 'reporting')]
+class Reporte { /* ... */ }
+
+#[ORM\Entity(table: 'usuarios')]  // usa 'default' por defecto
+class Usuario { /* ... */ }
+```
+
+### EntityManagerRegistry
+
+```php
+use SybaseORM\ORM\EntityManagerRegistry;
+
+class MiServicio
+{
+    public function __construct(
+        private readonly EntityManagerRegistry $registry,
+    ) {}
+
+    public function ejemplo(): void
+    {
+        // Por nombre
+        $reportingEm = $this->registry->getManager('reporting');
+
+        // Automático por entidad (lee connection del atributo #[Entity])
+        $repo = $this->registry->getRepository(Reporte::class);
+
+        // Limpiar todas las conexiones (workers)
+        $this->registry->clearAll();
+    }
+}
+```
+
+### Conexiones read-only
+
+Las conexiones marcadas con `read_only: true` bloquean operaciones de escritura:
+
+```php
+// Esto funciona (SELECT):
+$reportes = $reporteRepo->findAll();
+
+// Esto lanza PersistenceException:
+$reporteRepo->save($reporte); // "Cannot execute write operation on read-only connection"
+```
+
+### Autowiring de repositorios
+
+Los repositorios custom se registran automáticamente como servicios inyectables:
+
+```php
+#[ORM\Entity(table: 'productos', repositoryClass: ProductoRepository::class)]
+class Producto { /* ... */ }
+
+class ProductoRepository extends EntityRepository { /* ... */ }
+
+// Inyección directa — sin configuración manual:
+class MiServicio {
+    public function __construct(private ProductoRepository $repo) {}
+}
+```
+
 ## Uso básico
 
 ### Definir una entidad
@@ -1189,7 +1273,7 @@ El `SybaseDialect` maneja las particularidades de Sybase ASE:
 vendor/bin/phpunit
 ```
 
-3051+ tests cubriendo todos los componentes.
+3068+ tests cubriendo todos los componentes.
 
 ## Licencia
 

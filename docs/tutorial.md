@@ -22,7 +22,8 @@
 18. [Manejo de errores](#18-manejo-de-errores)
 19. [Claves primarias compuestas](#19-claves-primarias-compuestas)
 20. [Colecciones](#20-colecciones)
-21. [Buenas prácticas](#21-buenas-prácticas)
+21. [Múltiples conexiones](#21-múltiples-conexiones)
+22. [Buenas prácticas](#22-buenas-prácticas)
 
 ---
 
@@ -802,7 +803,35 @@ function procesar(Collection $items): void {
 
 ---
 
-## 21. Buenas prácticas
+## 21. Múltiples conexiones
+
+```yaml
+# config/packages/sybase_orm.yaml
+sybase_orm:
+    connections:
+        default:
+            url: '%env(DATABASE_URL)%'
+        reporting:
+            url: '%env(REPORTING_DB_URL)%'
+            read_only: true
+```
+
+```php
+// Entidad asociada a conexión específica
+#[ORM\Entity(table: 'reportes', connection: 'reporting')]
+class Reporte { ... }
+
+// Registry para acceder a múltiples EMs
+$registry->getManager('reporting');
+$registry->getRepository(Reporte::class);
+$registry->clearAll(); // Limpia todas las conexiones
+```
+
+Conexiones `read_only: true` bloquean INSERT/UPDATE/DELETE automáticamente.
+
+---
+
+## 22. Buenas prácticas
 
 1. **Usa `saveMany()`** en vez de `save()` en loops — un solo flush para todo el lote
 2. **Usa `queryIterator()`** para conjuntos grandes — evita cargar todo en memoria
