@@ -124,30 +124,27 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use SybaseORM\Attribute\Column;
-use SybaseORM\Attribute\Entity;
-use SybaseORM\Attribute\GeneratedValue;
-use SybaseORM\Attribute\Id;
+use SybaseORM\Attribute as ORM;
 use SybaseORM\Type\Types;
 
-#[Entity(table: 'productos')]
+#[ORM\Entity(table: 'productos')]
 class Producto
 {
-    #[Id]
-    #[GeneratedValue]
-    #[Column(type: Types::INTEGER)]
+    #[ORM\Id]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: Types::INTEGER)]
     private ?int $id = null;
 
-    #[Column(type: Types::STRING, length: 100)]
+    #[ORM\Column(type: Types::STRING, length: 100)]
     private string $nombre = '';
 
-    #[Column(type: Types::DECIMAL, precision: 10, scale: 2)]
+    #[ORM\Column(type: Types::DECIMAL, precision: 10, scale: 2)]
     private string $precio = '0.00';
 
-    #[Column(type: Types::BOOLEAN)]
+    #[ORM\Column(type: Types::BOOLEAN)]
     private bool $activo = true;
 
-    #[Column(type: Types::DATETIME, nullable: true)]
+    #[ORM\Column(type: Types::DATETIME, nullable: true)]
     private ?\DateTimeImmutable $creadoEn = null;
 
     // Getters y setters...
@@ -160,6 +157,8 @@ class Producto
     public function setActivo(bool $activo): void { $this->activo = $activo; }
 }
 ```
+
+> **Tip:** `use SybaseORM\Attribute as ORM` simplifica los imports (un solo use para todos los atributos).
 
 Notas:
 - Sin `table`, el nombre se deriva en snake_case: `Producto` → `producto`

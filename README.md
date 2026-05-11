@@ -141,35 +141,34 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use SybaseORM\Attribute\Column;
-use SybaseORM\Attribute\Entity;
-use SybaseORM\Attribute\GeneratedValue;
-use SybaseORM\Attribute\Id;
+use SybaseORM\Attribute as ORM;
 use SybaseORM\Type\Types;
 
-#[Entity(table: 'usuarios')]
+#[ORM\Entity(table: 'usuarios')]
 class Usuario
 {
-    #[Id]
-    #[GeneratedValue]
-    #[Column(type: Types::INTEGER)]
+    #[ORM\Id]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: Types::INTEGER)]
     private ?int $id = null;
 
-    #[Column(type: Types::STRING, length: 100)]
+    #[ORM\Column(type: Types::STRING, length: 100)]
     private string $nombre = '';
 
-    #[Column(type: Types::STRING, length: 200, nullable: true)]
+    #[ORM\Column(type: Types::STRING, length: 200, nullable: true)]
     private ?string $email = null;
 
-    #[Column(type: Types::BOOLEAN)]
+    #[ORM\Column(type: Types::BOOLEAN)]
     private bool $activo = true;
 
-    #[Column(type: Types::DATETIME, nullable: true)]
+    #[ORM\Column(type: Types::DATETIME, nullable: true)]
     private ?\DateTimeImmutable $creadoEn = null;
 
     // Getters y setters...
 }
 ```
+
+> **Tip:** Usa `use SybaseORM\Attribute as ORM` para simplificar los imports, similar a Doctrine.
 
 Si no se especifica `table`, el nombre se deriva automáticamente del nombre de la clase en snake_case (`Usuario` → `usuario`, `OrdenCompra` → `orden_compra`).
 
