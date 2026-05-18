@@ -10,6 +10,8 @@ use SybaseORM\Metadata\MetadataReaderInterface;
 use SybaseORM\ORM\IdentityMapInterface;
 use SybaseORM\ORM\UnitOfWorkInterface;
 use SybaseORM\Type\TypeCasterInterface;
+use SybaseORM\Proxy\ProxyGenerator;
+use SybaseORM\ORM\EntityManagerInterface;
 
 /**
  * Converts database result rows into entity instances using the Reflection API.
@@ -33,6 +35,8 @@ final class Hydrator implements HydratorInterface
         private readonly TypeCasterInterface $typeCaster,
         private readonly ?IdentityMapInterface $identityMap = null,
         private readonly ?UnitOfWorkInterface $unitOfWork = null,
+        private readonly ?ProxyGenerator $proxyGenerator = null,
+        private readonly ?EntityManagerInterface $entityManager = null,
     ) {
     }
 
@@ -70,6 +74,9 @@ final class Hydrator implements HydratorInterface
         // Hydrate eager-loaded relationships
         $this->hydrateEagerRelationships($entity, $row, $metadata, $reflectionClass);
 
+        // Hydrate lazy-loaded ManyToOne/OneToOne as Proxies
+        $this->hydrateLazyToOneRelationships($entity, $row, $metadata, $reflectionClass);
+
         // Wrap to-many relationship arrays in PersistentCollection
         $this->wrapCollectionRelationships($entity, $metadata, $reflectionClass);
 
@@ -84,6 +91,79 @@ final class Hydrator implements HydratorInterface
         }
 
         return $entity;
+    }
+
+    /**
+     * Hydrates lazy to-one relationships (ManyToOne/OneToOne) using Proxy Generator.
+     */
+    private function hydrateLazyToOneRelationships(
+        object $entity,
+        array $row,
+        ClassMetadata $metadata,
+        ReflectionClass $reflectionClass,
+    ): void {
+        if ($this->proxyGenerator === null || $this->entityManager === null) {
+            return; // Sin herramientas para proxies, abortar
+        }
+
+        foreach ($metadata->relationships as $relationship) {
+            if ($relationship->fetch !== 'LAZY') {
+                continue;
+            }
+
+            if ($relationship->type !== 'ManyToOne' && $relationship->type !== 'OneToOne') {
+                continue; // Collection loader procesa los OneToMany
+            }
+
+            // Construir la "identidad" o IDs de la base de datos a partir del diccionario de JoyColumn
+            $targetIdValues = [];
+            $hasValue = false;
+            
+            foreach ($relationship->joinColumns as $columnName => $referencedColumnName) {
+                $rawValue = $row[$columnName] ?? null;
+                if ($rawValue !== null) {
+                    // Faltaría el typecasting ideal de la clave, por ahora lo pasamos puro:
+                    $targetIdValues[$referencedColumnName] = $rawValue;
+                    $hasValue = true;
+                }
+            }
+
+            if (!$hasValue) {
+                continue; // Todo es null, la relación no existe en BD
+            }
+
+            // Si es PK simple, extraemos el valor, sino dejamos el array asociativo
+            $proxyId = count($targetIdValues) === 1 ? reset($targetIdValues) : $targetIdValues;
+            
+            // Emplear el Factory para crear el proxy. 
+            // Closure (Initializer) pedirá al EntityManager que obtenga el objeto real.
+            $em = $this->entityManager;
+            $initializer = function (object $proxy) use ($em, $relationship, $proxyId): void {
+                // Cuando se gatille el proxy, instanciar a través del Entity Manager usando find.
+                // Para poder copiar sus datos a este "$proxy", necesitaríamos una función en el
+                // ORM o UnitOfWork (como un $em->refresh o similar).
+                
+                // Ejemplo conceptual:
+                $realEntity = $em->find($relationship->targetEntity, $proxyId);
+                if ($realEntity) {
+                // Copiamos datos del $realEntity real hacia el $proxy vía reflection...
+                $ref = new \ReflectionClass($realEntity);
+                foreach ($ref->getProperties() as $prop) {
+                    $prop->setAccessible(true);
+                    $prop->setValue($proxy, $prop->getValue($realEntity));
+                }
+                }
+            };
+
+            // Crear el objeto Proxy real que actúa de señuelo en la propiedad
+            $proxyInstance = $this->proxyGenerator->createProxy(
+                $relationship->targetEntity, 
+                $proxyId, 
+                $initializer
+            );
+
+            $this->setPropertyValue($entity, $relationship->propertyName, $proxyInstance, $reflectionClass);
+        }
     }
 
     public function hydrateAll(array $rows, string $entityClass): array
@@ -415,5 +495,10 @@ final class Hydrator implements HydratorInterface
         }
 
         return $this->reflectionClassCache[$entityClass];
+    }
+
+    public function setEntityManager(EntityManagerInterface $entityManager): void
+    {
+        $this->entityManager = $entityManager;
     }
 }

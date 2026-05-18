@@ -230,7 +230,12 @@ final class SybaseORMExtension extends Extension
             new Reference(TypeCasterInterface::class),
             new Reference('sybase_orm.identity_map' . $suffix),
             new Reference('sybase_orm.unit_of_work' . $suffix),
+            new Reference(ProxyGenerator::class), // Inyectar ProxyGenerator
         ]);
+
+        // Agregar un Setter Injection o inyectar el EntityManagerRegistry
+        $hydDef->addMethodCall('setEntityManager', [new Reference('sybase_orm.entity_manager' . $suffix)]);
+        
         $hydDef->setPublic(false);
         $container->setDefinition('sybase_orm.hydrator' . $suffix, $hydDef);
 
