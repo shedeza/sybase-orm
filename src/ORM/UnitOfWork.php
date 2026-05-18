@@ -664,7 +664,7 @@ final class UnitOfWork implements UnitOfWorkInterface
 
             foreach ($metadata->relationships as $relationship) {
                 // ManyToOne and owning OneToOne have a joinColumn = FK dependency
-                if ($relationship->joinColumn !== null) {
+                if (!empty($relationship->joinColumns)) {
                     $refProp = $this->getReflectionProperty($entity::class, $relationship->propertyName);
                     $related = $refProp->getValue($entity);
 
@@ -733,8 +733,8 @@ final class UnitOfWork implements UnitOfWorkInterface
             $depMetadata = $this->metadataReader->getClassMetadata($dependentEntity::class);
 
             foreach ($depMetadata->relationships as $rel) {
-                // Solo relaciones con joinColumn (ManyToOne, OneToOne owning side)
-                if ($rel->joinColumn === null) {
+                // Solo relaciones con joinColumns (ManyToOne, OneToOne owning side)
+                if (empty($rel->joinColumns)) {
                     continue;
                 }
 
@@ -753,11 +753,14 @@ final class UnitOfWork implements UnitOfWorkInterface
 
                 // Buscar la columna FK en la entidad dependiente y asignar el ID generado
                 // La columna FK corresponde al joinColumn de la relación
-                $fkColumn = $depMetadata->getColumn($rel->joinColumn);
-                if ($fkColumn !== null) {
-                    // Si hay una propiedad mapeada para la FK, asignar directamente
-                    $fkProp = $this->getReflectionProperty($dependentEntity::class, $fkColumn->propertyName);
-                    $fkProp->setValue($dependentEntity, $generatedId);
+                // La propagación del ID automático (autoincrement) se asume para un solo ID / FK
+                if (count($rel->joinColumns) === 1) {
+                    $jcName = array_key_first($rel->joinColumns);
+                    $fkColumn = $depMetadata->getColumn($jcName);
+                    if ($fkColumn !== null) {
+                        $fkProp = $this->getReflectionProperty($dependentEntity::class, $fkColumn->propertyName);
+                        $fkProp->setValue($dependentEntity, $generatedId);
+                    }
                 }
             }
         }

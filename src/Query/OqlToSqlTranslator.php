@@ -407,32 +407,41 @@ final class OqlToSqlTranslator
         $this->aliasToEntity[$join->alias] = $targetEntity;
         $this->aliasToTable[$join->alias] = $join->alias;
 
-        $joinColumn = $relation->joinColumn ?? ($relationProperty . '_id');
-        $referencedColumn = $relation->referencedColumnName ?? 'id';
+        $joinColumns = $relation->joinColumns;
+        if (empty($joinColumns)) {
+            $joinColumns = [$relationProperty . '_id' => 'id'];
+        }
 
         $ownerIdCol = $ownerMeta->getIdColumn();
         $targetIdCol = $targetMeta->getIdColumn();
 
         // Determine ON condition based on relationship type
+        $onConditions = [];
         if ($relation->type === 'ManyToOne' || $relation->type === 'OneToOne') {
-            $onCondition = sprintf(
-                '%s.%s = %s.%s',
-                $this->dialect->quoteIdentifier($ownerAlias),
-                $this->dialect->quoteIdentifier($joinColumn),
-                $this->dialect->quoteIdentifier($join->alias),
-                $this->dialect->quoteIdentifier($referencedColumn),
-            );
+            foreach ($joinColumns as $jc => $refCol) {
+                $onConditions[] = sprintf(
+                    '%s.%s = %s.%s',
+                    $this->dialect->quoteIdentifier($ownerAlias),
+                    $this->dialect->quoteIdentifier($jc),
+                    $this->dialect->quoteIdentifier($join->alias),
+                    $this->dialect->quoteIdentifier($refCol),
+                );
+            }
         } else {
             // OneToMany / ManyToMany: target has FK to owner
-            $onCondition = sprintf(
-                '%s.%s = %s.%s',
-                $this->dialect->quoteIdentifier($ownerAlias),
-                $this->dialect->quoteIdentifier($ownerIdCol?->columnName ?? 'id'),
-                $this->dialect->quoteIdentifier($join->alias),
-                $this->dialect->quoteIdentifier($joinColumn),
-            );
+           foreach ($joinColumns as $jc => $refCol) {
+                $onConditions[] = sprintf(
+                    '%s.%s = %s.%s',
+                    $this->dialect->quoteIdentifier($ownerAlias),
+                    $this->dialect->quoteIdentifier($refCol),
+                    $this->dialect->quoteIdentifier($join->alias),
+                    $this->dialect->quoteIdentifier($jc),
+                );
+            }
         }
 
+        $onCondition = implode(' AND ', $onConditions);
+        
         return sprintf(
             '%s %s %s ON %s',
             $join->joinType,

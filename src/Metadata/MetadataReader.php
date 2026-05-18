@@ -18,6 +18,7 @@ use SybaseORM\Attribute\HasLifecycleHooks;
 use SybaseORM\Attribute\Id;
 use SybaseORM\Attribute\InheritanceType;
 use SybaseORM\Attribute\JoinColumn;
+use SybaseORM\Attribute\JoinColumns;
 use SybaseORM\Attribute\ManyToMany;
 use SybaseORM\Attribute\ManyToOne;
 use SybaseORM\Attribute\OneToMany;
@@ -28,6 +29,7 @@ use SybaseORM\Attribute\PostUpdate;
 use SybaseORM\Attribute\PrePersist;
 use SybaseORM\Attribute\PreRemove;
 use SybaseORM\Attribute\PreUpdate;
+
 
 /**
  * Reads PHP Attributes from entity classes using the Reflection API
@@ -229,14 +231,14 @@ final class MetadataReader implements MetadataReaderInterface
 
         // Validate FK join columns reference existing properties
         foreach ($metadata->relationships as $relationship) {
-            if ($relationship->joinColumn !== null) {
-                $fkColumn = $metadata->getColumnByName($relationship->joinColumn);
-                $fkProperty = $metadata->getColumn($relationship->joinColumn);
+           foreach ($relationship->joinColumns as $col => $ref) {
+                $fkColumn = $metadata->getColumnByName($col);
+                $fkProperty = $metadata->getColumn($col);
                 // joinColumn may reference a column name or property name — both are valid
                 if ($fkColumn === null && $fkProperty === null) {
                     // Not a hard error — joinColumn might be a virtual FK not mapped as a column
                 }
-            }
+             }
         }
     }
 
@@ -277,6 +279,16 @@ final class MetadataReader implements MetadataReaderInterface
     private function readRelationshipMetadata(ReflectionProperty $property): ?RelationshipMetadata
     {
         $joinColumnAttr = $this->getPropertyAttribute($property, JoinColumn::class);
+        $joinColumnsAttr = $this->getPropertyAttribute($property, JoinColumns::class);
+
+        $joinColumns = [];
+        if ($joinColumnAttr !== null) {
+            $joinColumns[$joinColumnAttr->name] = $joinColumnAttr->referencedColumnName;
+        } elseif ($joinColumnsAttr !== null) {
+            foreach ($joinColumnsAttr->value as $jc) {
+                $joinColumns[$jc->name] = $jc->referencedColumnName;
+            }
+        }
 
         foreach (self::RELATIONSHIP_ATTRIBUTES as $attrClass) {
             $attr = $this->getPropertyAttribute($property, $attrClass);
@@ -297,8 +309,7 @@ final class MetadataReader implements MetadataReaderInterface
                 targetEntity: $attr->targetEntity,
                 mappedBy: $attr->mappedBy ?? null,
                 inversedBy: $attr->inversedBy ?? null,
-                joinColumn: $joinColumnAttr?->name,
-                referencedColumnName: $joinColumnAttr?->referencedColumnName,
+                joinColumns: $joinColumns,
                 joinTable: ($attr instanceof ManyToMany) ? $attr->joinTable : null,
                 cascade: $attr->cascade,
                 fetch: $attr->fetch,

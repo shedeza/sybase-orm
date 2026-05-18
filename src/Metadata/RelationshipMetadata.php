@@ -15,8 +15,8 @@ final class RelationshipMetadata
         public readonly string $targetEntity,
         public readonly ?string $mappedBy = null,
         public readonly ?string $inversedBy = null,
-        public readonly ?string $joinColumn = null,
-        public readonly ?string $referencedColumnName = null,
+        /** @var array<string, string> Map of joinColumn => referencedColumnName */
+        public readonly array $joinColumns = [],
         public readonly ?string $joinTable = null,
         public readonly array $cascade = [],
         public readonly string $fetch = 'LAZY',
