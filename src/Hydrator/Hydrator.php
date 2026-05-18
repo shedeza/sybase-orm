@@ -36,9 +36,8 @@ final class Hydrator implements HydratorInterface
         private readonly ?IdentityMapInterface $identityMap = null,
         private readonly ?UnitOfWorkInterface $unitOfWork = null,
         private readonly ?ProxyGenerator $proxyGenerator = null,
-        private readonly ?EntityManagerInterface $entityManager = null,
-    ) {
-    }
+        private ?EntityManagerInterface $entityManager = null,
+    ) { }
 
     /**
      * Sets a callable that loads related entities for a collection relationship.
@@ -118,12 +117,16 @@ final class Hydrator implements HydratorInterface
             // Construir la "identidad" o IDs de la base de datos a partir del diccionario de JoyColumn
             $targetIdValues = [];
             $hasValue = false;
+
+            $targetMeta = $this->metadataReader->getClassMetadata($relationship->targetEntity);
             
             foreach ($relationship->joinColumns as $columnName => $referencedColumnName) {
                 $rawValue = $row[$columnName] ?? null;
                 if ($rawValue !== null) {
-                    // Faltaría el typecasting ideal de la clave, por ahora lo pasamos puro:
-                    $targetIdValues[$referencedColumnName] = $rawValue;
+                    $targetColumn = $targetMeta->getColumnByName($referencedColumnName);
+                    $targetPropertyName = $targetColumn !== null ? $targetColumn->propertyName : $referencedColumnName;
+
+                    $targetIdValues[$targetPropertyName] = $rawValue;
                     $hasValue = true;
                 }
             }
