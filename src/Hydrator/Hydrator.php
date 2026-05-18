@@ -37,7 +37,7 @@ final class Hydrator implements HydratorInterface
         private readonly ?UnitOfWorkInterface $unitOfWork = null,
         private readonly ?ProxyGenerator $proxyGenerator = null,
         private ?EntityManagerInterface $entityManager = null,
-    ) { }
+    ) {}
 
     /**
      * Sets a callable that loads related entities for a collection relationship.
@@ -122,13 +122,19 @@ final class Hydrator implements HydratorInterface
             
             foreach ($relationship->joinColumns as $columnName => $referencedColumnName) {
                 $rawValue = $row[$columnName] ?? null;
-                if ($rawValue !== null) {
-                    $targetColumn = $targetMeta->getColumnByName($referencedColumnName);
-                    $targetPropertyName = $targetColumn !== null ? $targetColumn->propertyName : $referencedColumnName;
-
-                    $targetIdValues[$targetPropertyName] = $rawValue;
-                    $hasValue = true;
+                
+                // Si la DB devuelve NULL para una columna FK, la relación ManyToOne es asume no existente
+                if ($rawValue === null) {
+                    $targetIdValues = []; // Invalidar
+                    $hasValue = false;
+                    break;
                 }
+
+                $targetColumn = $targetMeta->getColumnByName($referencedColumnName);
+                $targetPropertyName = $targetColumn !== null ? $targetColumn->propertyName : $referencedColumnName;
+
+                $targetIdValues[$targetPropertyName] = $rawValue;
+                $hasValue = true;
             }
 
             if (!$hasValue) {
@@ -164,6 +170,21 @@ final class Hydrator implements HydratorInterface
                 $proxyId, 
                 $initializer
             );
+
+            // Pre-poblar los identificadores primarios en el Proxy para que si el usuario
+            // usa $proxy->getId() no se vea forzado a conectarse a la Base de Datos.
+            $proxyReflection = new \ReflectionClass($proxyInstance);
+            if (is_array($proxyId)) {
+                foreach ($proxyId as $propName => $propValue) {
+                    $this->setPropertyValue($proxyInstance, $propName, $propValue, $proxyReflection);
+                }
+            } else {
+                $idCol = $targetMeta->getIdColumn();
+                if ($idCol !== null) {
+                    $this->setPropertyValue($proxyInstance, $idCol->propertyName, $proxyId, $proxyReflection);
+                }
+            }
+            // Finalmente, asignar el proxy a la propiedad del objeto principal
 
             $this->setPropertyValue($entity, $relationship->propertyName, $proxyInstance, $reflectionClass);
         }
