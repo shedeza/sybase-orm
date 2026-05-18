@@ -94,40 +94,112 @@ final class EntityManager implements EntityManagerInterface
         $targetMeta = $this->metadataReader->getClassMetadata($targetEntity);
         $targetShortName = $this->getReflectionClass($targetEntity)->getShortName();
 
-        // Determine the FK column on the target entity that points back to the owner
+        // 1. Relaciones mapeadas por Inversa (OneToMany, OneToOne)
         if ($relationship->mappedBy !== null) {
             // Inverse side: the target entity has a ManyToOne with joinColumn pointing to us
             $targetRelMeta = $targetMeta->getRelationship($relationship->mappedBy);
-            if ($targetRelMeta === null || $targetRelMeta->joinColumn === null) {
+
+            // Si el JoinColumns está ausente, puede ser virtual, pero en la práctica MetadataReader
+            // lo retorna como array.
+            if ($targetRelMeta === null) {
                 return [];
             }
 
-            // Get the owner's ID to query by
-            $ownerIdColumns = $metadata->getIdColumns();
-            if (empty($ownerIdColumns)) {
-                return [];
+            $joinColumns = $targetRelMeta->joinColumns;
+            if (empty($joinColumns)) {
+                // Respaldo de convención en caso de carecer de configuración:
+                $joinColumns = [$relationship->mappedBy . '_id' => 'id'];
             }
 
+            $whereParts = [];
+            $queryParams = [];
             $ownerReflection = $this->getReflectionClass($ownerClass);
-            $ownerId = $ownerReflection->getProperty($ownerIdColumns[0]->propertyName)->getValue($owner);
 
-            if ($ownerId === null) {
-                return [];
+            foreach ($joinColumns as $fkColName => $ownerRefColName) {
+                $targetCol = $targetMeta->getColumnByName($fkColName);
+                $fkProp = $targetCol !== null ? $targetCol->propertyName : $fkColName;
+
+                $ownerCol = $metadata->getColumnByName($ownerRefColName);
+                $ownerProp = $ownerCol !== null ? $ownerCol->propertyName : $ownerRefColName;
+
+                // En caso límite donde la propiedad no exista, tomamos la de default
+                if (!$ownerReflection->hasProperty($ownerProp)) {
+                    $ownerProp = $ownerRefColName; // Fallback
+                }
+
+                $val = $ownerReflection->getProperty($ownerProp)->getValue($owner);
+                if ($val === null) {
+                    return []; // Si falta un componente de la PK, es inválido
+                }
+
+                $paramName = 'p_' . spl_object_id($owner) . '_' . count($whereParts);
+                $whereParts[] = "t.{$fkProp} = :{$paramName}";
+                $queryParams[$paramName] = $val;
             }
 
-            // Query: SELECT t FROM TargetEntity t WHERE t.fkProperty = :ownerId
-            $fkPropertyName = $targetRelMeta->joinColumn;
-            // Find the property name that maps to this join column
-            $fkColumn = $targetMeta->getColumnByName($fkPropertyName);
-            $fkProp = $fkColumn !== null ? $fkColumn->propertyName : $fkPropertyName;
+            if (empty($whereParts)) {
+                return [];
+            }
 
             $oql = sprintf(
-                'SELECT t FROM %s t WHERE t.%s = :ownerId',
+                'SELECT t FROM %s t WHERE %s',
                 $targetShortName,
-                $fkProp,
+                implode(' AND ', $whereParts)
             );
 
-            return $this->query($oql, ['ownerId' => $ownerId]);
+            return $this->query($oql, $queryParams);
+        }
+
+        // 2. ManyToMany directo usando tabla pivote y convención
+        if ($relationship->type === 'ManyToMany' && $relationship->joinTable !== null) {
+            $ownerIdColumns = $metadata->getIdColumns();
+            $targetIdColumns = $targetMeta->getIdColumns();
+
+            if (empty($ownerIdColumns) || empty($targetIdColumns)) {
+                return [];
+            }
+
+            $joinTable = $this->dialect->quoteIdentifier($relationship->joinTable);
+            $targetTable = $this->dialect->quoteIdentifier($targetMeta->tableName);
+
+            $ownerReflection = $this->getReflectionClass($ownerClass);
+
+            $joinConditions = [];
+            $whereConditions = [];
+            $dbParams = [];
+
+            // Unir Target con tabla Pivote. Inferimos que en el pivote las columnas se llaman igual que en Target.
+            foreach ($targetIdColumns as $targetIdCol) {
+                $targetColName = $this->dialect->quoteIdentifier($targetIdCol->columnName);
+                $joinConditions[] = "t.{$targetColName} = j.{$targetColName}";
+            }
+
+            // Unir Owner con tabla Pivote. Inferimos que en el pivote las columnas se llaman igual que en Owner.
+            foreach ($ownerIdColumns as $ownerIdCol) {
+                $ownerColName = $this->dialect->quoteIdentifier($ownerIdCol->columnName);
+                $whereConditions[] = "j.{$ownerColName} = ?";
+                $val = $ownerReflection->getProperty($ownerIdCol->propertyName)->getValue($owner);
+                if ($val === null) {
+                    return [];
+                }
+                $dbParams[] = $this->typeCaster->toDatabaseValue($val, $ownerIdCol->type);
+            }
+
+            $sql = sprintf(
+                'SELECT t.* FROM %s t INNER JOIN %s j ON %s WHERE %s',
+                $targetTable,
+                $joinTable,
+                implode(' AND ', $joinConditions),
+                implode(' AND ', $whereConditions)
+            );
+
+            $stmt = $this->connectionManager->executeQuery($sql, $dbParams);
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $stmt->closeCursor();
+
+            $rows = array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
+
+            return $this->hydrator->hydrateAll($rows, $targetEntity);
         }
 
         return [];
@@ -947,7 +1019,7 @@ final class EntityManager implements EntityManagerInterface
             if (!is_scalar($key)) {
                 throw new \InvalidArgumentException(
                     'IN clause parameter contains non-scalar values that cannot be normalized. '
-                    . 'Pass a flat array of scalar values, or an associative array where keys are the desired IN values.',
+                        . 'Pass a flat array of scalar values, or an associative array where keys are the desired IN values.',
                 );
             }
         }
