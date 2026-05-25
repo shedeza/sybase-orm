@@ -55,17 +55,29 @@ final class Hydrator implements HydratorInterface
     {
         $metadata = $this->metadataReader->getClassMetadata($entityClass);
 
+        $entity = null;
+
         // Check Identity Map first if available
         if ($this->identityMap !== null) {
             $existingEntity = $this->resolveFromIdentityMap($row, $metadata);
             if ($existingEntity !== null) {
-                return $existingEntity;
+                if ($existingEntity instanceof \SybaseORM\Proxy\LazyLoadingProxy && !$existingEntity->__isInitialized()) {
+                    $entity = $existingEntity;
+                    // Prevent recursion or double fetching during hydration
+                    $entity->__setInitializer(null);
+                } else {
+                    return $existingEntity;
+                }
             }
         }
 
-        // Create entity instance without calling constructor
-        $reflectionClass = $this->getReflectionClass($entityClass);
-        $entity = $reflectionClass->newInstanceWithoutConstructor();
+        if ($entity === null) {
+            // Create entity instance without calling constructor
+            $reflectionClass = $this->getReflectionClass($entityClass);
+            $entity = $reflectionClass->newInstanceWithoutConstructor();
+        } else {
+            $reflectionClass = $this->getReflectionClass($entityClass);
+        }
 
         // Hydrate mapped columns
         $this->hydrateColumns($entity, $row, $metadata, $reflectionClass);
@@ -119,10 +131,10 @@ final class Hydrator implements HydratorInterface
             $hasValue = false;
 
             $targetMeta = $this->metadataReader->getClassMetadata($relationship->targetEntity);
-            
+
             foreach ($relationship->joinColumns as $columnName => $referencedColumnName) {
                 $rawValue = $row[$columnName] ?? null;
-                
+
                 // Si la DB devuelve NULL para una columna FK, la relación ManyToOne es asume no existente
                 if ($rawValue === null) {
                     $targetIdValues = []; // Invalidar
@@ -143,31 +155,21 @@ final class Hydrator implements HydratorInterface
 
             // Si es PK simple, extraemos el valor, sino dejamos el array asociativo
             $proxyId = count($targetIdValues) === 1 ? reset($targetIdValues) : $targetIdValues;
-            
+
             // Emplear el Factory para crear el proxy. 
             // Closure (Initializer) pedirá al EntityManager que obtenga el objeto real.
             $em = $this->entityManager;
             $initializer = function (object $proxy) use ($em, $relationship, $proxyId): void {
-                // Cuando se gatille el proxy, instanciar a través del Entity Manager usando find.
-                // Para poder copiar sus datos a este "$proxy", necesitaríamos una función en el
-                // ORM o UnitOfWork (como un $em->refresh o similar).
-                
-                // Ejemplo conceptual:
-                $realEntity = $em->find($relationship->targetEntity, $proxyId);
-                if ($realEntity) {
-                // Copiamos datos del $realEntity real hacia el $proxy vía reflection...
-                $ref = new \ReflectionClass($realEntity);
-                foreach ($ref->getProperties() as $prop) {
-                    $prop->setAccessible(true);
-                    $prop->setValue($proxy, $prop->getValue($realEntity));
-                }
-                }
+                // Encontrar a través del EntityManager invocará nuevamente el Hydrator.
+                // Como el proxy ya está en el IdentityMap, el Hydrator inyectará
+                // los datos directamente en esta instancia del proxy en lugar de
+                // crear una nueva clónica, preservando la identidad de memoria.
+                $em->find($relationship->targetEntity, $proxyId);
             };
 
             // Crear el objeto Proxy real que actúa de señuelo en la propiedad
             $proxyInstance = $this->proxyGenerator->createProxy(
-                $relationship->targetEntity, 
-                $proxyId, 
+                $relationship->targetEntity,
                 $initializer
             );
 
@@ -184,6 +186,13 @@ final class Hydrator implements HydratorInterface
                     $this->setPropertyValue($proxyInstance, $idCol->propertyName, $proxyId, $proxyReflection);
                 }
             }
+
+            // Registrar el Proxy en el IdentityMap desde el principio para que si el usuario
+            // pide la entidad directamente $em->find(), reciba la MISMA instancia (Preserva Identidad)
+            if ($this->identityMap !== null) {
+                $this->identityMap->put($relationship->targetEntity, $proxyId, $proxyInstance);
+            }
+
             // Finalmente, asignar el proxy a la propiedad del objeto principal
 
             $this->setPropertyValue($entity, $relationship->propertyName, $proxyInstance, $reflectionClass);

@@ -83,9 +83,9 @@ final class ProxyGeneratorTest extends TestCase
     {
         $initialized = false;
 
+        /** @var ArticleEntity&LazyLoadingProxy $proxy */
         $proxy = $this->generator->createProxy(
             ArticleEntity::class,
-            1,
             function (object $proxy) use (&$initialized): void {
                 $initialized = true;
                 $this->setPrivateProperty($proxy, 'title', 'Loaded Title');
@@ -108,9 +108,9 @@ final class ProxyGeneratorTest extends TestCase
     {
         $initialized = false;
 
+        /** @var ArticleEntity&LazyLoadingProxy $proxy */
         $proxy = $this->generator->createProxy(
             ArticleEntity::class,
-            2,
             function (object $proxy) use (&$initialized): void {
                 $initialized = true;
                 $this->setPrivateProperty($proxy, 'published', true);
@@ -129,9 +129,9 @@ final class ProxyGeneratorTest extends TestCase
     {
         $callCount = 0;
 
+        /** @var ArticleEntity&LazyLoadingProxy $proxy */
         $proxy = $this->generator->createProxy(
             ArticleEntity::class,
-            3,
             function (object $proxy) use (&$callCount): void {
                 $callCount++;
                 $this->setPrivateProperty($proxy, 'title', 'Once');
@@ -151,9 +151,9 @@ final class ProxyGeneratorTest extends TestCase
     {
         $initialized = false;
 
+        /** @var ArticleEntity&LazyLoadingProxy $proxy */
         $proxy = $this->generator->createProxy(
             ArticleEntity::class,
-            4,
             function (object $proxy) use (&$initialized): void {
                 $initialized = true;
                 $this->setPrivateProperty($proxy, 'id', 4);
@@ -171,59 +171,6 @@ final class ProxyGeneratorTest extends TestCase
         $this->assertStringContainsString('Serialized', $serialized);
     }
 
-    // ── Task 14.2: Proxy registers in Identity Map after initialization ──
-
-    public function testProxyRegistersInIdentityMapAfterInitialization(): void
-    {
-        $identityMap = new IdentityMap();
-        $generator = new ProxyGenerator($this->proxyDir, $identityMap);
-
-        $proxy = $generator->createProxy(
-            ArticleEntity::class,
-            10,
-            function (object $proxy): void {
-                $this->setPrivateProperty($proxy, 'title', 'Mapped');
-            }
-        );
-
-        // Before initialization, not in identity map
-        $this->assertFalse($identityMap->contains(ArticleEntity::class, 10));
-
-        // Trigger initialization
-        $proxy->getTitle();
-
-        // After initialization, registered in identity map
-        $this->assertTrue($identityMap->contains(ArticleEntity::class, 10));
-        $this->assertSame($proxy, $identityMap->get(ArticleEntity::class, 10));
-    }
-
-    // ── Task 14.2: Lazy relationship integration ──
-
-    public function testProxyWorksWithLazyRelationshipPattern(): void
-    {
-        $identityMap = new IdentityMap();
-        $generator = new ProxyGenerator($this->proxyDir, $identityMap);
-
-        // Simulate a LAZY relationship: create a proxy for the related entity
-        $authorProxy = $generator->createProxy(
-            ArticleEntity::class,
-            99,
-            function (object $proxy): void {
-                $this->setPrivateProperty($proxy, 'title', 'Author Article');
-                $this->setPrivateProperty($proxy, 'content', 'Author content');
-            }
-        );
-
-        // The proxy should not be initialized until accessed
-        $this->assertFalse($authorProxy->__isInitialized());
-
-        // Accessing a property triggers lazy load
-        $this->assertSame('Author Article', $authorProxy->getTitle());
-        $this->assertTrue($authorProxy->__isInitialized());
-
-        // And it's now in the identity map
-        $this->assertTrue($identityMap->contains(ArticleEntity::class, 99));
-    }
 
     // ── Helpers ──
 

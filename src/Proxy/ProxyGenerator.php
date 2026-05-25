@@ -7,7 +7,6 @@ namespace SybaseORM\Proxy;
 use Closure;
 use ReflectionClass;
 use ReflectionMethod;
-use SybaseORM\ORM\IdentityMapInterface;
 
 /**
  * Generates proxy classes that extend entity classes and implement lazy loading.
@@ -20,7 +19,6 @@ final class ProxyGenerator
 {
     public function __construct(
         private readonly string $proxyDir,
-        private readonly ?IdentityMapInterface $identityMap = null,
     ) {
         if (!is_dir($this->proxyDir)) {
             mkdir($this->proxyDir, 0755, true);
@@ -73,23 +71,14 @@ final class ProxyGenerator
      * @param mixed   $id           The entity identifier
      * @param Closure $initializer  Closure that receives the proxy and loads its data
      */
-    public function createProxy(string $entityClass, mixed $id, Closure $initializer): object
+    public function createProxy(string $entityClass, Closure $initializer): object
     {
         $proxyClassName = $this->generateProxyClass($entityClass);
-
-        $identityMap = $this->identityMap;
-        $wrappedInitializer = function (object $proxy) use ($initializer, $entityClass, $id, $identityMap): void {
-            $initializer($proxy);
-
-            if ($identityMap !== null) {
-                $identityMap->put($entityClass, $id, $proxy);
-            }
-        };
 
         $reflection = new ReflectionClass($proxyClassName);
         $proxy = $reflection->newInstanceWithoutConstructor();
 
-        $proxy->__setInitializer($wrappedInitializer);
+        $proxy->__setInitializer($initializer);
 
         return $proxy;
     }
@@ -111,7 +100,7 @@ final class ProxyGenerator
     {
         $reflection = new ReflectionClass($entityClass);
         $shortProxyName = str_replace('\\', '_', $entityClass) . 'Proxy';
-        $getterOverrides = $this->generateGetterOverrides($reflection);
+        $methodOverrides = $this->generateMethodOverrides($reflection);
 
         $code = "<?php\n\n";
         $code .= "declare(strict_types=1);\n\n";
@@ -151,8 +140,8 @@ final class ProxyGenerator
         $code .= "        return \$this->__initializer;\n";
         $code .= "    }\n\n";
 
-        // Getter overrides
-        $code .= $getterOverrides;
+        // Method overrides
+        $code .= $methodOverrides;
 
         // __serialize — solo si la entidad padre define __serialize()
         if ($reflection->hasMethod('__serialize')) {
@@ -169,9 +158,9 @@ final class ProxyGenerator
     }
 
     /**
-     * Generates method overrides for all public getter methods of the entity.
+     * Generates method overrides for all public methods of the entity.
      */
-    private function generateGetterOverrides(ReflectionClass $reflection): string
+    private function generateMethodOverrides(ReflectionClass $reflection): string
     {
         $code = '';
 
@@ -188,8 +177,9 @@ final class ProxyGenerator
 
             $name = $method->getName();
 
-            // Only override getters (methods starting with "get" or "is" with no required params)
-            if (!$this->isGetter($method)) {
+            // We intercept all public methods except magics and getters/setters/actions.
+            // Magics handled manually or specially.
+            if (str_starts_with($name, '__') && $name !== '__toString') {
                 continue;
             }
 
@@ -201,7 +191,11 @@ final class ProxyGenerator
             $code .= "    public function {$name}({$paramSignature}){$returnTypeDecl}\n";
             $code .= "    {\n";
             $code .= "        \$this->__initialize();\n";
-            $code .= "        return parent::{$name}({$paramForward});\n";
+            if ($returnType === 'void') {
+                $code .= "        parent::{$name}({$paramForward});\n";
+            } else {
+                $code .= "        return parent::{$name}({$paramForward});\n";
+            }
             $code .= "    }\n\n";
         }
 
