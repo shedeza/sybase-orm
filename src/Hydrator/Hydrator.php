@@ -126,6 +126,16 @@ final class Hydrator implements HydratorInterface
                 continue; // Collection loader procesa los OneToMany
             }
 
+            // Interceptar el lado inverso del OneToOne (no tiene joinColumns en esta tabla)
+            if ($relationship->type === 'OneToOne' && $relationship->isInverseSide()) {
+                // Al no tener FK local, debemos consultar la BD para saber si existe o debe ser null.
+                $inverseEntity = $this->entityManager->getRepository($relationship->targetEntity)->findOneBy([
+                    $relationship->mappedBy => $entity
+                ]);
+                $this->setPropertyValue($entity, $relationship->propertyName, $inverseEntity, $reflectionClass);
+                continue;
+            }
+
             // Construir la "identidad" o IDs de la base de datos a partir del diccionario de JoyColumn
             $targetIdValues = [];
             $hasValue = false;
