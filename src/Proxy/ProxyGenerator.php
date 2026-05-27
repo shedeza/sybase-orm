@@ -285,10 +285,14 @@ final class ProxyGenerator
             if ($type->allowsNull() && $type->getName() !== 'mixed') {
                 $str = '?';
             }
-            if (!$type->isBuiltin()) {
+
+            $typeName = $type->getName();
+            $isSpecialType = in_array($typeName, ['static', 'self', 'parent'], true);
+
+            if (!$type->isBuiltin() && !$isSpecialType) {
                 $str .= '\\';
             }
-            $str .= $type->getName();
+            $str .= $typeName;
 
             return $str;
         }
@@ -298,10 +302,12 @@ final class ProxyGenerator
             foreach ($type->getTypes() as $t) {
                 $part = '';
                 if ($t instanceof \ReflectionNamedType) {
-                    if (!$t->isBuiltin()) {
+                    $tName = $t->getName();
+                    $isTPathSpecial = in_array($tName, ['static', 'self', 'parent'], true);
+                    if (!$t->isBuiltin() && !$isTPathSpecial) {
                         $part .= '\\';
                     }
-                    $part .= $t->getName();
+                    $part .= $tName;
                 }
                 $parts[] = $part;
             }
@@ -314,10 +320,12 @@ final class ProxyGenerator
             foreach ($type->getTypes() as $t) {
                 $part = '';
                 if ($t instanceof \ReflectionNamedType) {
-                    if (!$t->isBuiltin()) {
+                    $tName = $t->getName();
+                    $isTPathSpecial = in_array($tName, ['static', 'self', 'parent'], true);
+                    if (!$t->isBuiltin() && !$isTPathSpecial) {
                         $part .= '\\';
                     }
-                    $part .= $t->getName();
+                    $part .= $tName;
                 }
                 $parts[] = $part;
             }
