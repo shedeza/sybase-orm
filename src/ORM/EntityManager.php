@@ -935,6 +935,12 @@ final class EntityManager implements EntityManagerInterface
         // Process parameters reported by the translator
         foreach ($parameterNames as $name) {
             $value = $params[$name] ?? null;
+
+            // Handle Entity objects: resolve to their primary key(s)
+            if (is_object($value)) {
+                $value = $this->resolveParameterValue($value);
+            }
+
             if (is_array($value)) {
                 $scalarValues = $this->normalizeArrayParam($value);
                 if (empty($scalarValues)) {
@@ -957,6 +963,12 @@ final class EntityManager implements EntityManagerInterface
             if (in_array($name, $parameterNames, true)) {
                 continue;
             }
+
+            // Handle Entity objects for safety expansion too
+            if (is_object($value)) {
+                $value = $this->resolveParameterValue($value);
+            }
+
             if (is_array($value) && str_contains($sql, ':' . $name)) {
                 $scalarValues = $this->normalizeArrayParam($value);
                 if (empty($scalarValues)) {
@@ -975,6 +987,40 @@ final class EntityManager implements EntityManagerInterface
         }
 
         return [$sql, $orderedParams];
+    }
+
+    /**
+     * Resolves a parameter value. If it's an entity, returns its identifier.
+     */
+    private function resolveParameterValue(object $entity): mixed
+    {
+        // Don't process special objects like DateTime
+        if ($entity instanceof \DateTimeInterface) {
+            return $entity;
+        }
+
+        try {
+            $metadata = $this->metadataReader->getClassMetadata($entity::class);
+            $idColumns = $metadata->getIdColumns();
+
+            if (count($idColumns) === 1) {
+                $ref = new \ReflectionProperty($entity::class, $idColumns[0]->propertyName);
+
+                return $ref->getValue($entity);
+            }
+
+            // Composite ID: return as array
+            $id = [];
+            foreach ($idColumns as $col) {
+                $ref = new \ReflectionProperty($entity::class, $col->propertyName);
+                $id[$col->propertyName] = $ref->getValue($entity);
+            }
+
+            return $id;
+        } catch (\Throwable) {
+            // Not a mapped entity or reflection failed, return as-is
+            return $entity;
+        }
     }
 
     /**
