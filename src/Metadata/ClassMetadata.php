@@ -184,7 +184,7 @@ final class ClassMetadata
     public function getRelationshipByJoinColumn(string $joinColumnName): ?RelationshipMetadata
     {
         foreach ($this->relationships as $relationship) {
-            if ($relationship->joinColumn === $joinColumnName) {
+            if (isset($relationship->joinColumns[$joinColumnName])) {
                 return $relationship;
             }
         }

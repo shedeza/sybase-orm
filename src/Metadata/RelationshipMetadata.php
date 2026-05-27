@@ -9,6 +9,9 @@ namespace SybaseORM\Metadata;
  */
 final class RelationshipMetadata
 {
+    public readonly ?string $joinColumn;
+    public readonly ?string $referencedColumnName;
+
     public function __construct(
         public readonly string $propertyName,
         public readonly string $type,
@@ -16,12 +19,25 @@ final class RelationshipMetadata
         public readonly ?string $mappedBy = null,
         public readonly ?string $inversedBy = null,
         /** @var array<string, string> Map of joinColumn => referencedColumnName */
-        public readonly array $joinColumns = [],
+        public array $joinColumns = [],
         public readonly ?string $joinTable = null,
         public readonly array $cascade = [],
         public readonly string $fetch = 'LAZY',
         public readonly bool $orphanRemoval = false,
+        ?string $joinColumn = null,
+        ?string $referencedColumnName = null,
     ) {
+        if ($joinColumn !== null) {
+            $this->joinColumns[$joinColumn] = $referencedColumnName ?? 'id';
+        }
+
+        if (!empty($this->joinColumns)) {
+            $this->joinColumn = (string) array_key_first($this->joinColumns);
+            $this->referencedColumnName = $this->joinColumns[$this->joinColumn];
+        } else {
+            $this->joinColumn = null;
+            $this->referencedColumnName = null;
+        }
     }
 
     /**

@@ -646,13 +646,24 @@ final class OqlToSqlTranslator
             if ($this->stripAlias) {
                 return $this->dialect->quoteIdentifier($property);
             }
+
             return $this->dialect->quoteIdentifier($alias) . '.' . $this->dialect->quoteIdentifier($property);
         }
 
         $metadata = $this->metadataReader->getClassMetadata($entityClass);
         $column = $metadata->getColumn($property);
 
-        $columnName = $column !== null ? $column->columnName : $property;
+        if ($column !== null) {
+            $columnName = $column->columnName;
+        } else {
+            // Check if it's a relationship property (ManyToOne or OneToOne owning side)
+            $relationship = $metadata->getRelationship($property);
+            if ($relationship !== null && $relationship->joinColumn !== null) {
+                $columnName = $relationship->joinColumn;
+            } else {
+                $columnName = $property;
+            }
+        }
 
         if ($this->stripAlias) {
             return $this->dialect->quoteIdentifier($columnName);
