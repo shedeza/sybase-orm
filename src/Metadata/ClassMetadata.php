@@ -20,6 +20,8 @@ final class ClassMetadata
 
     public readonly ?string $idField;
 
+    public readonly ?string $softDeleteColumn;
+
     /**
      * @param string                $entityClass        Fully qualified class name
      * @param string                $tableName          Database table name
@@ -33,6 +35,7 @@ final class ClassMetadata
      * @param array<string, string[]> $lifecycleHooks   Hook type => method names
      * @param string[]              $idFields           Property names of all primary key fields
      * @param string|null           $repositoryClass    Custom repository class FQCN
+     * @param string|null           $softDeleteColumn   Column name for soft delete
      */
     public function __construct(
         public readonly string $entityClass,
@@ -50,7 +53,9 @@ final class ClassMetadata
         /** @var EmbeddedMetadata[] */
         public readonly array $embeddeds = [],
         public readonly string $connection = 'default',
+        ?string $softDeleteColumn = null,
     ) {
+        $this->softDeleteColumn = $softDeleteColumn;
         // Compute idFields and idField for backward compatibility
         if ($idFields !== []) {
             $this->idFields = $idFields;

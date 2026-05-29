@@ -572,6 +572,7 @@ final class UnitOfWork implements UnitOfWorkInterface
 
     /**
      * Executes DELETE statements for all deleted entities.
+     * Supports SoftDelete: if enabled, executes an UPDATE instead of a physical DELETE.
      */
     private function executeDeletes(): void
     {
@@ -583,9 +584,23 @@ final class UnitOfWork implements UnitOfWorkInterface
                 continue;
             }
 
+            // Dispatch PreRemove hook
+            $this->hookDispatcher?->dispatch($entity, 'PreRemove');
+
             [$whereClause, $whereValues] = $this->buildCompositeWhereClause($metadata, $entity);
 
-            $sql = $this->dialect->generateDelete($metadata->getQualifiedTableName(), $whereClause);
+            if ($metadata->softDeleteColumn !== null) {
+                // Perform Soft Delete: UPDATE table SET deleted_at = GETDATE() WHERE ...
+                $sql = sprintf(
+                    'UPDATE %s SET %s = GETDATE() WHERE %s',
+                    $this->dialect->quoteIdentifier($metadata->getQualifiedTableName()),
+                    $this->dialect->quoteIdentifier($metadata->softDeleteColumn),
+                    $whereClause,
+                );
+            } else {
+                // Perform physical DELETE
+                $sql = $this->dialect->generateDelete($metadata->getQualifiedTableName(), $whereClause);
+            }
 
             $this->connectionManager->executeStatement($sql, $whereValues);
 

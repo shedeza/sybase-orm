@@ -23,6 +23,7 @@ use SybaseORM\Attribute\ManyToMany;
 use SybaseORM\Attribute\ManyToOne;
 use SybaseORM\Attribute\OneToMany;
 use SybaseORM\Attribute\OneToOne;
+use SybaseORM\Attribute\SoftDelete;
 use SybaseORM\Attribute\PostPersist;
 use SybaseORM\Attribute\PostRemove;
 use SybaseORM\Attribute\PostUpdate;
@@ -165,6 +166,7 @@ final class MetadataReader implements MetadataReaderInterface
 
         [$inheritanceType, $discriminatorColumn, $discriminatorMap] = $this->readInheritanceMetadata($reflectionClass);
         $lifecycleHooks = $this->readLifecycleHooks($reflectionClass);
+        $softDeleteColumn = $this->readSoftDeleteMetadata($reflectionClass);
 
         $metadata = new ClassMetadata(
             entityClass: $entityClass,
@@ -180,6 +182,7 @@ final class MetadataReader implements MetadataReaderInterface
             repositoryClass: $entityAttr->repositoryClass,
             embeddeds: $embeddeds,
             connection: $entityAttr->connection,
+            softDeleteColumn: $softDeleteColumn,
         );
 
         // Validate metadata consistency
@@ -413,6 +416,13 @@ final class MetadataReader implements MetadataReaderInterface
     /**
      * @return array<string, string[]>
      */
+    private function readSoftDeleteMetadata(ReflectionClass $reflectionClass): ?string
+    {
+        $attr = $this->getClassAttribute($reflectionClass, SoftDelete::class);
+
+        return $attr?->column;
+    }
+
     private function readLifecycleHooks(ReflectionClass $reflectionClass): array
     {
         $hasHooksAttr = $this->getClassAttribute($reflectionClass, HasLifecycleHooks::class);

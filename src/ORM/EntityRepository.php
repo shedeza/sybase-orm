@@ -119,9 +119,7 @@ class EntityRepository
     /** @return object[] */
     public function findAll(): array
     {
-        return $this->entityManager->query(
-            sprintf('SELECT e FROM %s e', $this->entityShortName),
-        );
+        return $this->findBy([]);
     }
 
     /**
@@ -360,9 +358,18 @@ class EntityRepository
      */
     private function buildCriteriaConditions(array $criteria, string $prefix): array
     {
+        $metadata = $this->entityManager->getMetadataReader()->getClassMetadata($this->entityClass);
+        $withTrashed = $criteria['_withTrashed'] ?? false;
+        unset($criteria['_withTrashed']);
+
         $conditions = [];
         $params = [];
         $i = 0;
+
+        // Apply SoftDelete filter by default
+        if ($metadata->softDeleteColumn !== null && !$withTrashed) {
+            $conditions[] = sprintf('e.%s IS NULL', $metadata->softDeleteColumn);
+        }
 
         foreach ($criteria as $property => $value) {
             $paramName = $prefix . $i;

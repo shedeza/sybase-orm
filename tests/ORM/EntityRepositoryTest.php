@@ -19,6 +19,15 @@ final class EntityRepositoryTest extends TestCase
     protected function setUp(): void
     {
         $this->em = $this->createMock(EntityManagerInterface::class);
+
+        $metadata = new \SybaseORM\Metadata\ClassMetadata(
+            entityClass: CustomerEntity::class,
+            tableName: 'customers'
+        );
+        $metadataReader = $this->createMock(\SybaseORM\Metadata\MetadataReaderInterface::class);
+        $metadataReader->method('getClassMetadata')->with(CustomerEntity::class)->willReturn($metadata);
+        $this->em->method('getMetadataReader')->willReturn($metadataReader);
+
         $this->repo = new EntityRepository($this->em, CustomerEntity::class);
     }
 
