@@ -356,13 +356,22 @@ class EntityRepository
         $params = [];
         $i = 0;
 
+        $typeCaster = $this->entityManager->getTypeCaster();
+
         // Apply SoftDelete filter by default
         if ($metadata->softDeleteColumn !== null && !$withTrashed) {
-            $conditions[] = sprintf('e.%s IS NULL', $metadata->softDeleteColumn);
+            // Find property name for the soft delete column if possible
+            $softDeleteProp = $metadata->softDeleteColumn;
+            $softDeleteCol = $metadata->getColumnByName($metadata->softDeleteColumn);
+            if ($softDeleteCol !== null) {
+                $softDeleteProp = $softDeleteCol->propertyName;
+            }
+            $conditions[] = sprintf('e.%s IS NULL', $softDeleteProp);
         }
 
         foreach ($criteria as $property => $value) {
             $paramName = $prefix . $i;
+            $column = $metadata->getColumn($property);
 
             if ($value === null) {
                 $conditions[] = sprintf('e.%s IS NULL', $property);
@@ -370,6 +379,13 @@ class EntityRepository
                 // Separate nulls from non-null values
                 $hasNull = in_array(null, $value, true);
                 $nonNullValues = array_values(array_filter($value, fn($v) => $v !== null));
+                
+                if ($column !== null) {
+                    $nonNullValues = array_map(
+                        fn($v) => $typeCaster->toDatabaseValue($v, $column->type),
+                        $nonNullValues
+                    );
+                }
 
                 if ($hasNull && empty($nonNullValues)) {
                     $conditions[] = sprintf('e.%s IS NULL', $property);
@@ -382,8 +398,12 @@ class EntityRepository
                     $params[$paramName] = $nonNullValues;
                 }
             } else {
+                $dbValue = ($column !== null)
+                    ? $typeCaster->toDatabaseValue($value, $column->type)
+                    : $value;
+
                 $conditions[] = sprintf('e.%s = :%s', $property, $paramName);
-                $params[$paramName] = $value;
+                $params[$paramName] = $dbValue;
             }
 
             $i++;

@@ -833,6 +833,11 @@ final class EntityManager implements EntityManagerInterface
         return $this->metadataReader;
     }
 
+    public function getTypeCaster(): TypeCasterInterface
+    {
+        return $this->typeCaster;
+    }
+
     public function registerOqlFunction(string $name, string $sqlTemplate): void
     {
         $this->customOqlFunctions[$name] = $sqlTemplate;

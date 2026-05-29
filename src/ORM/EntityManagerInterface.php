@@ -97,6 +97,9 @@ interface EntityManagerInterface
     /** Returns the metadata reader. */
     public function getMetadataReader(): \SybaseORM\Metadata\MetadataReaderInterface;
 
+    /** Returns the type caster. */
+    public function getTypeCaster(): \SybaseORM\Type\TypeCasterInterface;
+
     /**
      * Registers a custom OQL function with its SQL template.
      *
