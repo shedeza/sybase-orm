@@ -82,6 +82,14 @@ final class Hydrator implements HydratorInterface
         // Hydrate mapped columns
         $this->hydrateColumns($entity, $row, $metadata, $reflectionClass);
 
+        // Store in Identity Map IMMEDIATELY after columns are hydrated.
+        // This is critical for circular references: recursive calls to hydrate() 
+        // (e.g. for eager relationships) will now find this instance in the map 
+        // instead of creating new instances or proxies.
+        if ($this->identityMap !== null) {
+            $this->storeInIdentityMap($entity, $metadata, $reflectionClass);
+        }
+
         // Hydrate eager-loaded relationships
         $this->hydrateEagerRelationships($entity, $row, $metadata, $reflectionClass);
 
@@ -90,11 +98,6 @@ final class Hydrator implements HydratorInterface
 
         // Wrap to-many relationship arrays in PersistentCollection
         $this->wrapCollectionRelationships($entity, $metadata, $reflectionClass);
-
-        // Store in Identity Map if available
-        if ($this->identityMap !== null) {
-            $this->storeInIdentityMap($entity, $metadata);
-        }
 
         // Register as clean in UnitOfWork so dirty checking works on subsequent save()
         if ($this->unitOfWork !== null) {
@@ -198,15 +201,17 @@ final class Hydrator implements HydratorInterface
             );
 
             // Pre-poblar los identificadores primarios en el Proxy
-            $proxyReflection = new \ReflectionClass($proxyInstance);
+            // IMPORTANTE: Usar la reflexión de la clase base (targetEntity) para asegurar que se
+            // puedan asignar propiedades privadas de la clase padre en el Proxy.
+            $targetReflection = $this->getReflectionClass($relationship->targetEntity);
             if (is_array($proxyId)) {
                 foreach ($proxyId as $propName => $propValue) {
-                    $this->setPropertyValue($proxyInstance, $propName, $propValue, $proxyReflection);
+                    $this->setPropertyValue($proxyInstance, $propName, $propValue, $targetReflection);
                 }
             } else {
                 $idCol = $targetMeta->getIdColumn();
                 if ($idCol !== null) {
-                    $this->setPropertyValue($proxyInstance, $idCol->propertyName, $proxyId, $proxyReflection);
+                    $this->setPropertyValue($proxyInstance, $idCol->propertyName, $proxyId, $targetReflection);
                 }
             }
 
@@ -376,7 +381,7 @@ final class Hydrator implements HydratorInterface
 
             // Hydrate the related entity (recursively uses Identity Map)
             $relatedEntity = $this->hydrate($relatedRow, $relationship->targetEntity);
-            $this->setPropertyValue($entity, $relationship->propertyName, $relatedEntity, $this->getReflectionClass($entity::class));
+            $this->setPropertyValue($entity, $relationship->propertyName, $relatedEntity, $reflectionClass);
         }
     }
 
@@ -449,13 +454,12 @@ final class Hydrator implements HydratorInterface
     private function storeInIdentityMap(
         object $entity,
         ClassMetadata $metadata,
+        ReflectionClass $reflectionClass,
     ): void {
         $idColumns = $metadata->getIdColumns();
         if (empty($idColumns)) {
             return;
         }
-
-        $reflectionClass = $this->getReflectionClass($entity::class);
 
         if (count($idColumns) === 1) {
             // Single key: existing fast path
