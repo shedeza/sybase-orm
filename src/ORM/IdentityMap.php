@@ -16,7 +16,18 @@ final class IdentityMap implements IdentityMapInterface
 
     public function put(string $entityClass, mixed $id, object $entity): void
     {
-        $this->map[$entityClass][$this->deriveKey($id)] = $entity;
+        $key = $this->deriveKey($id);
+
+        // Evitar sobrescribir una entidad real con un Proxy. 
+        // La entidad real siempre tiene precedencia para mantener la integridad de los datos en memoria.
+        if (isset($this->map[$entityClass][$key])) {
+            $existing = $this->map[$entityClass][$key];
+            if ($entity instanceof \SybaseORM\Proxy\LazyLoadingProxy && !($existing instanceof \SybaseORM\Proxy\LazyLoadingProxy)) {
+                return;
+            }
+        }
+
+        $this->map[$entityClass][$key] = $entity;
     }
 
     public function get(string $entityClass, mixed $id): ?object
