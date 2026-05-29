@@ -8,6 +8,26 @@ Symfony Bundle que implementa un ORM completo para **Sybase ASE** (Adaptive Serv
 - Extensión `pdo_dblib` (FreeTDS)
 - Symfony 6.x, 7.x o 8.x
 
+## Desarrollo
+
+Para preparar el entorno y ejecutar tests, consulta [docs/development.md](docs/development.md).
+
+Comandos rápidos:
+
+```bash
+# Instalar dependencias
+composer install
+
+# Ejecutar tests
+composer test
+
+# Análisis estático
+composer analyse
+
+# Arreglar estilo de código
+composer fix
+```
+
 ## Instalación
 
 **Paso 1:** Agregar el repositorio y requerir el paquete:

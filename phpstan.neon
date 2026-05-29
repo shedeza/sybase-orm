@@ -1,0 +1,14 @@
+parameters:
+    level: 8
+    paths:
+        - src
+        - tests
+    excludePaths:
+        - tests/fixtures
+        - vendor
+    checkMissingIterableValueType: false
+    reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        - '#PDOException#'
+        - '#SplObjectStorage#'
+    tmpDir: .phpstan-cache
