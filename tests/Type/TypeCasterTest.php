@@ -102,7 +102,7 @@ class TypeCasterTest extends TestCase
     public function testDateTimeToPhpValueFromSybaseFormat(): void
     {
         $result = $this->caster->toPhpValue('2024-03-15 10:30:45.123', 'datetime');
-        $this->assertInstanceOf(\DateTimeImmutable::class, $result);
+        $this->assertInstanceOf(\DateTime::class, $result);
         $this->assertSame('2024-03-15', $result->format('Y-m-d'));
         $this->assertSame('10:30:45', $result->format('H:i:s'));
     }
@@ -110,7 +110,7 @@ class TypeCasterTest extends TestCase
     public function testDateTimeToPhpValueFromStandardFormat(): void
     {
         $result = $this->caster->toPhpValue('2024-03-15 10:30:45', 'datetime');
-        $this->assertInstanceOf(\DateTimeImmutable::class, $result);
+        $this->assertInstanceOf(\DateTime::class, $result);
         $this->assertSame('2024-03-15', $result->format('Y-m-d'));
     }
 
@@ -118,7 +118,7 @@ class TypeCasterTest extends TestCase
     {
         $dt = new \DateTime('2024-06-01 12:00:00');
         $result = $this->caster->toPhpValue($dt, 'datetime');
-        $this->assertInstanceOf(\DateTimeImmutable::class, $result);
+        $this->assertInstanceOf(\DateTime::class, $result);
         $this->assertSame('2024-06-01', $result->format('Y-m-d'));
     }
 

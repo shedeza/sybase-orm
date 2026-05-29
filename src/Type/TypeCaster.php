@@ -74,7 +74,7 @@ final class TypeCaster implements TypeCasterInterface
 
         return match ($type) {
             'bool', 'boolean' => $this->boolToDatabaseValue($value),
-            'datetime' => $this->dateTimeToDatabaseValue($value),
+            'datetime', 'date', 'time' => $this->dateTimeToDatabaseValue($value),
             'int', 'integer', 'tinyint', 'smallint', 'bigint' => $this->intToDatabaseValue($value),
             'decimal', 'numeric' => $this->decimalToDatabaseValue($value),
             'float', 'double', 'real' => $this->floatToDatabaseValue($value),
@@ -91,7 +91,7 @@ final class TypeCaster implements TypeCasterInterface
 
         return match ($type) {
             'bool', 'boolean' => $this->boolToPhpValue($value),
-            'datetime' => $this->dateTimeToPhpValue($value),
+            'datetime', 'date', 'time' => $this->dateTimeToPhpValue($value),
             'int', 'integer', 'tinyint', 'smallint', 'bigint' => $this->intToPhpValue($value),
             'decimal', 'numeric' => $this->decimalToPhpValue($value),
             'float', 'double', 'real' => $this->floatToPhpValue($value),
@@ -320,28 +320,28 @@ final class TypeCaster implements TypeCasterInterface
         throw new TypeConversionException(get_debug_type($value), 'datetime', $value);
     }
 
-    private function dateTimeToPhpValue(mixed $value): \DateTimeImmutable
+    private function dateTimeToPhpValue(mixed $value): \DateTime
     {
         if ($value instanceof \DateTimeInterface) {
-            return \DateTimeImmutable::createFromInterface($value);
+            return ($value instanceof \DateTime) ? $value : \DateTime::createFromInterface($value);
         }
 
         if (is_string($value)) {
             $tz = self::getUtcTimezone();
 
-            $dt = \DateTimeImmutable::createFromFormat(self::DATETIME_FORMAT, $value, $tz);
+            $dt = \DateTime::createFromFormat(self::DATETIME_FORMAT, $value, $tz);
             if ($dt !== false) {
                 return $dt;
             }
 
             // Try standard datetime formats as fallback
-            $dt = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $value, $tz);
+            $dt = \DateTime::createFromFormat('Y-m-d H:i:s', $value, $tz);
             if ($dt !== false) {
                 return $dt;
             }
 
             try {
-                return new \DateTimeImmutable($value, $tz);
+                return new \DateTime($value, $tz);
             } catch (\Exception) {
                 // Fall through to exception
             }

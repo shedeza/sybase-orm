@@ -501,6 +501,19 @@ final class Hydrator implements HydratorInterface
             return;
         }
 
+        // Conversión inteligente de tipos de fecha según la declaración de la propiedad
+        if ($value instanceof \DateTimeInterface) {
+            $type = $property->getType();
+            if ($type instanceof \ReflectionNamedType) {
+                $typeName = $type->getName();
+                if ($typeName === \DateTimeImmutable::class && $value instanceof \DateTime) {
+                    $value = \DateTimeImmutable::createFromInterface($value);
+                } elseif ($typeName === \DateTime::class && $value instanceof \DateTimeImmutable) {
+                    $value = \DateTime::createFromInterface($value);
+                }
+            }
+        }
+
         $property->setValue($entity, $value);
     }
 
