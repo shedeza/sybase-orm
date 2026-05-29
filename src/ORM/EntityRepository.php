@@ -129,10 +129,6 @@ class EntityRepository
      */
     public function findBy(array $criteria, ?array $orderBy = null, ?int $limit = null, ?int $offset = null): array
     {
-        if (empty($criteria) && $orderBy === null && $limit === null) {
-            return $this->findAll();
-        }
-
         [$conditions, $params] = $this->buildCriteriaConditions($criteria, 'p');
 
         $oql = sprintf('SELECT e FROM %s e', $this->entityShortName);
@@ -157,19 +153,13 @@ class EntityRepository
     /** @param array<string, mixed> $criteria */
     public function findOneBy(array $criteria): ?object
     {
-        if (empty($criteria)) {
-            return $this->entityManager->queryOne(
-                sprintf('SELECT e FROM %s e', $this->entityShortName),
-            );
-        }
-
         [$conditions, $params] = $this->buildCriteriaConditions($criteria, 'p');
 
-        $oql = sprintf(
-            'SELECT e FROM %s e WHERE %s',
-            $this->entityShortName,
-            implode(' AND ', $conditions),
-        );
+        $oql = sprintf('SELECT e FROM %s e', $this->entityShortName);
+
+        if (!empty($conditions)) {
+            $oql .= ' WHERE ' . implode(' AND ', $conditions);
+        }
 
         return $this->entityManager->queryOne($oql, $params);
     }
