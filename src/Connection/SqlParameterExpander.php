@@ -131,7 +131,7 @@ final class SqlParameterExpander
      * If all values are scalar/null, returns them as-is.
      * If values contain arrays/objects, uses array_keys() instead (Doctrine compatibility).
      *
-     * @param array $value The array to normalize
+     * @param array<mixed> $value The array to normalize
      * @return list<scalar|null> Flat list of scalar values
      */
     private function normalizeValues(array $value): array
@@ -139,13 +139,15 @@ final class SqlParameterExpander
         foreach ($value as $item) {
             if (is_array($item) || is_object($item)) {
                 // Values are non-scalar — use keys as the actual values
+                /** @var list<scalar|null> */
                 return array_values(array_map(
-                    fn ($k) => is_int($k) || is_string($k) || is_float($k) ? $k : (string) $k,
+                    static fn(int|string $k): int|string => $k,
                     array_keys($value),
                 ));
             }
         }
 
+        /** @var list<scalar|null> */
         return array_values($value);
     }
 }

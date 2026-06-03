@@ -23,6 +23,5 @@ final class JoinColumns
     /** @param JoinColumn[] $value */
     public function __construct(
         public readonly array $value
-    ) {
-    }
+    ) {}
 }

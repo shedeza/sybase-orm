@@ -65,8 +65,7 @@ final class MetadataReader implements MetadataReaderInterface
     public function __construct(
         private readonly ?string $cacheDir = null,
         private readonly bool $useInstanceCache = false,
-    ) {
-    }
+    ) {}
 
     /**
      * Clears the in-memory metadata cache. Useful for testing.
@@ -414,7 +413,7 @@ final class MetadataReader implements MetadataReaderInterface
     }
 
     /**
-     * @return array<string, string[]>
+     * Reads the soft-delete column name from the entity class.
      */
     private function readSoftDeleteMetadata(ReflectionClass $reflectionClass): ?string
     {
@@ -450,8 +449,8 @@ final class MetadataReader implements MetadataReaderInterface
         // Sort by priority descending (higher priority executes first)
         $hooks = [];
         foreach ($hookEntries as $hookName => $entries) {
-            usort($entries, fn ($a, $b) => $b['priority'] <=> $a['priority']);
-            $hooks[$hookName] = array_map(fn ($e) => $e['method'], $entries);
+            usort($entries, fn($a, $b) => $b['priority'] <=> $a['priority']);
+            $hooks[$hookName] = array_map(fn($e) => $e['method'], $entries);
         }
 
         return $hooks;
@@ -487,7 +486,7 @@ final class MetadataReader implements MetadataReaderInterface
         $dir = dirname($path);
 
         if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
+            mkdir($dir, 0o755, true);
         }
 
         file_put_contents($path, serialize($metadata));

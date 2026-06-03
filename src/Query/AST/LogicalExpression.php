@@ -13,6 +13,5 @@ final class LogicalExpression
         public readonly Comparison|LogicalExpression|IsNullExpression|InExpression $left,
         public readonly string $operator,
         public readonly Comparison|LogicalExpression|IsNullExpression|InExpression $right,
-    ) {
-    }
+    ) {}
 }

@@ -14,6 +14,5 @@ final class Comparison
         public readonly PropertyAccess|Literal|Parameter|FunctionCall|CustomFunctionCall $left,
         public readonly string $operator,
         public readonly PropertyAccess|Literal|Parameter|FunctionCall|CustomFunctionCall $right,
-    ) {
-    }
+    ) {}
 }

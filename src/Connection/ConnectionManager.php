@@ -420,7 +420,7 @@ class ConnectionManager implements ConnectionManagerInterface
      * If all values are scalar/null, returns them as-is.
      * If values contain arrays/objects, uses array_keys() instead (Doctrine compatibility).
      *
-     * @param array $value The array to normalize.
+     * @param array<mixed> $value The array to normalize.
      * @return list<scalar|null> Flat list of scalar values.
      */
     private function normalizeExpandValues(array $value): array
@@ -428,13 +428,15 @@ class ConnectionManager implements ConnectionManagerInterface
         foreach ($value as $item) {
             if (is_array($item) || is_object($item)) {
                 // Values are non-scalar — use keys as the actual values
+                /** @var list<scalar|null> */
                 return array_values(array_map(
-                    fn ($k) => is_int($k) || is_string($k) || is_float($k) ? $k : (string) $k,
+                    static fn(int|string $k): int|string => $k,
                     array_keys($value),
                 ));
             }
         }
 
+        /** @var list<scalar|null> */
         return array_values($value);
     }
 
@@ -450,7 +452,7 @@ class ConnectionManager implements ConnectionManagerInterface
             return $params;
         }
 
-        return array_map(fn ($v) => is_string($v) ? $this->convertToDatabase($v) : $v, $params);
+        return array_map(fn($v) => is_string($v) ? $this->convertToDatabase($v) : $v, $params);
     }
 
     /**
@@ -465,7 +467,7 @@ class ConnectionManager implements ConnectionManagerInterface
             return $row;
         }
 
-        return array_map(fn ($v) => is_string($v) ? $this->convertFromDatabase($v) : $v, $row);
+        return array_map(fn($v) => is_string($v) ? $this->convertFromDatabase($v) : $v, $row);
     }
 
     /**
@@ -685,9 +687,7 @@ class ConnectionManager implements ConnectionManagerInterface
     public function getConfigSafe(): array
     {
         $safe = $this->config;
-        if (isset($safe['password'])) {
-            $safe['password'] = '***';
-        }
+        $safe['password'] = '***';
         $safe['read_only'] = $this->readOnly;
 
         return $safe;

@@ -15,6 +15,5 @@ final class JoinClause
         public readonly string $alias,
         public readonly ?string $entityName = null,
         public readonly Comparison|LogicalExpression|null $withCondition = null,
-    ) {
-    }
+    ) {}
 }

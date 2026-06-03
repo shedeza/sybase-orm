@@ -12,6 +12,5 @@ final class SetClause
     public function __construct(
         public readonly PropertyAccess $property,
         public readonly Parameter|Literal|CustomFunctionCall $value,
-    ) {
-    }
+    ) {}
 }

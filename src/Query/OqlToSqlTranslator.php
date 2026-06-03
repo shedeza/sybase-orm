@@ -42,12 +42,6 @@ final class OqlToSqlTranslator
     private array $aliasToEntity = [];
 
     /**
-     * Maps OQL alias → SQL table alias.
-     * @var array<string, string>
-     */
-    private array $aliasToTable = [];
-
-    /**
      * When true, resolvePropertyToColumn omits the alias prefix.
      * Used for UPDATE/DELETE where Sybase ASE doesn't support table aliases.
      */
@@ -98,7 +92,6 @@ final class OqlToSqlTranslator
     public function translate(SelectStatement|UpdateStatement|DeleteStatement $statement): array
     {
         $this->aliasToEntity = [];
-        $this->aliasToTable = [];
         $this->stripAlias = false;
 
         if ($statement instanceof UpdateStatement) {
@@ -175,7 +168,6 @@ final class OqlToSqlTranslator
         $metadata = $this->metadataReader->getClassMetadata($entityClass);
 
         $this->aliasToEntity[$statement->alias] = $entityClass;
-        $this->aliasToTable[$statement->alias] = $statement->alias;
 
         // Sybase ASE doesn't support table aliases in UPDATE statements
         $this->stripAlias = true;
@@ -217,7 +209,6 @@ final class OqlToSqlTranslator
         $metadata = $this->metadataReader->getClassMetadata($entityClass);
 
         $this->aliasToEntity[$statement->alias] = $entityClass;
-        $this->aliasToTable[$statement->alias] = $statement->alias;
 
         // Sybase ASE doesn't support table aliases in DELETE statements
         $this->stripAlias = true;
@@ -248,22 +239,18 @@ final class OqlToSqlTranslator
             return ':' . $value->name;
         }
 
-        if ($value instanceof Literal) {
-            if ($value->type === 'null') {
-                return 'NULL';
-            }
-            if ($value->type === 'string') {
-                return "'" . str_replace("'", "''", (string) $value->value) . "'";
-            }
-
-            return (string) $value->value;
-        }
-
         if ($value instanceof CustomFunctionCall) {
             return $this->resolveCustomFunctionCall($value, $parameters);
         }
 
-        return '';
+        if ($value->type === 'null') {
+            return 'NULL';
+        }
+        if ($value->type === 'string') {
+            return "'" . str_replace("'", "''", (string) $value->value) . "'";
+        }
+
+        return (string) $value->value;
     }
 
     /**
@@ -373,7 +360,6 @@ final class OqlToSqlTranslator
         $metadata = $this->metadataReader->getClassMetadata($entityClass);
 
         $this->aliasToEntity[$from->alias] = $entityClass;
-        $this->aliasToTable[$from->alias] = $from->alias;
 
         return $this->dialect->quoteIdentifier($metadata->tableName)
             . ' ' . $this->dialect->quoteIdentifier($from->alias);
@@ -407,7 +393,6 @@ final class OqlToSqlTranslator
         $targetMeta = $this->metadataReader->getClassMetadata($targetEntity);
 
         $this->aliasToEntity[$join->alias] = $targetEntity;
-        $this->aliasToTable[$join->alias] = $join->alias;
 
         $joinColumns = $relation->joinColumns;
         if (empty($joinColumns)) {
@@ -529,14 +514,6 @@ final class OqlToSqlTranslator
             return ':' . $operand->name;
         }
 
-        if ($operand instanceof Literal) {
-            if ($operand->type === 'string') {
-                return "'" . str_replace("'", "''", (string) $operand->value) . "'";
-            }
-
-            return (string) $operand->value;
-        }
-
         if ($operand instanceof FunctionCall) {
             return $this->resolveFunctionCall($operand);
         }
@@ -545,13 +522,17 @@ final class OqlToSqlTranslator
             return $this->resolveCustomFunctionCall($operand, $parameters);
         }
 
-        return '';
+        if ($operand->type === 'string') {
+            return "'" . str_replace("'", "''", (string) $operand->value) . "'";
+        }
+
+        return (string) $operand->value;
     }
 
     private function resolveOrderBy(OrderByClause $orderBy): string
     {
         return implode(', ', array_map(
-            fn (OrderByItem $item) => $this->resolvePropertyToColumn(
+            fn(OrderByItem $item) => $this->resolvePropertyToColumn(
                 $item->property->alias,
                 $item->property->property,
             ) . ' ' . $item->direction,
@@ -562,7 +543,7 @@ final class OqlToSqlTranslator
     private function resolveGroupBy(GroupByClause $groupBy): string
     {
         return implode(', ', array_map(
-            fn (PropertyAccess $p) => $this->resolvePropertyToColumn($p->alias, $p->property),
+            fn(PropertyAccess $p) => $this->resolvePropertyToColumn($p->alias, $p->property),
             $groupBy->properties,
         ));
     }
@@ -627,7 +608,6 @@ final class OqlToSqlTranslator
         $targetMeta = $this->metadataReader->getClassMetadata($entityClass);
 
         $this->aliasToEntity[$join->alias] = $entityClass;
-        $this->aliasToTable[$join->alias] = $join->alias;
 
         $onCondition = '';
         if ($join->withCondition !== null) {

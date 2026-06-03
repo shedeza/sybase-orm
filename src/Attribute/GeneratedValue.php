@@ -19,6 +19,5 @@ final class GeneratedValue
 {
     public function __construct(
         public readonly string $strategy = 'IDENTITY',
-    ) {
-    }
+    ) {}
 }

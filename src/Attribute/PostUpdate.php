@@ -15,6 +15,5 @@ final class PostUpdate
 {
     public function __construct(
         public readonly int $priority = 0,
-    ) {
-    }
+    ) {}
 }

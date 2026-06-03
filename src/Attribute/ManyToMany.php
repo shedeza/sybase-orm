@@ -22,6 +22,5 @@ final class ManyToMany
         public readonly ?string $joinTable = null,
         public readonly array $cascade = [],
         public readonly string $fetch = 'LAZY',
-    ) {
-    }
+    ) {}
 }

@@ -34,6 +34,5 @@ final class SoftDelete
 {
     public function __construct(
         public readonly string $column = 'deleted_at',
-    ) {
-    }
+    ) {}
 }

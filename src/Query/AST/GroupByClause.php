@@ -14,6 +14,5 @@ final class GroupByClause
      */
     public function __construct(
         public readonly array $properties,
-    ) {
-    }
+    ) {}
 }

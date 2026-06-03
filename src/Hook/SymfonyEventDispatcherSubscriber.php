@@ -19,8 +19,7 @@ final class SymfonyEventDispatcherSubscriber implements EventSubscriberInterface
 {
     public function __construct(
         private readonly EventDispatcherInterface $eventDispatcher,
-    ) {
-    }
+    ) {}
 
     public function getSubscribedEvents(): array
     {

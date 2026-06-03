@@ -23,6 +23,5 @@ final class EmbeddedMetadata
         public readonly string $class,
         public readonly string $columnPrefix,
         public readonly array $columns = [],
-    ) {
-    }
+    ) {}
 }

@@ -137,10 +137,6 @@ final class EntityManager implements EntityManagerInterface
                 $queryParams[$paramName] = $val;
             }
 
-            if (empty($whereParts)) {
-                return [];
-            }
-
             $oql = sprintf(
                 'SELECT t FROM %s t WHERE %s',
                 $targetShortName,
@@ -197,7 +193,7 @@ final class EntityManager implements EntityManagerInterface
             $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
             $stmt->closeCursor();
 
-            $rows = array_map(fn (array $row) => $this->connectionManager->convertResultRow($row), $rows);
+            $rows = array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
 
             return $this->hydrator->hydrateAll($rows, $targetEntity);
         }
@@ -298,7 +294,7 @@ final class EntityManager implements EntityManagerInterface
         if (is_array($id)) {
             // Composite key: validate keys match declared idFields
             $idColumns = $metadata->getIdColumns();
-            $declaredFields = array_map(fn ($c) => $c->propertyName, $idColumns);
+            $declaredFields = array_map(fn($c) => $c->propertyName, $idColumns);
             $providedFields = array_keys($id);
             sort($declaredFields);
             sort($providedFields);
@@ -384,7 +380,7 @@ final class EntityManager implements EntityManagerInterface
         $stmt->closeCursor();
 
         // Apply charset conversion (ISO-8859-1 → UTF-8) to result rows
-        $rows = array_map(fn (array $row) => $this->connectionManager->convertResultRow($row), $rows);
+        $rows = array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
 
         // Auto-detect hydration mode: if AST contains FunctionCall, aliases, or multi-entity selects, default to HYDRATE_ARRAY
         $effectiveMode = $hydrationMode;

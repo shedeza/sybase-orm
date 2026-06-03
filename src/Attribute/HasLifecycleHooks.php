@@ -13,6 +13,4 @@ use Attribute;
  * hook attributes on entities decorated with this attribute.
  */
 #[Attribute(Attribute::TARGET_CLASS)]
-final class HasLifecycleHooks
-{
-}
+final class HasLifecycleHooks {}

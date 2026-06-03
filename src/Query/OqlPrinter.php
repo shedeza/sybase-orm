@@ -87,7 +87,7 @@ final class OqlPrinter
         $parts[] = 'UPDATE ' . $statement->entityName . ' ' . $statement->alias;
 
         $setClauses = implode(', ', array_map(
-            fn (SetClause $sc) => $this->printSetClause($sc),
+            fn(SetClause $sc) => $this->printSetClause($sc),
             $statement->setClauses,
         ));
         $parts[] = 'SET ' . $setClauses;
@@ -130,24 +130,20 @@ final class OqlPrinter
             return ':' . $value->name;
         }
 
-        if ($value instanceof Literal) {
-            if ($value->type === 'null') {
-                return 'NULL';
-            }
-            if ($value->type === 'string') {
-                return "'" . $value->value . "'";
-            }
-
-            return (string) $value->value;
+        if ($value->type === 'null') {
+            return 'NULL';
+        }
+        if ($value->type === 'string') {
+            return "'" . $value->value . "'";
         }
 
-        return '';
+        return (string) $value->value;
     }
 
     private function printCustomFunctionCall(CustomFunctionCall $func): string
     {
         $args = array_map(
-            fn (PropertyAccess|Literal|Parameter|CustomFunctionCall $arg) => $this->printCustomFunctionArgument($arg),
+            fn(PropertyAccess|Literal|Parameter|CustomFunctionCall $arg) => $this->printCustomFunctionArgument($arg),
             $func->arguments,
         );
 
@@ -174,18 +170,14 @@ final class OqlPrinter
             return ':' . $arg->name;
         }
 
-        if ($arg instanceof Literal) {
-            if ($arg->type === 'null') {
-                return 'NULL';
-            }
-            if ($arg->type === 'string') {
-                return "'" . $arg->value . "'";
-            }
-
-            return (string) $arg->value;
+        if ($arg->type === 'null') {
+            return 'NULL';
+        }
+        if ($arg->type === 'string') {
+            return "'" . $arg->value . "'";
         }
 
-        return '';
+        return (string) $arg->value;
     }
 
     /**
@@ -194,7 +186,7 @@ final class OqlPrinter
     private function printSelectExpressions(array $expressions): string
     {
         return implode(', ', array_map(
-            fn (SelectExpression $e) => $this->printSelectExpression($e),
+            fn(SelectExpression $e) => $this->printSelectExpression($e),
             $expressions,
         ));
     }
@@ -286,7 +278,7 @@ final class OqlPrinter
         $property = $expr->property->alias . '.' . $expr->property->property;
 
         $values = implode(', ', array_map(
-            fn (Parameter|Literal $v) => $this->printOperand($v),
+            fn(Parameter|Literal $v) => $this->printOperand($v),
             $expr->values,
         ));
 
@@ -341,21 +333,17 @@ final class OqlPrinter
             return ':' . $operand->name;
         }
 
-        if ($operand instanceof Literal) {
-            if ($operand->type === 'string') {
-                return "'" . $operand->value . "'";
-            }
-
-            return (string) $operand->value;
+        if ($operand->type === 'string') {
+            return "'" . $operand->value . "'";
         }
 
-        return '';
+        return (string) $operand->value;
     }
 
     private function printOrderByClause(OrderByClause $orderBy): string
     {
         return implode(', ', array_map(
-            fn (OrderByItem $item) => $item->property->alias . '.' . $item->property->property . ' ' . $item->direction,
+            fn(OrderByItem $item) => $item->property->alias . '.' . $item->property->property . ' ' . $item->direction,
             $orderBy->items,
         ));
     }
@@ -363,7 +351,7 @@ final class OqlPrinter
     private function printGroupByClause(GroupByClause $groupBy): string
     {
         return implode(', ', array_map(
-            fn (PropertyAccess $p) => $p->alias . '.' . $p->property,
+            fn(PropertyAccess $p) => $p->alias . '.' . $p->property,
             $groupBy->properties,
         ));
     }

@@ -11,6 +11,5 @@ final class HavingClause
 {
     public function __construct(
         public readonly Comparison|LogicalExpression|IsNullExpression|InExpression $condition,
-    ) {
-    }
+    ) {}
 }

@@ -17,6 +17,5 @@ final class CustomFunctionCall
         public readonly string $functionName,
         public readonly array $arguments = [],
         public readonly ?string $castType = null,
-    ) {
-    }
+    ) {}
 }

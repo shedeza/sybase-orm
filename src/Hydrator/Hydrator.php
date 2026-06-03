@@ -37,8 +37,7 @@ final class Hydrator implements HydratorInterface
         private readonly ?UnitOfWorkInterface $unitOfWork = null,
         private readonly ?ProxyGenerator $proxyGenerator = null,
         private ?EntityManagerInterface $entityManager = null,
-    ) {
-    }
+    ) {}
 
     /**
      * Sets a callable that loads related entities for a collection relationship.

@@ -11,6 +11,5 @@ final class Parameter
 {
     public function __construct(
         public readonly string $name,
-    ) {
-    }
+    ) {}
 }

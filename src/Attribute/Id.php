@@ -17,6 +17,5 @@ final class Id
 {
     public function __construct(
         public readonly string $strategy = 'identity',
-    ) {
-    }
+    ) {}
 }

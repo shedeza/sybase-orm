@@ -17,6 +17,5 @@ final class DiscriminatorMap
 {
     public function __construct(
         public readonly array $map,
-    ) {
-    }
+    ) {}
 }

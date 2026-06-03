@@ -11,6 +11,5 @@ final class WhereClause
 {
     public function __construct(
         public readonly Comparison|LogicalExpression|IsNullExpression|InExpression $condition,
-    ) {
-    }
+    ) {}
 }

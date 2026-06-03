@@ -55,12 +55,14 @@ final class ConnectionUrlParser
             );
         }
 
+        /** @var int|string $port */
         $port = $parts['port'] ?? 5000;
+        $portInt = (int) $port;
 
-        if ((int) $port < 1 || (int) $port > 65535) {
+        if ($portInt < 1 || $portInt > 65535) {
             throw new \InvalidArgumentException(sprintf(
                 'Puerto inválido: %d. Debe estar entre 1 y 65535.',
-                (int) $port,
+                $portInt,
             ));
         }
 

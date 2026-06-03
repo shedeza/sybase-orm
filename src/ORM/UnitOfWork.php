@@ -437,10 +437,10 @@ final class UnitOfWork implements UnitOfWorkInterface
 
             // Normalize value expressions: if expression equals '?', set to null (no wrapping needed)
             $normalizedExpressions = array_map(
-                fn (string $expr) => $expr === '?' ? null : $expr,
+                fn(string $expr) => $expr === '?' ? null : $expr,
                 $valueExpressions,
             );
-            $hasWrapping = array_filter($normalizedExpressions, fn ($e) => $e !== null);
+            $hasWrapping = array_filter($normalizedExpressions, fn($e) => $e !== null);
 
             // Filter out identity column values from the params array
             if ($identityColumnName !== null) {
@@ -553,7 +553,7 @@ final class UnitOfWork implements UnitOfWorkInterface
             [$whereClause, $whereValues] = $this->buildCompositeWhereClause($metadata, $entity);
             $updateValues = array_merge($updateValues, $whereValues);
 
-            $hasWrapping = array_filter($updateValueExpressions, fn ($e) => $e !== null);
+            $hasWrapping = array_filter($updateValueExpressions, fn($e) => $e !== null);
 
             $sql = $this->dialect->generateUpdate(
                 $metadata->getQualifiedTableName(),

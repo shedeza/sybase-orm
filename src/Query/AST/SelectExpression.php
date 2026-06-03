@@ -13,6 +13,5 @@ final class SelectExpression
     public function __construct(
         public readonly string|FunctionCall $expression,
         public readonly ?string $alias = null,
-    ) {
-    }
+    ) {}
 }

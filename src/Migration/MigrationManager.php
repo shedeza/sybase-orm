@@ -26,8 +26,7 @@ final class MigrationManager
         private readonly MetadataReaderInterface $metadataReader,
         private readonly DialectInterface $dialect,
         private readonly string $migrationsDirectory,
-    ) {
-    }
+    ) {}
 
     /**
      * Generates a migration file by comparing entity metadata with the expected schema.
@@ -276,12 +275,10 @@ final class MigrationManager
 
         if (count($idColumns) > 1 || (count($idColumns) === 1 && !$hasIdentity)) {
             $pkCols = array_map(
-                fn ($c) => $this->dialect->quoteIdentifier($c->columnName),
+                fn($c) => $this->dialect->quoteIdentifier($c->columnName),
                 $idColumns,
             );
-            if (!empty($pkCols)) {
-                $columnDefs[] = 'PRIMARY KEY (' . implode(', ', $pkCols) . ')';
-            }
+            $columnDefs[] = 'PRIMARY KEY (' . implode(', ', $pkCols) . ')';
         }
 
         // Add FOREIGN KEY constraints from relationships
@@ -365,7 +362,7 @@ final class MigrationManager
         }
 
         // Detect removed columns (exist in DB but not in entity)
-        $entityColumnNames = array_map(fn ($c) => $c->columnName, $metadata->columns);
+        $entityColumnNames = array_map(fn($c) => $c->columnName, $metadata->columns);
         foreach ($existingColumns as $existingCol) {
             if (!in_array($existingCol, $entityColumnNames, true)) {
                 $upStatements[] = sprintf(
@@ -587,7 +584,7 @@ final class MigrationManager
     private function writeMigrationFile(array $upStatements, array $downStatements): string
     {
         if (!is_dir($this->migrationsDirectory)) {
-            mkdir($this->migrationsDirectory, 0755, true);
+            mkdir($this->migrationsDirectory, 0o755, true);
         }
 
         $version = date('YmdHis');
@@ -597,18 +594,18 @@ final class MigrationManager
         $downExported = $this->exportSqlArray($downStatements);
 
         $content = <<<PHP
-<?php
+            <?php
 
-declare(strict_types=1);
+            declare(strict_types=1);
 
-/**
- * Migration generated at {$version}.
- */
-return [
-    'up' => {$upExported},
-    'down' => {$downExported},
-];
-PHP;
+            /**
+             * Migration generated at {$version}.
+             */
+            return [
+                'up' => {$upExported},
+                'down' => {$downExported},
+            ];
+            PHP;
 
         file_put_contents($filePath, $content);
 
