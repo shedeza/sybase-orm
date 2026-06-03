@@ -608,13 +608,6 @@ final class OqlParser
 
         $this->expect(')');
 
-        if (empty($values)) {
-            throw new OqlParseException(sprintf(
-                'IN list cannot be empty at position %d.',
-                $this->pos,
-            ));
-        }
-
         return $values;
     }
 

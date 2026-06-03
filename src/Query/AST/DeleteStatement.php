@@ -14,6 +14,5 @@ final class DeleteStatement
         public readonly string $entityName,
         public readonly string $alias,
         public readonly ?WhereClause $where = null,
-    ) {
-    }
+    ) {}
 }

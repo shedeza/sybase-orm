@@ -22,8 +22,7 @@ final class InheritanceHandler
 
     public function __construct(
         private readonly MetadataReaderInterface $metadataReader,
-    ) {
-    }
+    ) {}
 
     private function getReflectionClass(string $className): \ReflectionClass
     {

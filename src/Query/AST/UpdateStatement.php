@@ -18,6 +18,5 @@ final class UpdateStatement
         public readonly string $alias,
         public readonly array $setClauses,
         public readonly ?WhereClause $where = null,
-    ) {
-    }
+    ) {}
 }

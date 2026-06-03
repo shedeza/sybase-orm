@@ -49,8 +49,7 @@ final class QueryBuilder implements QueryBuilderInterface
 
     public function __construct(
         private readonly DialectInterface $dialect,
-    ) {
-    }
+    ) {}
 
     public function reset(): static
     {
@@ -402,7 +401,7 @@ final class QueryBuilder implements QueryBuilderInterface
         }
 
         $parts = array_map(
-            fn (array $o) => $o['column'] . ' ' . $o['direction'],
+            fn(array $o) => $o['column'] . ' ' . $o['direction'],
             $this->orderByClauses,
         );
 

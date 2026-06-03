@@ -32,6 +32,4 @@ use Attribute;
  * This maps to columns: address_street, address_city in the users table.
  */
 #[Attribute(Attribute::TARGET_CLASS)]
-final class Embeddable
-{
-}
+final class Embeddable {}

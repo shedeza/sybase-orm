@@ -36,11 +36,13 @@ final class PersistentCollection extends ArrayCollection
     /**
      * Creates a PersistentCollection that is already initialized with the given elements.
      *
-     * @param T[] $elements
-     * @return self<T>
+     * @template U of object
+     * @param U[] $elements
+     * @return self<U>
      */
     public static function fromArray(array $elements): self
     {
+        /** @var self<U> $collection */
         $collection = new self();
         $collection->elements = $elements;
         $collection->initialized = true;

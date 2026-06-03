@@ -22,6 +22,5 @@ final class SelectStatement
         public readonly ?GroupByClause $groupBy = null,
         public readonly ?HavingClause $havingClause = null,
         public readonly bool $distinct = false,
-    ) {
-    }
+    ) {}
 }

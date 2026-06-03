@@ -263,7 +263,7 @@ final class SybaseDialect implements DialectInterface
     public function generateSelect(array $columns, string $from, ?string $alias = null): string
     {
         $quotedColumns = array_map(
-            fn (string $col) => $col === '*' ? '*' : $this->quoteIdentifier($col),
+            fn(string $col) => $col === '*' ? '*' : $this->quoteIdentifier($col),
             $columns,
         );
         $quotedFrom = $this->quoteIdentifier($from);
@@ -296,7 +296,7 @@ final class SybaseDialect implements DialectInterface
     public function generateSelectTop(int $top, array $columns, string $from, ?string $alias = null): string
     {
         $quotedColumns = array_map(
-            fn (string $col) => $col === '*' ? '*' : $this->quoteIdentifier($col),
+            fn(string $col) => $col === '*' ? '*' : $this->quoteIdentifier($col),
             $columns,
         );
         $quotedFrom = $this->quoteIdentifier($from);

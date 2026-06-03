@@ -382,18 +382,18 @@ class EntityRepository
             } elseif (is_array($value)) {
                 // Separate nulls from non-null values
                 $hasNull = in_array(null, $value, true);
-                $nonNullValues = array_values(array_filter($value, fn ($v) => $v !== null));
+                $nonNullValues = array_values(array_filter($value, fn($v) => $v !== null));
 
                 if ($column !== null) {
                     $nonNullValues = array_map(
-                        fn ($v) => $typeCaster->toDatabaseValue($v, $column->type),
+                        fn($v) => $typeCaster->toDatabaseValue($v, $column->type),
                         $nonNullValues
                     );
                 }
 
-                if ($hasNull && empty($nonNullValues)) {
+                if ($hasNull && $nonNullValues === []) {
                     $conditions[] = sprintf('e.%s IS NULL', $property);
-                } elseif ($hasNull && !empty($nonNullValues)) {
+                } elseif ($hasNull && $nonNullValues !== []) {
                     // Mix of null and non-null → (prop IS NULL OR prop IN (:param))
                     $conditions[] = sprintf('(e.%s IS NULL OR e.%s IN (:%s))', $property, $property, $paramName);
                     $params[$paramName] = $nonNullValues;

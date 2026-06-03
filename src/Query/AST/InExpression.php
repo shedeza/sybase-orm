@@ -19,6 +19,5 @@ final class InExpression
         public readonly PropertyAccess $property,
         public readonly array $values,
         public readonly bool $negated = false,
-    ) {
-    }
+    ) {}
 }

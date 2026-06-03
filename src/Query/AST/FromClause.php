@@ -12,6 +12,5 @@ final class FromClause
     public function __construct(
         public readonly string $entityName,
         public readonly string $alias,
-    ) {
-    }
+    ) {}
 }

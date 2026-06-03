@@ -83,6 +83,7 @@ class ArrayCollection implements Collection
 
     public function filter(callable $predicate): static
     {
+        /** @phpstan-ignore-next-line new.static */
         return new static(array_values(array_filter($this->elements, $predicate)));
     }
 

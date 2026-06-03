@@ -17,7 +17,7 @@ use PHPStan\Rules\RuleErrorBuilder;
  * This ensures the ORM package remains framework-agnostic.
  *
  * Detects:
- * - use Symfony\... import statements
+ * - Symfony namespace import statements (use ...)
  * - instanceof Symfony\... expressions
  * - Class-string references to Symfony\ namespace (type hints, new expressions, static calls)
  *

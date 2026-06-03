@@ -21,7 +21,7 @@ final class ProxyGenerator
         private readonly string $proxyDir,
     ) {
         if (!is_dir($this->proxyDir)) {
-            mkdir($this->proxyDir, 0755, true);
+            mkdir($this->proxyDir, 0o755, true);
         }
     }
 
@@ -50,7 +50,7 @@ final class ProxyGenerator
 
             $dir = dirname($filePath);
             if (!is_dir($dir)) {
-                mkdir($dir, 0755, true);
+                mkdir($dir, 0o755, true);
             }
 
             file_put_contents($filePath, $code);
@@ -68,7 +68,6 @@ final class ProxyGenerator
      * Creates a proxy instance for the given entity class with the provided initializer.
      *
      * @param string  $entityClass  Fully qualified entity class name
-     * @param mixed   $id           The entity identifier
      * @param Closure $initializer  Closure that receives the proxy and loads its data
      */
     public function createProxy(string $entityClass, Closure $initializer): object
@@ -240,25 +239,6 @@ final class ProxyGenerator
         }
 
         return implode(', ', $args);
-    }
-
-    /**
-     * Determines if a method is a getter (starts with "get" or "is", no required params).
-     */
-    private function isGetter(ReflectionMethod $method): bool
-    {
-        $name = $method->getName();
-        $isGetterName = str_starts_with($name, 'get')
-            || str_starts_with($name, 'is')
-            || str_starts_with($name, 'has')
-            || str_starts_with($name, 'can')
-            || str_starts_with($name, 'should');
-
-        if (!$isGetterName) {
-            return false;
-        }
-
-        return $method->getNumberOfRequiredParameters() === 0;
     }
 
     /**

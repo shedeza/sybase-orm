@@ -24,6 +24,5 @@ final class Embedded
     public function __construct(
         public readonly string $class,
         public readonly ?string $columnPrefix = null,
-    ) {
-    }
+    ) {}
 }

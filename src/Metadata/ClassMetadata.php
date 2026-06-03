@@ -179,7 +179,7 @@ final class ClassMetadata
     {
         return array_values(array_filter(
             $this->relationships,
-            fn (RelationshipMetadata $r) => $r->type === $type,
+            fn(RelationshipMetadata $r) => $r->type === $type,
         ));
     }
 
@@ -226,7 +226,7 @@ final class ClassMetadata
     {
         return array_values(array_filter(
             $this->columns,
-            fn (ColumnMetadata $c) => $c->nullable,
+            fn(ColumnMetadata $c) => $c->nullable,
         ));
     }
 
@@ -239,7 +239,7 @@ final class ClassMetadata
     {
         return array_values(array_filter(
             $this->columns,
-            fn (ColumnMetadata $c) => !$c->isId,
+            fn(ColumnMetadata $c) => !$c->isId,
         ));
     }
 
@@ -252,7 +252,7 @@ final class ClassMetadata
     {
         return array_values(array_filter(
             $this->columns,
-            fn (ColumnMetadata $c) => $c->isGenerated(),
+            fn(ColumnMetadata $c) => $c->isGenerated(),
         ));
     }
 

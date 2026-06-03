@@ -26,6 +26,5 @@ final class EntityChangedEvent
         public readonly object $entity,
         public readonly string $entityClass,
         public readonly string $hookType,
-    ) {
-    }
+    ) {}
 }

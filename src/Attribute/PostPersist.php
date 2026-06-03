@@ -15,6 +15,5 @@ final class PostPersist
 {
     public function __construct(
         public readonly int $priority = 0,
-    ) {
-    }
+    ) {}
 }

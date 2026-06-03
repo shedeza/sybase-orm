@@ -57,7 +57,7 @@ final class IdentityMap implements IdentityMapInterface
         if (is_array($id)) {
             ksort($id);
 
-            return implode('|', array_map(fn ($v) => self::typedValue($v), $id));
+            return implode('|', array_map(fn($v) => self::typedValue($v), $id));
         }
 
         return self::typedValue($id);

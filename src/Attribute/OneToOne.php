@@ -21,6 +21,5 @@ final class OneToOne
         public readonly array $cascade = [],
         public readonly string $fetch = 'LAZY',
         public readonly bool $orphanRemoval = false,
-    ) {
-    }
+    ) {}
 }

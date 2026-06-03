@@ -20,6 +20,5 @@ final class Entity
         public readonly ?string $schema = null,
         public readonly ?string $repositoryClass = null,
         public readonly string $connection = 'default',
-    ) {
-    }
+    ) {}
 }

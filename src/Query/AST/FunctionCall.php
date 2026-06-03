@@ -14,6 +14,5 @@ final class FunctionCall
         public readonly string $functionName,
         public readonly PropertyAccess|string $argument,
         public readonly bool $distinct = false,
-    ) {
-    }
+    ) {}
 }

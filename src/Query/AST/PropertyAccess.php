@@ -12,6 +12,5 @@ final class PropertyAccess
     public function __construct(
         public readonly string $alias,
         public readonly string $property,
-    ) {
-    }
+    ) {}
 }

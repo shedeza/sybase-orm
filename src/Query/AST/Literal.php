@@ -12,6 +12,5 @@ final class Literal
     public function __construct(
         public readonly string|int|float $value,
         public readonly string $type,
-    ) {
-    }
+    ) {}
 }

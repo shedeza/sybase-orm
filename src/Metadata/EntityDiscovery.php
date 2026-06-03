@@ -14,8 +14,7 @@ final class EntityDiscovery
 {
     public function __construct(
         private readonly MetadataReaderInterface $metadataReader,
-    ) {
-    }
+    ) {}
 
     /**
      * Discovers entity classes from the given directories.

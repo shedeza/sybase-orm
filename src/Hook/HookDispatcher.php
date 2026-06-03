@@ -21,8 +21,7 @@ final class HookDispatcher
 
     public function __construct(
         private readonly MetadataReaderInterface $metadataReader,
-    ) {
-    }
+    ) {}
 
     /**
      * Registers an external event subscriber.

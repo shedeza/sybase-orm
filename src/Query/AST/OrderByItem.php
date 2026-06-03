@@ -12,6 +12,5 @@ final class OrderByItem
     public function __construct(
         public readonly PropertyAccess $property,
         public readonly string $direction = 'ASC',
-    ) {
-    }
+    ) {}
 }

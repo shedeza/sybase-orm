@@ -20,6 +20,5 @@ final class ManyToOne
         public readonly ?string $inversedBy = null,
         public readonly array $cascade = [],
         public readonly string $fetch = 'LAZY',
-    ) {
-    }
+    ) {}
 }

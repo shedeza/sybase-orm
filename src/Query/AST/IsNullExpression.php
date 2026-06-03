@@ -13,6 +13,5 @@ final class IsNullExpression
     public function __construct(
         public readonly PropertyAccess $property,
         public readonly bool $negated = false,
-    ) {
-    }
+    ) {}
 }
