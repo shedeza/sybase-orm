@@ -58,7 +58,10 @@ final class SybaseORMExtension extends Extension
         }
 
         if (empty($connections)) {
-            throw new \RuntimeException('SybaseORM requires at least one connection configured (sybase_orm.connection or sybase_orm.connections).');
+            // No connection configured yet — skip service registration.
+            // This allows cache:clear to succeed after install before the user configures the connection.
+            // Run 'php bin/console sybase:install' to generate the configuration.
+            return;
         }
 
         // Register shared services (dialect, typecaster, metadata, hooks)
