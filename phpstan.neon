@@ -1,0 +1,15 @@
+includes:
+    - phpstan-baseline.neon
+
+parameters:
+    level: 5
+    paths:
+        - src
+    ignoreErrors:
+        - '#PDOException#'
+        - '#SplObjectStorage#'
+        - identifier: missingType.iterableValue
+    reportUnmatchedIgnoredErrors: false
+
+rules:
+    - SybaseORM\PHPStan\NoSymfonyImportsRule

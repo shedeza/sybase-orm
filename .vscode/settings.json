@@ -1,0 +1,6 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "composer": true,
+        "./vendor/bin/phpunit": true
+    }
+}

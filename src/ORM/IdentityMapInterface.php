@@ -1,0 +1,35 @@
+<?php
+
+declare(strict_types=1);
+
+namespace SybaseORM\ORM;
+
+/**
+ * Garantiza unicidad de instancias por identificador dentro de una sesión.
+ */
+interface IdentityMapInterface
+{
+    /** Almacena una entidad en el mapa. */
+    public function put(string $entityClass, mixed $id, object $entity): void;
+
+    /** Busca una entidad en el mapa. Retorna null si no existe. */
+    public function get(string $entityClass, mixed $id): ?object;
+
+    /** Verifica si una entidad existe en el mapa. */
+    public function contains(string $entityClass, mixed $id): bool;
+
+    /** Elimina una entidad del mapa. */
+    public function remove(string $entityClass, mixed $id): void;
+
+    /** Limpia todo el mapa. */
+    public function clear(): void;
+
+    /** Limpia solo las entidades de una clase específica del mapa. */
+    public function clearClass(string $entityClass): void;
+
+    /** Returns the total number of entities stored across all classes. */
+    public function count(): int;
+
+    /** Returns the number of entities stored for a specific class. */
+    public function countClass(string $entityClass): int;
+}

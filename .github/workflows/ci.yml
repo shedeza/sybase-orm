@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php-version: ['8.1', '8.2', '8.3', '8.4']
+
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ matrix.php-version }}
+        extensions: pdo_dblib, pdo, json
+        tools: composer:v2
+
+    - name: Install dependencies
+      run: composer install --no-interaction --prefer-dist
+
+    - name: Run PHPUnit
+      run: vendor/bin/phpunit
+
+    - name: Run PHPStan
+      run: vendor/bin/phpstan analyse
+
+    - name: Run PHP-CS-Fixer
+      run: vendor/bin/php-cs-fixer fix --dry-run --diff
+
+    - name: Symfony namespace guard
+      run: |
+        if grep -rn 'use Symfony\\' src/; then
+            echo "ERROR: Symfony namespace detected in ORM library"
+            exit 1
+        fi
