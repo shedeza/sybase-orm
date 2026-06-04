@@ -486,10 +486,11 @@ final class MetadataReader implements MetadataReaderInterface
         $dir = dirname($path);
 
         if (!is_dir($dir)) {
-            mkdir($dir, 0o755, true);
+            mkdir($dir, 0o775, true);
         }
 
         file_put_contents($path, serialize($metadata));
+        @chmod($path, 0o664);
     }
 
     /**

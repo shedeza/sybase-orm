@@ -21,7 +21,7 @@ final class ProxyGenerator
         private readonly string $proxyDir,
     ) {
         if (!is_dir($this->proxyDir)) {
-            mkdir($this->proxyDir, 0o755, true);
+            mkdir($this->proxyDir, 0o775, true);
         }
     }
 
@@ -50,10 +50,11 @@ final class ProxyGenerator
 
             $dir = dirname($filePath);
             if (!is_dir($dir)) {
-                mkdir($dir, 0o755, true);
+                mkdir($dir, 0o775, true);
             }
 
             file_put_contents($filePath, $code);
+            @chmod($filePath, 0o664);
         }
 
         // Load the class into memory if not already loaded
