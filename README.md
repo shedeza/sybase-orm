@@ -1,283 +1,203 @@
-# shedeza/sybase-orm
+# Sybase ORM
 
-A pure PHP ORM for Sybase ASE — framework-agnostic, zero Symfony dependencies.
+[![CI](https://github.com/shedeza/sybase-orm/actions/workflows/ci.yml/badge.svg)](https://github.com/shedeza/sybase-orm/actions/workflows/ci.yml)
+[![PHP 8.1+](https://img.shields.io/badge/PHP-8.1%2B-blue.svg)](https://www.php.net/)
+[![Licencia MIT](https://img.shields.io/badge/licencia-MIT-green.svg)](LICENSE)
 
-Use it standalone, with Laravel, Slim, or any PHP project. Requires only `ext-pdo_dblib` and `psr/log`.
+ORM puro en PHP para **Sybase ASE**, independiente de framework. Soporta mapeo de entidades con atributos PHP 8.1, consultas OQL, QueryBuilder, relaciones, herencia, caché de dos niveles, migraciones y más.
 
-## Installation
+## Requisitos del sistema
+
+- PHP 8.1 o superior
+- Extensión `ext-pdo_dblib`
+- Servidor Sybase ASE
+
+## Instalación
 
 ```bash
 composer require shedeza/sybase-orm
 ```
 
-## Requirements
+## Configuración rápida
 
-- PHP 8.1+
-- ext-pdo_dblib
-
-## Quick Start
-
-### Array-based configuration
+### Configuración por array
 
 ```php
-<?php
-
 use SybaseORM\ORM\OrmFactory;
 
 $em = OrmFactory::create([
     'connection' => [
-        'host' => '192.168.1.100',
-        'port' => 5000,
-        'dbname' => 'my_database',
+        'host'     => '192.168.1.100',
+        'port'     => 5000,
+        'dbname'   => 'mi_base',
         'username' => 'sa',
         'password' => 'secret',
-        'charset' => 'UTF-8',
+        'charset'  => 'UTF-8',
     ],
     'entity_directories' => [__DIR__ . '/src/Entity'],
 ]);
 ```
 
-### URL-based configuration
+### Configuración por URL DSN
 
 ```php
-<?php
-
 use SybaseORM\ORM\OrmFactory;
 
 $em = OrmFactory::createFromUrl(
-    'sybase://sa:secret@192.168.1.100:5000/my_database?charset=UTF-8',
+    'sybase://sa:secret@192.168.1.100:5000/mi_base?charset=UTF-8',
     entityDirectories: [__DIR__ . '/src/Entity'],
 );
 ```
 
-## Connection Configuration
+Los caracteres especiales en la contraseña deben codificarse con URL encoding (por ejemplo, `p@ss` → `p%40ss`).
 
-### Array-based
+## Uso básico
 
-All available connection options:
-
-```php
-$em = OrmFactory::create([
-    'connection' => [
-        'host' => '192.168.1.100',       // Required: database host
-        'port' => 5000,                   // Optional: defaults to 5000
-        'dbname' => 'my_database',        // Required: database name
-        'username' => 'sa',              // Required: database user
-        'password' => 'secret',          // Optional: user password
-        'charset' => 'UTF-8',            // Optional: defaults to UTF-8
-        'persistent' => false,           // Optional: use persistent connections
-        'charset_conversion' => false,   // Optional: UTF-8 ↔ ISO-8859-1 conversion
-        'read_only' => false,            // Optional: read-only mode
-    ],
-    'entity_directories' => [__DIR__ . '/src/Entity'],
-    'proxy_directory' => __DIR__ . '/var/proxies',
-    'metadata_cache_dir' => __DIR__ . '/var/cache/metadata',
-]);
-```
-
-### URL-based
-
-The URL format follows the pattern:
-
-```
-sybase://username:password@host:port/dbname?charset=UTF-8&persistent=true&charset_conversion=false&read_only=false
-```
-
-Examples:
+### Persistir una entidad
 
 ```php
-// Basic connection
-$em = OrmFactory::createFromUrl('sybase://sa:secret@localhost:5000/my_database');
+$usuario = new Usuario();
+$usuario->nombre = 'Juan';
+$usuario->email = 'juan@example.com';
 
-// With all query options
-$em = OrmFactory::createFromUrl(
-    'sybase://admin:p%40ssw0rd@db.example.com:5000/production?charset=UTF-8&persistent=true&charset_conversion=true&read_only=false',
-    entityDirectories: [__DIR__ . '/src/Entity'],
-);
-```
-
-Passwords with special characters should be URL-encoded (e.g., `p@ss` → `p%40ss`).
-
-## Usage Examples
-
-### Persist a new entity
-
-```php
-$user = new User();
-$user->name = 'John Doe';
-$user->email = 'john@example.com';
-
-$em->persist($user);
-$em->flush();
-
-// After flush, $user->id is populated with the generated value
-```
-
-### Find an entity by ID
-
-```php
-$user = $em->find(User::class, 1);
-
-if ($user !== null) {
-    echo $user->name; // "John Doe"
-}
-```
-
-### Update an entity
-
-```php
-$user = $em->find(User::class, 1);
-$user->email = 'newemail@example.com';
-
-$em->flush(); // UnitOfWork detects dirty properties automatically
-```
-
-### Remove an entity
-
-```php
-$user = $em->find(User::class, 1);
-
-$em->remove($user);
+$em->persist($usuario);
 $em->flush();
 ```
 
-### Query with OQL
-
-OQL (Object Query Language) lets you query entities using their class names and properties:
+### Buscar por ID
 
 ```php
-// Find all active users
-$users = $em->query(
-    'SELECT u FROM User u WHERE u.active = :active',
-    ['active' => true],
-);
-
-// Single result
-$user = $em->queryOne(
-    'SELECT u FROM User u WHERE u.email = :email',
-    ['email' => 'john@example.com'],
-);
-
-// Scalar value
-$count = $em->queryScalar('SELECT COUNT(u) FROM User u');
-
-// Streaming large result sets
-foreach ($em->queryIterator('SELECT u FROM User u') as $user) {
-    // Process one entity at a time without loading all into memory
-}
+$usuario = $em->find(Usuario::class, 1);
 ```
 
-### QueryBuilder
+### Consultar con OQL
 
 ```php
-$users = $em->createQueryBuilder(User::class)
-    ->where('active = :active')
-    ->andWhere('createdAt > :date')
-    ->orderBy('name', 'ASC')
-    ->setParameter('active', true)
-    ->setParameter('date', new \DateTime('-30 days'))
-    ->setMaxResults(10)
-    ->getResult();
+$usuarios = $em->query(
+    'SELECT u FROM Usuario u WHERE u.activo = :activo',
+    ['activo' => true]
+);
 ```
 
-## Entity Mapping
-
-Define entities using PHP 8.1 attributes:
+### Eliminar una entidad
 
 ```php
-<?php
+$em->remove($usuario);
+$em->flush();
+```
 
-declare(strict_types=1);
+## Mapeo de entidades
 
-namespace App\Entity;
-
-use SybaseORM\Attribute\Column;
+```php
 use SybaseORM\Attribute\Entity;
-use SybaseORM\Attribute\GeneratedValue;
 use SybaseORM\Attribute\Id;
+use SybaseORM\Attribute\Column;
+use SybaseORM\Attribute\GeneratedValue;
 
-#[Entity(table: 'users')]
-class User
+#[Entity(table: 'usuarios')]
+class Usuario
 {
     #[Id]
-    #[Column(type: 'integer')]
     #[GeneratedValue]
+    #[Column(type: 'integer')]
     public ?int $id = null;
 
     #[Column(type: 'string', length: 100)]
-    public string $name;
+    public string $nombre = '';
 
-    #[Column(type: 'string', length: 255, unique: true)]
-    public string $email;
+    #[Column(type: 'string', length: 255, nullable: true)]
+    public ?string $email = null;
 
-    #[Column(type: 'boolean')]
-    public bool $active = true;
-
-    #[Column(type: 'datetime', nullable: true)]
-    public ?\DateTime $createdAt = null;
+    #[Column(type: 'datetime')]
+    public ?\DateTimeInterface $creadoEn = null;
 }
 ```
 
-### Available attributes
+## Atributos PHP disponibles
 
-| Attribute | Purpose |
-|-----------|---------|
-| `#[Entity(table: '...')]` | Maps a class to a database table |
-| `#[Column(type: '...')]` | Maps a property to a column |
-| `#[Id]` | Marks the primary key property |
-| `#[GeneratedValue]` | Indicates the ID is auto-generated |
-| `#[ManyToOne]` | Many-to-one relationship |
-| `#[OneToMany]` | One-to-many relationship |
-| `#[OneToOne]` | One-to-one relationship |
-| `#[ManyToMany]` | Many-to-many relationship |
-| `#[JoinColumn]` | Configures join column for relationships |
+| Atributo | Destino | Descripción |
+|----------|---------|-------------|
+| `#[Entity]` | Clase | Marca una clase como entidad mapeada. Parámetros: `table`, `schema`, `repositoryClass`, `connection` |
+| `#[Id]` | Propiedad | Marca la propiedad como clave primaria. Parámetro: `strategy` |
+| `#[Column]` | Propiedad | Mapea una propiedad a una columna. Parámetros: `name`, `type`, `nullable`, `length`, `precision`, `scale` |
+| `#[GeneratedValue]` | Propiedad | Indica que el valor es generado por la base de datos. Parámetro: `strategy` (por defecto `IDENTITY`) |
+| `#[ManyToOne]` | Propiedad | Relación muchos-a-uno. Parámetros: `targetEntity`, `inversedBy`, `cascade`, `fetch` |
+| `#[OneToMany]` | Propiedad | Relación uno-a-muchos. Parámetros: `targetEntity`, `mappedBy`, `cascade`, `fetch`, `orphanRemoval` |
+| `#[OneToOne]` | Propiedad | Relación uno-a-uno. Parámetros: `targetEntity`, `mappedBy`, `inversedBy`, `cascade`, `fetch`, `orphanRemoval` |
+| `#[ManyToMany]` | Propiedad | Relación muchos-a-muchos. Parámetros: `targetEntity`, `mappedBy`, `inversedBy`, `joinTable`, `cascade`, `fetch` |
+| `#[JoinColumn]` | Propiedad | Especifica la columna de unión. Parámetros: `name`, `referencedColumnName` |
+| `#[JoinColumns]` | Propiedad | Múltiples columnas de unión para claves compuestas |
+| `#[Embeddable]` | Clase | Marca una clase como value object embebible |
+| `#[Embedded]` | Propiedad | Mapea una propiedad a un value object. Parámetros: `class`, `columnPrefix` |
+| `#[HasLifecycleHooks]` | Clase | Activa hooks de ciclo de vida en la entidad |
+| `#[PrePersist]` | Método | Hook ejecutado antes de insertar |
+| `#[PostPersist]` | Método | Hook ejecutado después de insertar |
+| `#[PreUpdate]` | Método | Hook ejecutado antes de actualizar |
+| `#[PostUpdate]` | Método | Hook ejecutado después de actualizar |
+| `#[PreRemove]` | Método | Hook ejecutado antes de eliminar |
+| `#[PostRemove]` | Método | Hook ejecutado después de eliminar |
+| `#[SoftDelete]` | Clase | Activa eliminación lógica. Parámetro: `column` (por defecto `deleted_at`) |
+| `#[InheritanceType]` | Clase | Estrategia de herencia: `TPH`, `TPT`, `TPC` |
+| `#[DiscriminatorColumn]` | Clase | Columna discriminadora para herencia. Parámetros: `name`, `type` |
+| `#[DiscriminatorMap]` | Clase | Mapa de valores discriminadores a clases. Parámetro: `map` |
 
-## Multiple Connections
+## Relaciones
 
-Use `EntityManagerRegistry` to manage multiple database connections:
+El ORM soporta relaciones `#[ManyToOne]`, `#[OneToMany]`, `#[OneToOne]` y `#[ManyToMany]` con lazy loading automático mediante proxies y eager loading vía `QueryBuilder::with()`.
+
+Para documentación detallada de relaciones, consulte el [manual de relaciones](docs/usuario-manual/relaciones.md).
+
+## Conexiones múltiples
+
+Use `EntityManagerRegistry` para gestionar conexiones a múltiples bases de datos:
 
 ```php
-<?php
-
-use SybaseORM\ORM\EntityManagerRegistry;
 use SybaseORM\ORM\OrmFactory;
+use SybaseORM\ORM\EntityManagerRegistry;
 
-// Create EntityManagers for each database
-$defaultEm = OrmFactory::create([
-    'connection' => [
-        'host' => 'db1.example.com',
-        'port' => 5000,
-        'dbname' => 'primary_db',
-        'username' => 'sa',
-        'password' => 'secret',
-    ],
-    'entity_directories' => [__DIR__ . '/src/Entity/Primary'],
-]);
+$emDefault = OrmFactory::create(['connection' => $configDefault, 'entity_directories' => $dirs]);
+$emReportes = OrmFactory::create(['connection' => $configReportes, 'entity_directories' => $dirs]);
 
-$analyticsEm = OrmFactory::create([
-    'connection' => [
-        'host' => 'db2.example.com',
-        'port' => 5000,
-        'dbname' => 'analytics_db',
-        'username' => 'reader',
-        'password' => 'readonly',
-    ],
-    'entity_directories' => [__DIR__ . '/src/Entity/Analytics'],
-]);
+$registry = new EntityManagerRegistry([
+    'default'  => $emDefault,
+    'reportes' => $emReportes,
+], defaultConnection: 'default');
 
-// Register them in the registry
-$registry = new EntityManagerRegistry(
-    managers: ['default' => $defaultEm, 'analytics' => $analyticsEm],
-    defaultConnection: 'default',
-);
+// Obtener un manager específico
+$em = $registry->getManager('reportes');
 
-// Retrieve by name
-$em = $registry->getManager('analytics');
-
-// Or get the default
+// Obtener el manager por defecto
 $em = $registry->getDefaultManager();
+
+// Obtener el manager que gestiona una entidad (por su atributo connection)
+$em = $registry->getManagerForEntity(Reporte::class);
 ```
 
-## License
+## Opciones de configuración
 
-MIT
+| Opción | Tipo | Valor por defecto | Descripción |
+|--------|------|-------------------|-------------|
+| `host` | `string` | `'localhost'` | Host del servidor Sybase ASE |
+| `port` | `int` | `5000` | Puerto de conexión |
+| `dbname` | `string` | *(requerido)* | Nombre de la base de datos |
+| `username` | `string` | `''` | Usuario de conexión |
+| `password` | `string` | `''` | Contraseña de conexión |
+| `charset` | `string` | `'UTF-8'` | Charset de la conexión |
+| `persistent` | `bool` | `false` | Usar conexiones persistentes |
+| `charset_conversion` | `bool` | `false` | Activar conversión automática UTF-8 ↔ ISO-8859-1 |
+| `read_only` | `bool` | `false` | Modo solo lectura (previene escrituras) |
+| `entity_directories` | `string[]` | `[]` | Directorios donde buscar entidades |
+| `entity_classes` | `string[]` | `[]` | Clases de entidad explícitas |
+| `proxy_directory` | `string` | `sys_get_temp_dir() . '/sybase-orm-proxies'` | Directorio para proxies generados |
+| `metadata_cache_dir` | `string\|null` | `null` | Directorio de caché de metadatos |
+
+## Documentación completa
+
+- [Documentación completa](docs/README.md) — Punto de entrada central a toda la documentación
+- [Manual de usuario](docs/usuario-manual/README.md) — Guía detallada de cada módulo del ORM
+- [Manual de operación](docs/manual-operacion/README.md) — Despliegue, optimización y troubleshooting
+- [Manual técnico](docs/manual-tecnico/README.md) — Arquitectura interna, patrones y extensibilidad
+
+## Licencia
+
+Este proyecto está licenciado bajo la [Licencia MIT](LICENSE).
