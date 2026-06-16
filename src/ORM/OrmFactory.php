@@ -25,13 +25,7 @@ final class OrmFactory
     /**
      * Creates a fully configured EntityManager from a configuration array.
      *
-     * @param array{
-     *     connection: array{host?: string, port?: int, dbname: string, username?: string, password?: string, charset?: string, persistent?: bool, charset_conversion?: bool, read_only?: bool}|string,
-     *     entity_directories?: string[],
-     *     entity_classes?: string[],
-     *     proxy_directory?: string,
-     *     metadata_cache_dir?: string|null,
-     * } $config
+     * @param array<string, mixed> $config
      *
      * @throws \InvalidArgumentException When the "connection" key is missing from config.
      */
