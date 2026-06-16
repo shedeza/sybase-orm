@@ -52,8 +52,13 @@ final class OrmFactory
         // 2. Instantiate SybaseDialect, TypeCaster, MetadataReader
         $dialect = new SybaseDialect();
         $typeCaster = new TypeCaster();
+        $filePermissions = $config['file_permissions'] ?? 0o666;
+        $directoryPermissions = $config['directory_permissions'] ?? 0o777;
+
         $metadataReader = new MetadataReader(
             cacheDir: $config['metadata_cache_dir'] ?? null,
+            directoryPermissions: $directoryPermissions,
+            filePermissions: $filePermissions,
         );
 
         // 3. Instantiate IdentityMap, CacheManager, HookDispatcher
@@ -78,7 +83,7 @@ final class OrmFactory
         );
 
         $proxyDirectory = $config['proxy_directory'] ?? sys_get_temp_dir() . '/sybase-orm-proxies';
-        $proxyGenerator = new ProxyGenerator($proxyDirectory);
+        $proxyGenerator = new ProxyGenerator($proxyDirectory, $directoryPermissions, $filePermissions);
 
         $hydrator = new Hydrator(
             metadataReader: $metadataReader,

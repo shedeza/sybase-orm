@@ -65,6 +65,8 @@ final class MetadataReader implements MetadataReaderInterface
     public function __construct(
         private readonly ?string $cacheDir = null,
         private readonly bool $useInstanceCache = true,
+        private readonly int $directoryPermissions = 0o777,
+        private readonly int $filePermissions = 0o666,
     ) {}
 
     /**
@@ -490,11 +492,12 @@ final class MetadataReader implements MetadataReaderInterface
         $dir = dirname($path);
 
         if (!is_dir($dir)) {
-            mkdir($dir, 0o775, true);
+            mkdir($dir, $this->directoryPermissions, true);
+            @chmod($dir, $this->directoryPermissions);
         }
 
         file_put_contents($path, serialize($metadata));
-        @chmod($path, 0o664);
+        @chmod($path, $this->filePermissions);
     }
 
     /**

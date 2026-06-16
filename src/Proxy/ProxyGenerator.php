@@ -19,9 +19,12 @@ final class ProxyGenerator
 {
     public function __construct(
         private readonly string $proxyDir,
+        private readonly int $directoryPermissions = 0o777,
+        private readonly int $filePermissions = 0o666,
     ) {
         if (!is_dir($this->proxyDir)) {
-            mkdir($this->proxyDir, 0o775, true);
+            mkdir($this->proxyDir, $this->directoryPermissions, true);
+            @chmod($this->proxyDir, $this->directoryPermissions);
         }
     }
 
@@ -50,11 +53,12 @@ final class ProxyGenerator
 
             $dir = dirname($filePath);
             if (!is_dir($dir)) {
-                mkdir($dir, 0o775, true);
+                mkdir($dir, $this->directoryPermissions, true);
+                @chmod($dir, $this->directoryPermissions);
             }
 
             file_put_contents($filePath, $code);
-            @chmod($filePath, 0o664);
+            @chmod($filePath, $this->filePermissions);
         }
 
         // Load the class into memory if not already loaded
