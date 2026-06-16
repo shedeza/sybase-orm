@@ -3,8 +3,26 @@
 [![CI](https://github.com/shedeza/sybase-orm/actions/workflows/ci.yml/badge.svg)](https://github.com/shedeza/sybase-orm/actions/workflows/ci.yml)
 [![PHP 8.1+](https://img.shields.io/badge/PHP-8.1%2B-blue.svg)](https://www.php.net/)
 [![Licencia MIT](https://img.shields.io/badge/licencia-MIT-green.svg)](LICENSE)
+[![Estado](https://img.shields.io/badge/estado-estable-brightgreen.svg)](#)
 
 ORM puro en PHP para **Sybase ASE**, independiente de framework. Soporta mapeo de entidades con atributos PHP 8.1, consultas OQL, QueryBuilder, relaciones, herencia, caché de dos niveles, migraciones y más.
+
+> **Estado:** Este proyecto es **estable** y apto para uso en producción. Reporta cualquier problema en [Issues](https://github.com/shedeza/sybase-orm/issues).
+
+## Características
+
+- Mapeo de entidades con atributos nativos de PHP 8.1 (sin XML ni YAML)
+- Patrón Data Mapper con Unit of Work e Identity Map
+- Lenguaje de consultas OQL y QueryBuilder fluido
+- Relaciones ManyToOne, OneToMany, OneToOne, ManyToMany con lazy/eager loading
+- Herencia de entidades (TPH, TPT, TPC)
+- Caché de dos niveles (memoria + Redis)
+- Sistema de migraciones integrado
+- Soft delete declarativo
+- Hooks de ciclo de vida (PrePersist, PostPersist, PreUpdate, etc.)
+- Value Objects embebibles
+- Conexiones múltiples con EntityManagerRegistry
+- Soporte para conexiones de solo lectura
 
 ## Requisitos del sistema
 
@@ -79,6 +97,49 @@ $usuarios = $em->query(
 );
 ```
 
+### QueryBuilder
+
+```php
+$usuarios = $em->createQueryBuilder()
+    ->select('u')
+    ->from(Usuario::class, 'u')
+    ->where('u.activo = :activo')
+    ->andWhere('u.creadoEn > :fecha')
+    ->setParameter('activo', true)
+    ->setParameter('fecha', new \DateTime('-30 days'))
+    ->orderBy('u.nombre', 'ASC')
+    ->setMaxResults(10)
+    ->getResult();
+```
+
+### Transacciones
+
+```php
+$em->transactional(function () use ($em) {
+    $cuenta1 = $em->find(Cuenta::class, 1);
+    $cuenta2 = $em->find(Cuenta::class, 2);
+
+    $cuenta1->saldo -= 500;
+    $cuenta2->saldo += 500;
+
+    $em->flush();
+});
+```
+
+Para manejo manual de transacciones:
+
+```php
+$em->beginTransaction();
+try {
+    $em->persist($entidad);
+    $em->flush();
+    $em->commit();
+} catch (\Throwable $e) {
+    $em->rollback();
+    throw $e;
+}
+```
+
 ### Eliminar una entidad
 
 ```php
@@ -113,33 +174,20 @@ class Usuario
 }
 ```
 
-## Atributos PHP disponibles
+## Atributos PHP principales
 
 | Atributo | Destino | Descripción |
 |----------|---------|-------------|
 | `#[Entity]` | Clase | Marca una clase como entidad mapeada. Parámetros: `table`, `schema`, `repositoryClass`, `connection` |
-| `#[Id]` | Propiedad | Marca la propiedad como clave primaria. Parámetro: `strategy` |
+| `#[Id]` | Propiedad | Marca la propiedad como clave primaria |
 | `#[Column]` | Propiedad | Mapea una propiedad a una columna. Parámetros: `name`, `type`, `nullable`, `length`, `precision`, `scale` |
-| `#[GeneratedValue]` | Propiedad | Indica que el valor es generado por la base de datos. Parámetro: `strategy` (por defecto `IDENTITY`) |
+| `#[GeneratedValue]` | Propiedad | Indica que el valor es generado por la base de datos. Parámetro: `strategy` |
 | `#[ManyToOne]` | Propiedad | Relación muchos-a-uno. Parámetros: `targetEntity`, `inversedBy`, `cascade`, `fetch` |
 | `#[OneToMany]` | Propiedad | Relación uno-a-muchos. Parámetros: `targetEntity`, `mappedBy`, `cascade`, `fetch`, `orphanRemoval` |
-| `#[OneToOne]` | Propiedad | Relación uno-a-uno. Parámetros: `targetEntity`, `mappedBy`, `inversedBy`, `cascade`, `fetch`, `orphanRemoval` |
-| `#[ManyToMany]` | Propiedad | Relación muchos-a-muchos. Parámetros: `targetEntity`, `mappedBy`, `inversedBy`, `joinTable`, `cascade`, `fetch` |
-| `#[JoinColumn]` | Propiedad | Especifica la columna de unión. Parámetros: `name`, `referencedColumnName` |
-| `#[JoinColumns]` | Propiedad | Múltiples columnas de unión para claves compuestas |
-| `#[Embeddable]` | Clase | Marca una clase como value object embebible |
-| `#[Embedded]` | Propiedad | Mapea una propiedad a un value object. Parámetros: `class`, `columnPrefix` |
-| `#[HasLifecycleHooks]` | Clase | Activa hooks de ciclo de vida en la entidad |
-| `#[PrePersist]` | Método | Hook ejecutado antes de insertar |
-| `#[PostPersist]` | Método | Hook ejecutado después de insertar |
-| `#[PreUpdate]` | Método | Hook ejecutado antes de actualizar |
-| `#[PostUpdate]` | Método | Hook ejecutado después de actualizar |
-| `#[PreRemove]` | Método | Hook ejecutado antes de eliminar |
-| `#[PostRemove]` | Método | Hook ejecutado después de eliminar |
 | `#[SoftDelete]` | Clase | Activa eliminación lógica. Parámetro: `column` (por defecto `deleted_at`) |
-| `#[InheritanceType]` | Clase | Estrategia de herencia: `TPH`, `TPT`, `TPC` |
-| `#[DiscriminatorColumn]` | Clase | Columna discriminadora para herencia. Parámetros: `name`, `type` |
-| `#[DiscriminatorMap]` | Clase | Mapa de valores discriminadores a clases. Parámetro: `map` |
+| `#[HasLifecycleHooks]` | Clase | Activa hooks de ciclo de vida en la entidad |
+
+Para la lista completa de atributos (OneToOne, ManyToMany, Embedded, herencia, hooks), consulte el [manual de mapeo de entidades](docs/usuario-manual/mapeo-entidades.md).
 
 ## Relaciones
 
@@ -197,6 +245,21 @@ $em = $registry->getManagerForEntity(Reporte::class);
 - [Manual de usuario](docs/usuario-manual/README.md) — Guía detallada de cada módulo del ORM
 - [Manual de operación](docs/manual-operacion/README.md) — Despliegue, optimización y troubleshooting
 - [Manual técnico](docs/manual-tecnico/README.md) — Arquitectura interna, patrones y extensibilidad
+
+## Contribuir
+
+Las contribuciones son bienvenidas. Antes de enviar un PR, consulta la [guía de contribución](docs/manual-tecnico/guias-contribucion.md) para conocer el flujo de trabajo, estándares de código y convenciones del proyecto.
+
+```bash
+# Ejecutar tests
+composer test
+
+# Análisis estático
+composer phpstan
+
+# Formateo de código
+composer cs-fix
+```
 
 ## Licencia
 

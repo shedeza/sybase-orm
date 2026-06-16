@@ -231,7 +231,9 @@ class EntityRepository
             return 0;
         }
 
-        return (int) reset($result[0]);
+        $row = $result[0];
+
+        return (int) (is_array($row) ? reset($row) : $row);
     }
 
     /** @param array<string, mixed> $criteria */

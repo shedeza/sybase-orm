@@ -7,31 +7,31 @@ namespace SybaseORM\ORM;
 use SybaseORM\Query\QueryBuilderInterface;
 
 /**
- * Punto de entrada principal del ORM. Coordina todos los componentes internos.
+ * Main entry point of the ORM. Coordinates all internal components.
  */
 interface EntityManagerInterface
 {
-    /** Registra una entidad nueva para inserción en el próximo flush. */
+    /** Registers a new entity for insertion on the next flush. */
     public function persist(object $entity): void;
 
-    /** Marca una entidad para eliminación en el próximo flush. */
+    /** Marks an entity for deletion on the next flush. */
     public function remove(object $entity): void;
 
-    /** Sincroniza todos los cambios pendientes con la base de datos. */
+    /** Synchronizes all pending changes with the database. */
     public function flush(): void;
 
-    /** Busca una entidad por su identificador primario. */
+    /** Finds an entity by its primary key identifier. */
     public function find(string $entityClass, mixed $id): ?object;
 
-    /** Crea un Query_Builder para la entidad especificada. */
+    /** Creates a QueryBuilder for the specified entity. */
     public function createQueryBuilder(string $entityClass): QueryBuilderInterface;
 
-    /** Ejecuta una consulta OQL y retorna los resultados hidratados. */
+    /** Executes an OQL query and returns hydrated results. */
     public function query(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT, ?int $limit = null, ?int $offset = null): array;
 
     /**
-     * Ejecuta una consulta OQL y retorna un Generator que produce resultados uno a uno.
-     * Útil para conjuntos de datos grandes que no caben en memoria.
+     * Executes an OQL query and returns a Generator that yields results one by one.
+     * Useful for large result sets that don't fit in memory.
      */
     public function queryIterator(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): \Generator;
 
@@ -49,26 +49,27 @@ interface EntityManagerInterface
     /** Executes an OQL query and returns a single scalar value or null. */
     public function queryScalar(string $oql, array $params = []): mixed;
 
-    /** Ejecuta una sentencia OQL UPDATE o DELETE y retorna el número de filas afectadas. */
+    /** Executes an OQL UPDATE or DELETE statement and returns the number of affected rows. */
     public function executeUpdate(string $oql, array $params = []): int;
 
-    /** Limpia el Identity_Map y desasocia todas las entidades. */
+    /** Clears the IdentityMap and detaches all entities. */
     public function clear(?string $entityClass = null): void;
 
-    /** Re-asocia una entidad detached al Entity_Manager. */
+    /** Re-attaches a detached entity to the EntityManager. */
     public function merge(object $entity): object;
 
-    /** Inicia una transacción explícita. */
+    /** Begins an explicit transaction. */
     public function beginTransaction(): void;
 
-    /** Confirma la transacción activa. */
+    /** Commits the active transaction. */
     public function commit(): void;
 
-    /** Revierte la transacción activa. */
+    /** Rolls back the active transaction. */
     public function rollback(): void;
 
     /**
-     * Executes a callable within a transaction. Commits on success, rolls back on exception.
+     * Executes a callable within a database transaction.
+     * Commits on success, rolls back on exception.
      *
      * @template T
      * @param callable(): T $callback
@@ -76,7 +77,7 @@ interface EntityManagerInterface
      */
     public function transactional(callable $callback): mixed;
 
-    /** Obtiene la referencia al repositorio de una entidad. */
+    /** Returns the repository for an entity class. */
     public function getRepository(string $entityClass): EntityRepository;
 
     /** Returns the SQL dialect used by this EntityManager. */

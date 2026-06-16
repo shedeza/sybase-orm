@@ -292,6 +292,16 @@ final class QueryBuilder implements QueryBuilderInterface
         return $this->distinct;
     }
 
+    /**
+     * Returns the relations requested for eager loading via with().
+     *
+     * @return string[]
+     */
+    public function getEagerRelations(): array
+    {
+        return $this->eagerRelations;
+    }
+
     // ── Private SQL-building helpers ────────────────────────────────
 
     private function buildSelectClause(): string
@@ -339,24 +349,10 @@ final class QueryBuilder implements QueryBuilderInterface
 
     private function buildEagerLoadingJoins(): string
     {
-        if ($this->eagerRelations === []) {
-            return '';
-        }
-
-        $parts = [];
-        foreach ($this->eagerRelations as $relation) {
-            $alias = $relation;
-            $parts[] = sprintf(
-                ' LEFT JOIN %s %s ON %s.id = %s.%s_id',
-                $relation,
-                $alias,
-                $this->fromAlias ?? $this->fromTable,
-                $alias,
-                $this->fromAlias ?? $this->fromTable,
-            );
-        }
-
-        return implode('', $parts);
+        // Eager loading JOINs are resolved at execution time by the EntityManager,
+        // which has access to metadata. The QueryBuilder only stores the relation names.
+        // If no external resolution has been applied, this is a no-op.
+        return '';
     }
 
     private function buildWhereClause(): string

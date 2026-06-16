@@ -53,8 +53,14 @@ final class EntityManager implements EntityManagerInterface
     /** @var array<string, array{sql: string, parameters: list<string>}> Cache de traducciones OQL→SQL */
     private array $queryCache = [];
 
+    /** Maximum number of cached OQL→SQL translations (LRU eviction) */
+    private const QUERY_CACHE_MAX_SIZE = 512;
+
     /** @var array<string, \ReflectionClass<object>> Cached ReflectionClass instances */
     private array $reflectionClassCache = [];
+
+    /** Maximum number of cached ReflectionClass instances */
+    private const REFLECTION_CACHE_MAX_SIZE = 256;
 
     public function __construct(
         private readonly ConnectionManagerInterface $connectionManager,
@@ -577,6 +583,15 @@ final class EntityManager implements EntityManagerInterface
             $result = $this->queryCache[$oql];
         } else {
             $result = $this->oqlTranslator->translate($ast);
+
+            // LRU eviction: remove oldest entry if cache is full
+            if (count($this->queryCache) >= self::QUERY_CACHE_MAX_SIZE) {
+                $oldestKey = array_key_first($this->queryCache);
+                if ($oldestKey !== null) {
+                    unset($this->queryCache[$oldestKey]);
+                }
+            }
+
             $this->queryCache[$oql] = $result;
         }
 
@@ -739,14 +754,11 @@ final class EntityManager implements EntityManagerInterface
     }
 
     /**
-     * Executes a callable and flushes changes atomically.
+     * Executes a callable within a database transaction.
      *
-     * The callback should use persist()/remove() to register changes.
-     * flush() is called automatically after the callback returns, which
-     * executes all pending changes within a database transaction (managed by UnitOfWork).
-     *
-     * If the callback or flush throws, the exception propagates and the
-     * UnitOfWork's internal transaction is rolled back automatically.
+     * Wraps the entire callback (reads + writes) in a single transaction.
+     * flush() is called automatically after the callback returns.
+     * On success, the transaction is committed. On failure, it is rolled back.
      *
      * @template T
      * @param callable(): T $callback
@@ -755,10 +767,19 @@ final class EntityManager implements EntityManagerInterface
      */
     public function transactional(callable $callback): mixed
     {
-        $result = $callback();
-        $this->flush();
+        $this->beginTransaction();
 
-        return $result;
+        try {
+            $result = $callback();
+            $this->flush();
+            $this->commit();
+
+            return $result;
+        } catch (\Throwable $e) {
+            $this->rollback();
+
+            throw $e;
+        }
     }
 
     public function getRepository(string $entityClass): EntityRepository
@@ -1110,6 +1131,14 @@ final class EntityManager implements EntityManagerInterface
     private function getReflectionClass(string $className): \ReflectionClass
     {
         if (!isset($this->reflectionClassCache[$className])) {
+            // Evict oldest entry if cache is full
+            if (count($this->reflectionClassCache) >= self::REFLECTION_CACHE_MAX_SIZE) {
+                $oldestKey = array_key_first($this->reflectionClassCache);
+                if ($oldestKey !== null) {
+                    unset($this->reflectionClassCache[$oldestKey]);
+                }
+            }
+
             $this->reflectionClassCache[$className] = new \ReflectionClass($className);
         }
 

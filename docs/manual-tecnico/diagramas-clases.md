@@ -28,11 +28,15 @@ classDiagram
     class ConnectionUrlParser {
         +parse(url) array
     }
-    class ParameterBinder
+    class RetryConnectionManager {
+        +executeQuery(sql, params) PDOStatement
+        +executeStatement(sql, params) int
+    }
     class SqlParameterExpander
 
     ConnectionManagerInterface <|.. ConnectionManager
-    ConnectionManager --> ParameterBinder
+    ConnectionManagerInterface <|.. RetryConnectionManager
+    RetryConnectionManager --> ConnectionManager
     ConnectionManager --> SqlParameterExpander
     ConnectionManager --> ConnectionUrlParser
 ```

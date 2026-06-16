@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace SybaseORM\Metadata;
 
 /**
- * Lee PHP Attributes y construye metadatos de mapeo.
+ * Reads PHP Attributes and builds mapping metadata.
  */
 interface MetadataReaderInterface
 {
-    /** Lee y retorna los metadatos completos de una clase de entidad. */
+    /** Reads and returns the complete metadata for an entity class. */
     public function getClassMetadata(string $entityClass): ClassMetadata;
 
-    /** Verifica si una clase tiene metadatos de entidad. */
+    /** Checks if a class has entity mapping metadata. */
     public function isEntity(string $className): bool;
 }

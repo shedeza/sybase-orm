@@ -33,7 +33,7 @@ graph TD
 
     subgraph "Capa de Conexión"
         CONN[ConnectionManager]
-        PB[ParameterBinder]
+        RETRY[RetryConnectionManager]
         DIAL[SybaseDialect]
         TC[TypeCaster]
     end
@@ -105,7 +105,7 @@ graph TD
 
 **Responsabilidad:** Gestionar la conexión PDO a Sybase ASE, ejecutar SQL, manejar transacciones y convertir charset.
 
-**Clases principales:** `ConnectionManager` (conexión PDO, transacciones, savepoints, caché LRU de sentencias, reconexión), `ConnectionUrlParser` (parseo de URLs DSN), `ParameterBinder`, `SqlParameterExpander`.
+**Clases principales:** `ConnectionManager` (conexión PDO, transacciones, savepoints, caché LRU de sentencias, reconexión, binding de parámetros), `RetryConnectionManager` (decorator con reintentos automáticos), `ConnectionUrlParser` (parseo de URLs DSN), `SqlParameterExpander`.
 
 **Dependencias externas:** PDO (ext-pdo_dblib), PSR-3 Logger (opcional).
 

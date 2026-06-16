@@ -64,7 +64,7 @@ final class MetadataReader implements MetadataReaderInterface
 
     public function __construct(
         private readonly ?string $cacheDir = null,
-        private readonly bool $useInstanceCache = false,
+        private readonly bool $useInstanceCache = true,
     ) {}
 
     /**
@@ -85,13 +85,17 @@ final class MetadataReader implements MetadataReaderInterface
 
     public function getClassMetadata(string $entityClass): ClassMetadata
     {
-        // 1a. Check instance-level cache (if enabled)
+        // 1. Check instance-level cache (primary, isolated per MetadataReader)
         if ($this->useInstanceCache && isset($this->instanceCache[$entityClass])) {
             return $this->instanceCache[$entityClass];
         }
 
-        // 1b. Check shared in-memory cache
+        // 2. Check shared static cache (secondary, shared across instances)
         if (isset(self::$memoryCache[$entityClass])) {
+            if ($this->useInstanceCache) {
+                $this->instanceCache[$entityClass] = self::$memoryCache[$entityClass];
+            }
+
             return self::$memoryCache[$entityClass];
         }
 

@@ -8,65 +8,65 @@ use SybaseORM\Exception\ConnectionLostException;
 use SybaseORM\Exception\TransactionException;
 
 /**
- * Gestiona las conexiones PDO dblib a Sybase ASE.
+ * Manages PDO dblib connections to Sybase ASE.
  */
 interface ConnectionManagerInterface
 {
     /**
-     * Obtiene la conexión PDO activa, creándola si es necesario.
+     * Returns the active PDO connection, creating it if necessary.
      *
-     * @throws ConnectionLostException Si la conexión se pierde.
+     * @throws ConnectionLostException If the connection cannot be established.
      */
     public function getConnection(): \PDO;
 
     /**
-     * Ejecuta una sentencia SQL y retorna el PDOStatement.
-     * El caller es responsable de llamar closeCursor() cuando termine.
+     * Executes a SQL query and returns the PDOStatement.
+     * The caller is responsible for calling closeCursor() when done.
      *
-     * @throws ConnectionLostException Si la conexión se pierde durante la operación.
-     * @throws \SybaseORM\Exception\PersistenceException Si ocurre un error SQL.
+     * @throws ConnectionLostException If the connection is lost during the operation.
+     * @throws \SybaseORM\Exception\PersistenceException If a SQL error occurs.
      */
     public function executeQuery(string $sql, array $params = []): \PDOStatement;
 
     /**
-     * Ejecuta una sentencia SQL de modificación y retorna el número de filas afectadas.
-     * Libera el PDOStatement automáticamente (closeCursor).
+     * Executes a SQL modification statement and returns the number of affected rows.
+     * Releases the PDOStatement automatically (closeCursor).
      *
-     * @throws ConnectionLostException Si la conexión se pierde durante la operación.
-     * @throws \SybaseORM\Exception\PersistenceException Si ocurre un error SQL.
+     * @throws ConnectionLostException If the connection is lost during the operation.
+     * @throws \SybaseORM\Exception\PersistenceException If a SQL error occurs.
      */
     public function executeStatement(string $sql, array $params = []): int;
 
-    /** Inicia una transacción nativa de Sybase ASE. */
+    /** Begins a native Sybase ASE transaction. */
     public function beginTransaction(): void;
 
     /**
-     * Confirma la transacción activa en Sybase ASE.
+     * Commits the active transaction.
      *
-     * @throws TransactionException Si no hay transacción activa.
+     * @throws TransactionException If no transaction is active.
      */
     public function commit(): void;
 
     /**
-     * Revierte la transacción activa en Sybase ASE.
+     * Rolls back the active transaction.
      *
-     * @throws TransactionException Si no hay transacción activa.
+     * @throws TransactionException If no transaction is active.
      */
     public function rollback(): void;
 
     /**
-     * Configura el nivel de aislamiento de la transacción.
+     * Sets the transaction isolation level.
      *
-     * @param string $level Nivel de aislamiento (READ UNCOMMITTED, READ COMMITTED, REPEATABLE READ, SERIALIZABLE).
+     * @param string $level Isolation level (READ UNCOMMITTED, READ COMMITTED, REPEATABLE READ, SERIALIZABLE).
      */
     public function setTransactionIsolation(string $level): void;
 
     /**
-     * Convierte valores string de un resultado de ISO-8859-1 a UTF-8.
-     * Si charset_conversion está deshabilitado, retorna la fila sin cambios.
+     * Converts string values in a result row from ISO-8859-1 to UTF-8.
+     * If charset_conversion is disabled, returns the row unchanged.
      *
-     * @param array $row Fila de resultado de la base de datos.
-     * @return array Fila con strings convertidos.
+     * @param array $row Database result row.
+     * @return array Row with converted strings.
      */
     public function convertResultRow(array $row): array;
 

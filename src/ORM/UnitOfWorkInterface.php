@@ -5,33 +5,33 @@ declare(strict_types=1);
 namespace SybaseORM\ORM;
 
 /**
- * Rastrea cambios en entidades y coordina la persistencia.
+ * Tracks entity changes and coordinates persistence.
  */
 interface UnitOfWorkInterface
 {
-    /** Registra una entidad como nueva (pendiente de INSERT). */
+    /** Registers an entity as new (pending INSERT). */
     public function registerNew(object $entity): void;
 
-    /** Marca una entidad para eliminación (pendiente de DELETE). */
+    /** Marks an entity for deletion (pending DELETE). */
     public function registerDeleted(object $entity): void;
 
-    /** Toma un snapshot del estado actual de la entidad para Dirty Checking. */
+    /** Takes a snapshot of the entity's current state for dirty checking. */
     public function registerClean(object $entity): void;
 
-    /** Ejecuta todos los cambios pendientes dentro de una transacción. */
+    /** Executes all pending changes within a transaction. */
     public function commit(): void;
 
     /**
-     * Detecta propiedades modificadas comparando estado actual vs snapshot.
+     * Detects modified properties by comparing current state vs snapshot.
      *
      * @return array<string, array{old: mixed, new: mixed}>
      */
     public function computeChangeset(object $entity): array;
 
-    /** Limpia todos los registros de cambios y snapshots. */
+    /** Clears all tracked changes and snapshots. */
     public function clear(): void;
 
-    /** Verifica si una entidad está siendo gestionada (tiene snapshot). */
+    /** Checks if an entity is managed (has a snapshot). */
     public function isManaged(object $entity): bool;
 
     /** Removes an entity from tracking (snapshots and pending operations). */

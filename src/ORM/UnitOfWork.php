@@ -105,8 +105,12 @@ final class UnitOfWork implements UnitOfWorkInterface
 
     public function commit(): void
     {
+        $ownTransaction = !$this->connectionManager->isInTransaction();
+
         try {
-            $this->connectionManager->beginTransaction();
+            if ($ownTransaction) {
+                $this->connectionManager->beginTransaction();
+            }
 
             // 1. Cascade: discover related entities marked with cascade=['persist']
             $this->processCascadePersist();
@@ -132,18 +136,24 @@ final class UnitOfWork implements UnitOfWorkInterface
             // 6. Execute DELETEs for removed entities
             $this->executeDeletes();
 
-            $this->connectionManager->commit();
+            if ($ownTransaction) {
+                $this->connectionManager->commit();
+            }
 
             // Clear tracked changes after successful commit
             $this->newEntities = new \SplObjectStorage();
             $this->deletedEntities = new \SplObjectStorage();
             $this->insertedEntities = new \SplObjectStorage();
         } catch (PersistenceException $e) {
-            $this->safeRollback();
+            if ($ownTransaction) {
+                $this->safeRollback();
+            }
 
             throw $e;
         } catch (\Throwable $e) {
-            $this->safeRollback();
+            if ($ownTransaction) {
+                $this->safeRollback();
+            }
 
             throw new PersistenceException(
                 'Flush failed: ' . $e->getMessage(),

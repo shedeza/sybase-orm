@@ -84,8 +84,8 @@ Capa de conexión a base de datos: gestión del ciclo de vida, parsing de URLs y
 | `ConnectionManager.php` | Gestión de conexiones PDO, pooling y reconexión |
 | `ConnectionManagerInterface.php` | Contrato del administrador de conexiones |
 | `ConnectionUrlParser.php` | Parsing de URLs DSN de conexión |
-| `ParameterBinder.php` | Binding de parámetros a sentencias preparadas |
 | `SqlParameterExpander.php` | Expansión de arrays para cláusulas IN |
+| `RetryConnectionManager.php` | Decorator con reintentos automáticos ante pérdida de conexión |
 
 ### SybaseORM\Dialect
 
