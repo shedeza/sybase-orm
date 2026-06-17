@@ -7,17 +7,28 @@ namespace SybaseORM\Cache;
 /**
  * Second-level cache adapter backed by a Redis connection.
  *
- * Wraps a \Redis instance and serializes values for storage.
+ * Wraps a \Redis instance and serializes values using JSON for storage.
+ * JSON is preferred over PHP serialize() to prevent PHP Object Injection
+ * attacks if Redis is compromised.
  */
 final class RedisCacheAdapter implements SecondLevelCacheInterface
 {
     private \Redis $redis;
     private string $prefix;
 
-    public function __construct(\Redis $redis, string $prefix = 'sybase_orm:')
+    /** @var list<class-string> Allowed classes for deserialization fallback */
+    private array $allowedClasses;
+
+    /**
+     * @param \Redis $redis Redis connection instance
+     * @param string $prefix Key prefix for namespacing
+     * @param list<class-string> $allowedClasses Classes allowed during legacy unserialize fallback
+     */
+    public function __construct(\Redis $redis, string $prefix = 'sybase_orm:', array $allowedClasses = [])
     {
         $this->redis = $redis;
         $this->prefix = $prefix;
+        $this->allowedClasses = $allowedClasses;
     }
 
     public function get(string $key): mixed
@@ -28,10 +39,14 @@ final class RedisCacheAdapter implements SecondLevelCacheInterface
             return null;
         }
 
-        // Use allowed_classes=true because the cache stores entity objects.
-        // SECURITY NOTE: Ensure Redis is properly secured (authentication, network isolation)
-        // to prevent PHP Object Injection via crafted serialized payloads.
-        $result = @unserialize($value, ['allowed_classes' => true]);
+        // Try JSON decode first (secure format)
+        $decoded = json_decode($value, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            return $decoded;
+        }
+
+        // Fallback: legacy serialized data with restricted allowed classes
+        $result = @unserialize($value, ['allowed_classes' => $this->allowedClasses]);
 
         if ($result === false && $value !== serialize(false)) {
             // Deserialization failed — corrupted or tampered data
@@ -43,13 +58,19 @@ final class RedisCacheAdapter implements SecondLevelCacheInterface
 
     public function put(string $key, mixed $value, ?int $ttl = null): void
     {
-        $serialized = serialize($value);
+        $encoded = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
+
+        if ($encoded === false) {
+            // Fallback to serialize only if JSON encoding fails (e.g. objects with circular refs)
+            $encoded = serialize($value);
+        }
+
         $prefixedKey = $this->prefix . $key;
 
         if ($ttl !== null) {
-            $this->redis->setex($prefixedKey, $ttl, $serialized);
+            $this->redis->setex($prefixedKey, $ttl, $encoded);
         } else {
-            $this->redis->set($prefixedKey, $serialized);
+            $this->redis->set($prefixedKey, $encoded);
         }
     }
 

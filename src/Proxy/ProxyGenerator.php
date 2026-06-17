@@ -41,6 +41,7 @@ final class ProxyGenerator
      * Returns the fully qualified proxy class name.
      *
      * If the proxy file already exists (cached), generation is skipped.
+     * Uses atomic write (temp file + rename) to prevent race conditions.
      */
     public function generateProxyClass(string $entityClass): string
     {
@@ -57,8 +58,20 @@ final class ProxyGenerator
                 @chmod($dir, $this->directoryPermissions);
             }
 
-            file_put_contents($filePath, $code);
-            @chmod($filePath, $this->filePermissions);
+            // Atomic write: write to temp file then rename to avoid TOCTOU races
+            $tmpFile = $filePath . '.tmp.' . getmypid();
+            $written = file_put_contents($tmpFile, $code);
+
+            if ($written === false) {
+                @unlink($tmpFile);
+                throw new \RuntimeException(sprintf(
+                    'Failed to write proxy file: %s',
+                    $filePath,
+                ));
+            }
+
+            @chmod($tmpFile, $this->filePermissions);
+            rename($tmpFile, $filePath);
         }
 
         // Load the class into memory if not already loaded

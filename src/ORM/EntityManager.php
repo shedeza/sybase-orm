@@ -994,20 +994,30 @@ final class EntityManager implements EntityManagerInterface
                 $value = $this->resolveParameterValue($value);
             }
 
+            // Replace ALL remaining occurrences of this parameter
+            $pattern = '/\:' . preg_quote($name, '/') . '\b/';
+
             if (is_array($value) && str_contains($sql, ':' . $name)) {
                 $scalarValues = $this->normalizeArrayParam($value);
                 if (empty($scalarValues)) {
-                    $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', 'NULL', $sql, 1);
+                    $occurrences = preg_match_all($pattern, $sql);
+                    $sql = preg_replace($pattern, 'NULL', $sql);
                     continue;
                 }
                 $placeholders = implode(', ', array_fill(0, count($scalarValues), '?'));
-                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', $placeholders, $sql, 1);
-                foreach ($scalarValues as $item) {
-                    $orderedParams[] = $item;
+                $occurrences = preg_match_all($pattern, $sql);
+                $sql = preg_replace($pattern, $placeholders, $sql);
+                for ($o = 0; $o < $occurrences; $o++) {
+                    foreach ($scalarValues as $item) {
+                        $orderedParams[] = $item;
+                    }
                 }
             } elseif (str_contains($sql, ':' . $name)) {
-                $sql = preg_replace('/\:' . preg_quote($name, '/') . '\b/', '?', $sql, 1);
-                $orderedParams[] = $value;
+                $occurrences = preg_match_all($pattern, $sql);
+                $sql = preg_replace($pattern, '?', $sql);
+                for ($o = 0; $o < $occurrences; $o++) {
+                    $orderedParams[] = $value;
+                }
             }
         }
 

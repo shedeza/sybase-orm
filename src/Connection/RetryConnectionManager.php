@@ -94,6 +94,80 @@ final class RetryConnectionManager implements ConnectionManagerInterface
     }
 
     /**
+     * Delegates to the inner ConnectionManager for savepoint creation.
+     */
+    public function createSavepoint(): string
+    {
+        return $this->inner->createSavepoint();
+    }
+
+    /**
+     * Delegates to the inner ConnectionManager for savepoint rollback.
+     */
+    public function rollbackToSavepoint(string $name): void
+    {
+        $this->inner->rollbackToSavepoint($name);
+    }
+
+    /**
+     * Delegates to the inner ConnectionManager for savepoint release.
+     */
+    public function releaseSavepoint(string $name): void
+    {
+        $this->inner->releaseSavepoint($name);
+    }
+
+    /**
+     * Forces a reconnection on the inner ConnectionManager.
+     */
+    public function reconnect(): void
+    {
+        $this->inner->reconnect();
+    }
+
+    /**
+     * Returns true if the inner connection is read-only.
+     */
+    public function isReadOnly(): bool
+    {
+        return $this->inner->isReadOnly();
+    }
+
+    /**
+     * Returns the connection config (password masked).
+     *
+     * @return array<string, mixed>
+     */
+    public function getConfigSafe(): array
+    {
+        return $this->inner->getConfigSafe();
+    }
+
+    /**
+     * Returns the database name from the inner connection.
+     */
+    public function getDatabaseName(): string
+    {
+        return $this->inner->getDatabaseName();
+    }
+
+    /**
+     * Returns the host from the inner connection.
+     */
+    public function getHost(): string
+    {
+        return $this->inner->getHost();
+    }
+
+    /**
+     * Returns the port from the inner connection.
+     */
+    public function getPort(): int
+    {
+        return $this->inner->getPort();
+    }
+
+    /**
      * Retries an operation on ConnectionLostException, reconnecting between attempts.
      *
      * @template T

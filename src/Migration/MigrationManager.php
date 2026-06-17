@@ -609,6 +609,10 @@ final class MigrationManager
 
         file_put_contents($filePath, $content);
 
+        if (!file_exists($filePath)) {
+            throw new \RuntimeException(sprintf('Failed to write migration file: %s', $filePath));
+        }
+
         return $filePath;
     }
 

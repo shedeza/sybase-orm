@@ -496,8 +496,18 @@ final class MetadataReader implements MetadataReaderInterface
             @chmod($dir, $this->directoryPermissions);
         }
 
-        file_put_contents($path, serialize($metadata));
-        @chmod($path, $this->filePermissions);
+        // Atomic write: temp file + rename to prevent TOCTOU race conditions
+        $tmpFile = $path . '.tmp.' . getmypid();
+        $written = file_put_contents($tmpFile, serialize($metadata));
+
+        if ($written === false) {
+            @unlink($tmpFile);
+
+            return; // Silent failure — cache is optional
+        }
+
+        @chmod($tmpFile, $this->filePermissions);
+        rename($tmpFile, $path);
     }
 
     /**

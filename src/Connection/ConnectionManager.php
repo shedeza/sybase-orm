@@ -28,7 +28,6 @@ class ConnectionManager implements ConnectionManagerInterface
     private const CONNECTION_LOST_CODES = [
         '08S01', // Communication link failure
         '08001', // Unable to connect
-        'HY000', // General error (often connection-related with dblib)
     ];
 
     private ?\PDO $connection = null;
@@ -272,6 +271,7 @@ class ConnectionManager implements ConnectionManagerInterface
             throw new TransactionException('Cannot rollback to savepoint: no active transaction.');
         }
 
+        $this->validateSavepointName($name);
         $this->getConnection()->exec('ROLLBACK TRANSACTION ' . $name);
 
         // Remove this savepoint and any created after it from the stack
@@ -286,9 +286,26 @@ class ConnectionManager implements ConnectionManagerInterface
      */
     public function releaseSavepoint(string $name): void
     {
+        $this->validateSavepointName($name);
         $pos = array_search($name, $this->savepointStack, true);
         if ($pos !== false) {
             array_splice($this->savepointStack, $pos, 1);
+        }
+    }
+
+    /**
+     * Validates that a savepoint name is safe for SQL concatenation.
+     * Only allows alphanumeric characters and underscores.
+     *
+     * @throws \InvalidArgumentException If the name contains invalid characters.
+     */
+    private function validateSavepointName(string $name): void
+    {
+        if (!preg_match('/^[a-zA-Z0-9_]+$/', $name)) {
+            throw new \InvalidArgumentException(sprintf(
+                'Invalid savepoint name "%s". Only alphanumeric characters and underscores are allowed.',
+                $name,
+            ));
         }
     }
 

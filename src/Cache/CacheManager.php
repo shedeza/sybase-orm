@@ -24,15 +24,31 @@ final class CacheManager implements CacheManagerInterface
     private ?LoggerInterface $logger;
     private bool $secondLevelAvailable;
 
+    /** @var int Number of consecutive failures */
+    private int $failureCount = 0;
+
+    /** @var float|null Timestamp when circuit was opened (cache disabled) */
+    private ?float $circuitOpenedAt = null;
+
+    /** @var int Maximum consecutive failures before opening the circuit */
+    private int $failureThreshold;
+
+    /** @var int Seconds to wait before retrying after circuit opens */
+    private int $cooldownSeconds;
+
     public function __construct(
         IdentityMapInterface $identityMap,
         ?SecondLevelCacheInterface $secondLevel = null,
         ?LoggerInterface $logger = null,
+        int $failureThreshold = 3,
+        int $cooldownSeconds = 60,
     ) {
         $this->identityMap = $identityMap;
         $this->secondLevel = $secondLevel;
         $this->logger = $logger;
         $this->secondLevelAvailable = $secondLevel !== null;
+        $this->failureThreshold = $failureThreshold;
+        $this->cooldownSeconds = $cooldownSeconds;
     }
 
     public function get(string $entityClass, mixed $id): ?object
@@ -44,7 +60,7 @@ final class CacheManager implements CacheManagerInterface
         }
 
         // Second level
-        if ($this->secondLevelAvailable) {
+        if ($this->isSecondLevelAvailable()) {
             try {
                 $key = $this->entityKey($entityClass, $id);
                 /** @var object|null $cached */
@@ -52,9 +68,11 @@ final class CacheManager implements CacheManagerInterface
                 if ($cached !== null && is_object($cached)) {
                     // Promote to first level
                     $this->identityMap->put($entityClass, $id, $cached);
+                    $this->onSecondLevelSuccess();
 
                     return $cached;
                 }
+                $this->onSecondLevelSuccess();
             } catch (\Throwable $e) {
                 $this->handleSecondLevelFailure($e);
             }
@@ -69,10 +87,11 @@ final class CacheManager implements CacheManagerInterface
         $this->identityMap->put($entityClass, $id, $entity);
 
         // Store in second level if available
-        if ($this->secondLevelAvailable) {
+        if ($this->isSecondLevelAvailable()) {
             try {
                 $key = $this->entityKey($entityClass, $id);
                 $this->secondLevel->put($key, $entity);
+                $this->onSecondLevelSuccess();
             } catch (\Throwable $e) {
                 $this->handleSecondLevelFailure($e);
             }
@@ -85,10 +104,11 @@ final class CacheManager implements CacheManagerInterface
         $this->identityMap->remove($entityClass, $id);
 
         // Remove from second level
-        if ($this->secondLevelAvailable) {
+        if ($this->isSecondLevelAvailable()) {
             try {
                 $key = $this->entityKey($entityClass, $id);
                 $this->secondLevel->delete($key);
+                $this->onSecondLevelSuccess();
             } catch (\Throwable $e) {
                 $this->handleSecondLevelFailure($e);
             }
@@ -97,13 +117,14 @@ final class CacheManager implements CacheManagerInterface
 
     public function putQueryResult(string $queryKey, array $result, ?int $ttl = null): void
     {
-        if (!$this->secondLevelAvailable) {
+        if (!$this->isSecondLevelAvailable()) {
             return;
         }
 
         try {
             $key = $this->queryKey($queryKey);
             $this->secondLevel->put($key, $result, $ttl);
+            $this->onSecondLevelSuccess();
         } catch (\Throwable $e) {
             $this->handleSecondLevelFailure($e);
         }
@@ -111,7 +132,7 @@ final class CacheManager implements CacheManagerInterface
 
     public function getQueryResult(string $queryKey): ?array
     {
-        if (!$this->secondLevelAvailable) {
+        if (!$this->isSecondLevelAvailable()) {
             return null;
         }
 
@@ -119,8 +140,11 @@ final class CacheManager implements CacheManagerInterface
             $key = $this->queryKey($queryKey);
             $cached = $this->secondLevel->get($key);
             if (is_array($cached)) {
+                $this->onSecondLevelSuccess();
+
                 return $cached;
             }
+            $this->onSecondLevelSuccess();
         } catch (\Throwable $e) {
             $this->handleSecondLevelFailure($e);
         }
@@ -132,9 +156,10 @@ final class CacheManager implements CacheManagerInterface
     {
         $this->identityMap->clear();
 
-        if ($this->secondLevelAvailable) {
+        if ($this->isSecondLevelAvailable()) {
             try {
                 $this->secondLevel->clear();
+                $this->onSecondLevelSuccess();
             } catch (\Throwable $e) {
                 $this->handleSecondLevelFailure($e);
             }
@@ -143,9 +168,29 @@ final class CacheManager implements CacheManagerInterface
 
     /**
      * Checks if the second-level cache is currently available.
+     * Implements circuit-breaker: re-enables after cooldown period.
      */
     public function isSecondLevelAvailable(): bool
     {
+        if ($this->secondLevel === null) {
+            return false;
+        }
+
+        if ($this->secondLevelAvailable) {
+            return true;
+        }
+
+        // Circuit is open — check if cooldown has passed
+        if ($this->circuitOpenedAt !== null) {
+            $elapsed = microtime(true) - $this->circuitOpenedAt;
+            if ($elapsed >= $this->cooldownSeconds) {
+                // Half-open: allow a retry
+                $this->secondLevelAvailable = true;
+                $this->circuitOpenedAt = null;
+                $this->logger?->info('Second-level cache circuit half-open, retrying.');
+            }
+        }
+
         return $this->secondLevelAvailable;
     }
 
@@ -161,10 +206,36 @@ final class CacheManager implements CacheManagerInterface
 
     private function handleSecondLevelFailure(\Throwable $e): void
     {
-        $this->secondLevelAvailable = false;
-        $this->logger?->warning(
-            'Second-level cache unavailable, falling back to first-level only: ' . $e->getMessage(),
-            ['exception' => $e]
-        );
+        $this->failureCount++;
+
+        if ($this->failureCount >= $this->failureThreshold) {
+            $this->secondLevelAvailable = false;
+            $this->circuitOpenedAt = microtime(true);
+            $this->logger?->warning(
+                sprintf(
+                    'Second-level cache disabled after %d consecutive failures (cooldown: %ds): %s',
+                    $this->failureCount,
+                    $this->cooldownSeconds,
+                    $e->getMessage(),
+                ),
+                ['exception' => $e],
+            );
+        } else {
+            $this->logger?->notice(
+                sprintf('Second-level cache error (%d/%d): %s', $this->failureCount, $this->failureThreshold, $e->getMessage()),
+                ['exception' => $e],
+            );
+        }
+    }
+
+    /**
+     * Resets the failure counter on a successful second-level cache operation.
+     */
+    private function onSecondLevelSuccess(): void
+    {
+        if ($this->failureCount > 0) {
+            $this->failureCount = 0;
+            $this->logger?->info('Second-level cache recovered.');
+        }
     }
 }

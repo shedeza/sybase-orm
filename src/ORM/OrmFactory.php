@@ -101,6 +101,9 @@ final class OrmFactory
             logger: $logger,
         );
 
+        // Wire EntityManager into Hydrator for lazy-loading proxy creation
+        $hydrator->setEntityManager($entityManager);
+
         // Wire entity directories if provided
         if (isset($config['entity_directories'])) {
             $entityManager->setEntityDirectories($config['entity_directories']);
