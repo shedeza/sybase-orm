@@ -49,6 +49,20 @@ interface EntityManagerInterface
     /** Executes an OQL query and returns a single scalar value or null. */
     public function queryScalar(string $oql, array $params = []): mixed;
 
+    /**
+     * Executes an OQL query and returns the first column of each row as a flat array of scalars.
+     *
+     * @return array<int, mixed>
+     */
+    public function queryScalarAll(string $oql, array $params = [], ?int $limit = null, ?int $offset = null): array;
+
+    /**
+     * Executes an OQL query and returns a single result or throws if not found.
+     *
+     * @throws \SybaseORM\Exception\PersistenceException If no result is found.
+     */
+    public function queryOneOrFail(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): mixed;
+
     /** Executes an OQL UPDATE or DELETE statement and returns the number of affected rows. */
     public function executeUpdate(string $oql, array $params = []): int;
 

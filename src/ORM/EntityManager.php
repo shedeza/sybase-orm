@@ -527,6 +527,38 @@ final class EntityManager implements EntityManagerInterface
         return reset($row) !== false ? reset($row) : null;
     }
 
+    public function queryScalarAll(string $oql, array $params = [], ?int $limit = null, ?int $offset = null): array
+    {
+        $prepared = $this->prepareQueryExecution($oql, $params);
+        $sql = $prepared['sql'];
+        $orderedParams = $prepared['params'];
+
+        if ($limit !== null) {
+            $sql = $this->dialect->applyPagination($sql, $limit, $offset);
+        }
+
+        $stmt = $this->connectionManager->executeQuery($sql, $orderedParams);
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        $stmt->closeCursor();
+
+        $rows = array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
+
+        return array_map(fn(array $row) => reset($row) !== false ? reset($row) : null, $rows);
+    }
+
+    public function queryOneOrFail(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): mixed
+    {
+        $result = $this->queryOne($oql, $params, $hydrationMode);
+
+        if ($result === null) {
+            throw new PersistenceException(
+                sprintf('queryOneOrFail() expected exactly 1 result, got 0. OQL: %s', mb_substr($oql, 0, 120)),
+            );
+        }
+
+        return $result;
+    }
+
     public function executeUpdate(string $oql, array $params = []): int
     {
         $this->ensureEntitiesDiscovered();

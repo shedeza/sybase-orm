@@ -267,6 +267,26 @@ class EntityRepository
         return $this->entityManager->queryScalar($oql, $params);
     }
 
+    /**
+     * Executes an OQL query and returns the first column of each row as a scalar array.
+     *
+     * @return array<int, mixed>
+     */
+    public function queryScalarAll(string $oql, array $params = [], ?int $limit = null, ?int $offset = null): array
+    {
+        return $this->entityManager->queryScalarAll($oql, $params, $limit, $offset);
+    }
+
+    /**
+     * Executes an OQL query and returns a single result or throws if not found.
+     *
+     * @throws \SybaseORM\Exception\PersistenceException If no result is found.
+     */
+    public function queryOneOrFail(string $oql, array $params = []): mixed
+    {
+        return $this->entityManager->queryOneOrFail($oql, $params);
+    }
+
     // ── QueryBuilder ────────────────────────────────────────────────
 
     public function createQueryBuilder(): QueryBuilderInterface
