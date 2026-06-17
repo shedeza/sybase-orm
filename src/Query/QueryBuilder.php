@@ -47,7 +47,7 @@ final class QueryBuilder implements QueryBuilderInterface
     /** @var array<string, mixed> */
     private array $havingParameters = [];
 
-    /** @var (callable(string $sql, array $params, string $mode=): array|int)|null Executor for getResult()/getSingleResult()/execute() */
+    /** @var (callable(string $sql, array $params, string $mode=): (array|int))|null Executor for getResult()/getSingleResult()/execute() */
     private $executor = null;
 
     /** @var string|null Entity class for hydration context */
@@ -416,7 +416,7 @@ final class QueryBuilder implements QueryBuilderInterface
      * Sets the executor callback used by getResult()/getSingleResult()/execute().
      * The callback receives (string $sql, array $params, string $mode) and returns results.
      *
-     * @param callable(string, array, string=): array|int $executor
+     * @param callable(string, array, string=): (array|int) $executor
      */
     public function setExecutor(callable $executor, ?string $entityClass = null): void
     {
