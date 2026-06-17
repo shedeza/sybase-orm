@@ -457,6 +457,38 @@ final class QueryBuilder implements QueryBuilderInterface
     }
 
     /**
+     * Executes the query and returns all results as scalar values (first column of each row).
+     *
+     * @return array<int, mixed> List of scalar values
+     * @throws \LogicException If no executor is configured.
+     */
+    public function getScalarResult(): array
+    {
+        if ($this->executor === null) {
+            throw new \LogicException(
+                'Cannot call getScalarResult() on a QueryBuilder without an executor. '
+                . 'Use EntityManager::createQueryBuilder() or EntityRepository::createQueryBuilder().',
+            );
+        }
+
+        return ($this->executor)($this->getSQL(), $this->getParameters(), 'scalar');
+    }
+
+    /**
+     * Executes the query and returns a single scalar value (first column of first row).
+     *
+     * @return mixed The scalar value or null if no results
+     * @throws \LogicException If no executor is configured.
+     */
+    public function getSingleScalarResult(): mixed
+    {
+        $this->limitValue = 1;
+        $results = $this->getScalarResult();
+
+        return $results[0] ?? null;
+    }
+
+    /**
      * Alias for limit(). Doctrine-compatible naming.
      */
     public function setMaxResults(int $maxResults): static

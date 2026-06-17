@@ -367,13 +367,17 @@ final class EntityManager implements EntityManagerInterface
         $qb = new QueryBuilder($this->dialect);
         $qb->from($metadata->getQualifiedTableName(), 'e');
 
-        // Wire executor so getResult()/getSingleResult() work
-        $qb->setExecutor(function (string $sql, array $params) use ($entityClass): array {
+        // Wire executor so getResult()/getSingleResult()/getScalarResult() work
+        $qb->setExecutor(function (string $sql, array $params, string $mode = 'hydrate') use ($entityClass): array {
             $stmt = $this->connectionManager->executeQuery($sql, $params);
             $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
             $stmt->closeCursor();
 
             $rows = array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
+
+            if ($mode === 'scalar') {
+                return array_map(fn(array $row) => reset($row) !== false ? reset($row) : null, $rows);
+            }
 
             return $this->hydrator->hydrateAll($rows, $entityClass);
         }, $entityClass);

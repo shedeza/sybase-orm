@@ -87,6 +87,18 @@ interface QueryBuilderInterface
      */
     public function getSingleResult(): mixed;
 
+    /**
+     * Executes the query and returns all results as scalar values (first column of each row).
+     *
+     * @return array<int, mixed>
+     */
+    public function getScalarResult(): array;
+
+    /**
+     * Executes the query and returns a single scalar value (first column of first row).
+     */
+    public function getSingleScalarResult(): mixed;
+
     /** Sets the maximum number of results (alias for limit). */
     public function setMaxResults(int $maxResults): static;
 
