@@ -141,6 +141,30 @@ Devuelve un valor escalar (primera columna del primer resultado).
 $count = $em->queryScalar('SELECT COUNT(u.id) FROM User u WHERE u.active = :a', ['a' => true]);
 ```
 
+### queryScalarAll()
+
+Devuelve la primera columna de cada fila como un array plano de escalares.
+
+```php
+$ids = $em->queryScalarAll('SELECT u.id FROM User u WHERE u.active = :a', ['a' => true]);
+// [1, 5, 12, 34, ...]
+
+// Con paginación
+$page = $em->queryScalarAll('SELECT u.id FROM User u', [], 10, 0);
+```
+
+### queryOneOrFail()
+
+Como `queryOne()`, pero lanza `PersistenceException` si no encuentra resultado.
+
+```php
+// Lanza excepción si no existe
+$user = $em->queryOneOrFail(
+    'SELECT u FROM User u WHERE u.email = :email',
+    ['email' => 'admin@ejemplo.com']
+);
+```
+
 ### queryIterator()
 
 Devuelve un `Generator` que itera fila por fila sin cargar todo en memoria. Útil para grandes conjuntos de datos.

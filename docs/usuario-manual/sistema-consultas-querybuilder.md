@@ -138,11 +138,114 @@ $qb->select('e.name')->from('products', 'e');
 
 ### getSQL() y getParameters()
 
-Obtienen el SQL generado y los parámetros para ejecución.
+Obtienen el SQL generado y los parámetros para ejecución manual.
 
 ```php
 $sql    = $qb->getSQL();
 $params = $qb->getParameters();
+```
+
+## Métodos de Ejecución
+
+El QueryBuilder incluye métodos que ejecutan la consulta directamente cuando se crea a través de `EntityManager::createQueryBuilder()` o `EntityRepository::createQueryBuilder()`.
+
+### getResult()
+
+Ejecuta la consulta y devuelve todos los resultados hidratados como entidades.
+
+```php
+$usuarios = $qb->where('e.active = :a')
+    ->setParameter('a', true)
+    ->getResult();
+```
+
+### getSingleResult()
+
+Ejecuta la consulta con limit 1 y devuelve el primer resultado o `null`.
+
+```php
+$usuario = $qb->where('e.email = :email')
+    ->setParameter('email', 'admin@ejemplo.com')
+    ->getSingleResult();
+```
+
+### getOneOrNullResult()
+
+Como `getSingleResult()`, pero lanza `OverflowException` si hay más de un resultado.
+
+```php
+$usuario = $qb->where('e.token = :token')
+    ->setParameter('token', $token)
+    ->getOneOrNullResult();
+```
+
+### getArrayResult()
+
+Ejecuta la consulta y devuelve los resultados como arrays asociativos (sin hidratar).
+
+```php
+$rows = $qb->select('e.id', 'e.name', 'e.email')
+    ->getArrayResult();
+// [['id' => 1, 'name' => 'Juan', 'email' => '...'], ...]
+```
+
+### getScalarResult()
+
+Ejecuta la consulta y devuelve la primera columna de cada fila como array plano.
+
+```php
+$ids = $qb->select('e.id')
+    ->where('e.active = :a')
+    ->setParameter('a', true)
+    ->getScalarResult();
+// [1, 5, 12, 34, ...]
+```
+
+### getSingleScalarResult()
+
+Ejecuta la consulta y devuelve un único valor escalar (primera columna, primera fila).
+
+```php
+$total = $qb->select('COUNT(*)')
+    ->getSingleScalarResult();
+```
+
+### getCount()
+
+Devuelve el total de filas que coinciden con las condiciones actuales, sin modificar el estado del QueryBuilder (select, limit, order se ignoran).
+
+```php
+$qb->where('e.active = :a')->setParameter('a', true);
+$count = $qb->getCount(); // SELECT COUNT(*) FROM ... WHERE ...
+$results = $qb->limit(10)->getResult(); // Las condiciones siguen intactas
+```
+
+### execute()
+
+Para consultas UPDATE o DELETE. Devuelve el número de filas afectadas.
+
+```php
+$affected = $qb->... // construir UPDATE/DELETE SQL manualmente
+    ->execute();
+```
+
+### getQuery()
+
+Devuelve `$this` para compatibilidad con el patrón Doctrine `->getQuery()->getResult()`.
+
+```php
+$usuarios = $qb->where('e.active = :a')
+    ->setParameter('a', true)
+    ->getQuery()
+    ->getResult();
+```
+
+### setMaxResults() y setFirstResult()
+
+Aliases de `limit()` y `offset()` para compatibilidad Doctrine.
+
+```php
+$qb->setMaxResults(10)->setFirstResult(20); // equivale a ->limit(10)->offset(20)
 ```
 
 ## Ejemplos de Consultas Complejas

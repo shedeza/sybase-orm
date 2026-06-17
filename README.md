@@ -100,14 +100,12 @@ $usuarios = $em->query(
 ### QueryBuilder
 
 ```php
-$usuarios = $em->createQueryBuilder()
-    ->select('u')
-    ->from(Usuario::class, 'u')
-    ->where('u.activo = :activo')
-    ->andWhere('u.creadoEn > :fecha')
+$usuarios = $em->createQueryBuilder(Usuario::class)
+    ->where('e.activo = :activo')
+    ->andWhere('e.creadoEn > :fecha')
     ->setParameter('activo', true)
     ->setParameter('fecha', new \DateTime('-30 days'))
-    ->orderBy('u.nombre', 'ASC')
+    ->orderBy('e.nombre', 'ASC')
     ->setMaxResults(10)
     ->getResult();
 ```
