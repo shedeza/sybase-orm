@@ -236,6 +236,44 @@ $em = $registry->getManagerForEntity(Reporte::class);
 | `entity_classes` | `string[]` | `[]` | Clases de entidad explícitas |
 | `proxy_directory` | `string` | `sys_get_temp_dir() . '/sybase-orm-proxies'` | Directorio para proxies generados |
 | `metadata_cache_dir` | `string\|null` | `null` | Directorio de caché de metadatos |
+| `redis` | `array\|null` | `null` | Configuración de Redis para caché L2 (ver abajo) |
+| `second_level_cache` | `SecondLevelCacheInterface\|null` | `null` | Instancia de caché L2 ya configurada |
+| `file_permissions` | `int` | `0o666` | Permisos de archivos generados (proxies, cache) |
+| `directory_permissions` | `int` | `0o777` | Permisos de directorios generados |
+
+### Caché de segundo nivel (Redis)
+
+Para activar el caché compartido entre requests:
+
+```php
+$em = OrmFactory::create([
+    'connection' => $connectionConfig,
+    'entity_directories' => [__DIR__ . '/src/Entity'],
+    'redis' => [
+        'host' => '127.0.0.1',
+        'port' => 6379,
+        'password' => null,      // opcional
+        'database' => 0,         // opcional
+        'timeout' => 2.0,        // segundos
+        'prefix' => 'myapp:',    // prefijo de keys
+    ],
+]);
+```
+
+O si ya tenés una instancia de Redis configurada:
+
+```php
+use SybaseORM\Cache\RedisCacheAdapter;
+
+$redis = new \Redis();
+$redis->connect('127.0.0.1');
+
+$em = OrmFactory::create([
+    'connection' => $connectionConfig,
+    'entity_directories' => [__DIR__ . '/src/Entity'],
+    'second_level_cache' => new RedisCacheAdapter($redis),
+]);
+```
 
 ## Documentación completa
 

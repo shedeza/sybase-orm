@@ -57,9 +57,35 @@ final class OrmFactory
 
         // 3. Instantiate IdentityMap, CacheManager, HookDispatcher
         $identityMap = new IdentityMap();
+
+        // Build second-level cache if configured
+        $secondLevel = $config['second_level_cache'] ?? null;
+
+        if ($secondLevel === null && isset($config['redis'])) {
+            // Auto-create RedisCacheAdapter from redis config
+            $redisConfig = $config['redis'];
+            $redis = new \Redis();
+            $redis->connect(
+                $redisConfig['host'] ?? '127.0.0.1',
+                $redisConfig['port'] ?? 6379,
+                $redisConfig['timeout'] ?? 2.0,
+            );
+
+            if (isset($redisConfig['password']) && $redisConfig['password'] !== '') {
+                $redis->auth($redisConfig['password']);
+            }
+
+            if (isset($redisConfig['database'])) {
+                $redis->select((int) $redisConfig['database']);
+            }
+
+            $prefix = $redisConfig['prefix'] ?? 'sybase_orm:';
+            $secondLevel = new \SybaseORM\Cache\RedisCacheAdapter($redis, $prefix);
+        }
+
         $cacheManager = new CacheManager(
             identityMap: $identityMap,
-            secondLevel: null,
+            secondLevel: $secondLevel instanceof \SybaseORM\Cache\SecondLevelCacheInterface ? $secondLevel : null,
             logger: $logger,
         );
         $hookDispatcher = new HookDispatcher(
