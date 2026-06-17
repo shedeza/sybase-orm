@@ -74,4 +74,22 @@ interface QueryBuilderInterface
 
     /** Returns the query parameters. */
     public function getParameters(): array;
+
+    /**
+     * Executes the query and returns all results.
+     *
+     * @return array Hydrated entities or raw rows
+     */
+    public function getResult(): array;
+
+    /**
+     * Executes the query and returns the first result, or null if empty.
+     */
+    public function getSingleResult(): mixed;
+
+    /** Sets the maximum number of results (alias for limit). */
+    public function setMaxResults(int $maxResults): static;
+
+    /** Sets the first result offset (alias for offset). */
+    public function setFirstResult(int $firstResult): static;
 }

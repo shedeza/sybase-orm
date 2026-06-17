@@ -47,6 +47,12 @@ final class QueryBuilder implements QueryBuilderInterface
     /** @var array<string, mixed> */
     private array $havingParameters = [];
 
+    /** @var (callable(string $sql, array $params): array)|null Executor for getResult()/getSingleResult() */
+    private $executor = null;
+
+    /** @var string|null Entity class for hydration context */
+    private ?string $entityClass = null;
+
     public function __construct(
         private readonly DialectInterface $dialect,
     ) {}
@@ -402,5 +408,75 @@ final class QueryBuilder implements QueryBuilderInterface
         );
 
         return ' ORDER BY ' . implode(', ', $parts);
+    }
+
+    // ── Execution methods ───────────────────────────────────────────
+
+    /**
+     * Sets the executor callback used by getResult()/getSingleResult().
+     * The callback receives (string $sql, array $params) and returns hydrated results.
+     *
+     * @param callable(string, array): array $executor
+     */
+    public function setExecutor(callable $executor, ?string $entityClass = null): void
+    {
+        $this->executor = $executor;
+        $this->entityClass = $entityClass;
+    }
+
+    /**
+     * Executes the query and returns all results.
+     *
+     * @return array Hydrated entities or raw rows
+     * @throws \LogicException If no executor is configured.
+     */
+    public function getResult(): array
+    {
+        if ($this->executor === null) {
+            throw new \LogicException(
+                'Cannot call getResult() on a QueryBuilder without an executor. '
+                . 'Use EntityManager::createQueryBuilder() or EntityRepository::createQueryBuilder() to get an executable QueryBuilder.',
+            );
+        }
+
+        return ($this->executor)($this->getSQL(), $this->getParameters());
+    }
+
+    /**
+     * Executes the query and returns the first result, or null if empty.
+     *
+     * @return mixed Single entity/row or null
+     * @throws \LogicException If no executor is configured.
+     */
+    public function getSingleResult(): mixed
+    {
+        $this->limitValue = 1;
+        $results = $this->getResult();
+
+        return $results[0] ?? null;
+    }
+
+    /**
+     * Alias for limit(). Doctrine-compatible naming.
+     */
+    public function setMaxResults(int $maxResults): static
+    {
+        return $this->limit($maxResults);
+    }
+
+    /**
+     * Alias for offset(). Doctrine-compatible naming.
+     */
+    public function setFirstResult(int $firstResult): static
+    {
+        return $this->offset($firstResult);
+    }
+
+    /**
+     * Returns the entity class this QueryBuilder was created for, or null.
+     */
+    public function getEntityClass(): ?string
+    {
+        return $this->entityClass;
     }
 }
