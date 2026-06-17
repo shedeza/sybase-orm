@@ -368,7 +368,10 @@ final class EntityManager implements EntityManagerInterface
         $qb->from($metadata->getQualifiedTableName(), 'e');
 
         // Wire executor so getResult()/getSingleResult()/getScalarResult()/etc. work
-        $qb->setExecutor(function (string $sql, array $params, string $mode = 'hydrate') use ($entityClass): array|int {
+        $qb->setExecutor(function (string $sql, array $params, string $mode = 'hydrate') use ($entityClass, $metadata): array|int {
+            // Resolve property names (e.propertyName) to column names (e.column_name)
+            $sql = $this->resolvePropertyToColumn($sql, $metadata);
+
             // Expand named parameters (:name) to positional (?) for PDO
             [$sql, $positionalParams] = $this->expandQueryBuilderParams($sql, $params);
 
@@ -1001,6 +1004,37 @@ final class EntityManager implements EntityManagerInterface
         }
 
         return $this->oqlTranslator;
+    }
+
+    /**
+     * Resolves property names referenced with table alias (e.g. e.propertyName)
+     * to their actual database column names (e.g. e.column_name) using metadata.
+     *
+     * Only replaces references with the 'e' alias (the default QueryBuilder alias).
+     * If a property name doesn't match any mapped column, it's left unchanged
+     * (it might already be a column name).
+     */
+    private function resolvePropertyToColumn(string $sql, \SybaseORM\Metadata\ClassMetadata $metadata): string
+    {
+        // Build property → column map
+        $propertyToColumn = [];
+        foreach ($metadata->columns as $column) {
+            if ($column->propertyName !== $column->columnName && !str_contains($column->propertyName, '.')) {
+                $propertyToColumn[$column->propertyName] = $column->columnName;
+            }
+        }
+
+        if (empty($propertyToColumn)) {
+            return $sql;
+        }
+
+        // Replace e.propertyName with e.columnName (word-boundary aware)
+        foreach ($propertyToColumn as $property => $columnName) {
+            $pattern = '/\be\.' . preg_quote($property, '/') . '\b/';
+            $sql = preg_replace($pattern, 'e.' . $columnName, $sql);
+        }
+
+        return $sql;
     }
 
     /**
