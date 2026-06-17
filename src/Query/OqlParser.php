@@ -994,7 +994,10 @@ final class OqlParser
     private function current(): string
     {
         if ($this->pos >= count($this->tokens)) {
-            throw new OqlParseException('Unexpected end of OQL query.');
+            throw new OqlParseException(sprintf(
+                'Unexpected end of OQL query: "%s"',
+                $this->originalOql,
+            ));
         }
 
         return $this->tokens[$this->pos];

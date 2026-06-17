@@ -93,10 +93,7 @@ class EntityRepository
 
     public function find(mixed $id): ?object
     {
-        if (is_array($id)) {
-            return $this->findOneBy($id);
-        }
-
+        // Arrays are treated as composite primary keys and delegated to EntityManager::find()
         return $this->entityManager->find($this->entityClass, $id);
     }
 

@@ -37,6 +37,9 @@ final class UnitOfWork implements UnitOfWorkInterface
     /** @var array<string, array<string, \ReflectionProperty>> Caché de ReflectionProperty por clase y propiedad */
     private array $reflectionCache = [];
 
+    /** Maximum number of cached classes in reflection property cache */
+    private const REFLECTION_CACHE_MAX = 256;
+
     public function __construct(
         private readonly ConnectionManagerInterface $connectionManager,
         private readonly MetadataReaderInterface $metadataReader,
@@ -752,6 +755,9 @@ final class UnitOfWork implements UnitOfWorkInterface
      */
     private function propagateGeneratedId(object $parentEntity, mixed $generatedId): void
     {
+        $parentMetadata = $this->metadataReader->getClassMetadata($parentEntity::class);
+        $parentIdColumns = $parentMetadata->getIdColumns();
+
         foreach ($this->newEntities as $dependentEntity) {
             if ($dependentEntity === $parentEntity) {
                 continue;
@@ -760,17 +766,17 @@ final class UnitOfWork implements UnitOfWorkInterface
             $depMetadata = $this->metadataReader->getClassMetadata($dependentEntity::class);
 
             foreach ($depMetadata->relationships as $rel) {
-                // Solo relaciones con joinColumns (ManyToOne, OneToOne owning side)
+                // Only relationships with joinColumns (ManyToOne, OneToOne owning side)
                 if (empty($rel->joinColumns)) {
                     continue;
                 }
 
-                // Verificar que la relación apunta a la clase del padre
+                // Verify the relationship points to the parent's class
                 if ($rel->targetEntity !== $parentEntity::class) {
                     continue;
                 }
 
-                // Verificar que la propiedad de relación contiene la instancia del padre
+                // Verify the relationship property holds the parent instance
                 $relProp = $this->getReflectionProperty($dependentEntity::class, $rel->propertyName);
                 $relatedValue = $relProp->getValue($dependentEntity);
 
@@ -778,15 +784,37 @@ final class UnitOfWork implements UnitOfWorkInterface
                     continue;
                 }
 
-                // Buscar la columna FK en la entidad dependiente y asignar el ID generado
-                // La columna FK corresponde al joinColumn de la relación
-                // La propagación del ID automático (autoincrement) se asume para un solo ID / FK
+                // Propagate FK values from parent's ID columns to dependent's join columns
                 if (count($rel->joinColumns) === 1) {
+                    // Single FK: assign the generated ID directly
                     $jcName = array_key_first($rel->joinColumns);
                     $fkColumn = $depMetadata->getColumn($jcName);
                     if ($fkColumn !== null) {
                         $fkProp = $this->getReflectionProperty($dependentEntity::class, $fkColumn->propertyName);
                         $fkProp->setValue($dependentEntity, $generatedId);
+                    }
+                } else {
+                    // Composite FK: map each joinColumn to the corresponding parent ID column value
+                    foreach ($rel->joinColumns as $fkColName => $referencedColName) {
+                        $fkColumn = $depMetadata->getColumn($fkColName);
+                        if ($fkColumn === null) {
+                            continue;
+                        }
+
+                        // Find the parent ID column that matches the referenced column name
+                        $parentValue = null;
+                        foreach ($parentIdColumns as $parentIdCol) {
+                            if ($parentIdCol->columnName === $referencedColName || $parentIdCol->propertyName === $referencedColName) {
+                                $parentProp = $this->getReflectionProperty($parentEntity::class, $parentIdCol->propertyName);
+                                $parentValue = $parentProp->getValue($parentEntity);
+                                break;
+                            }
+                        }
+
+                        if ($parentValue !== null) {
+                            $fkProp = $this->getReflectionProperty($dependentEntity::class, $fkColumn->propertyName);
+                            $fkProp->setValue($dependentEntity, $parentValue);
+                        }
                     }
                 }
             }
@@ -840,6 +868,14 @@ final class UnitOfWork implements UnitOfWorkInterface
     private function getReflectionProperty(string $className, string $propertyName): \ReflectionProperty
     {
         if (!isset($this->reflectionCache[$className][$propertyName])) {
+            // Evict oldest class entry if cache is full
+            if (count($this->reflectionCache) >= self::REFLECTION_CACHE_MAX && !isset($this->reflectionCache[$className])) {
+                $oldestKey = array_key_first($this->reflectionCache);
+                if ($oldestKey !== null) {
+                    unset($this->reflectionCache[$oldestKey]);
+                }
+            }
+
             $prop = new \ReflectionProperty($className, $propertyName);
             $this->reflectionCache[$className][$propertyName] = $prop;
         }

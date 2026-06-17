@@ -27,6 +27,12 @@ final class Hydrator implements HydratorInterface
     /** @var array<string, array<string, \ReflectionProperty>> Caché de ReflectionProperty por clase y propiedad */
     private array $reflectionPropertyCache = [];
 
+    /** Maximum cached ReflectionClass instances */
+    private const REFLECTION_CLASS_CACHE_MAX = 256;
+
+    /** Maximum cached classes in property cache */
+    private const REFLECTION_PROPERTY_CACHE_MAX = 256;
+
     /** @var (callable(string $entityClass, string $propertyName, object $owner): array)|null */
     private $collectionLoader = null;
 
@@ -578,6 +584,14 @@ final class Hydrator implements HydratorInterface
     private function getReflectionProperty(string $className, string $propertyName): ?\ReflectionProperty
     {
         if (!isset($this->reflectionPropertyCache[$className][$propertyName])) {
+            // Evict oldest class entry if cache is full
+            if (count($this->reflectionPropertyCache) >= self::REFLECTION_PROPERTY_CACHE_MAX && !isset($this->reflectionPropertyCache[$className])) {
+                $oldestKey = array_key_first($this->reflectionPropertyCache);
+                if ($oldestKey !== null) {
+                    unset($this->reflectionPropertyCache[$oldestKey]);
+                }
+            }
+
             $reflectionClass = $this->getReflectionClass($className);
             if (!$reflectionClass->hasProperty($propertyName)) {
                 return null;
@@ -590,7 +604,7 @@ final class Hydrator implements HydratorInterface
     }
 
     /**
-     * Obtiene un ReflectionClass cacheado para evitar recrearlo en cada hidratación.
+     * Returns a cached ReflectionClass instance with LRU eviction.
      *
      * @param class-string $entityClass
      * @return ReflectionClass<object>
@@ -598,6 +612,13 @@ final class Hydrator implements HydratorInterface
     public function getReflectionClass(string $entityClass): ReflectionClass
     {
         if (!isset($this->reflectionClassCache[$entityClass])) {
+            if (count($this->reflectionClassCache) >= self::REFLECTION_CLASS_CACHE_MAX) {
+                $oldestKey = array_key_first($this->reflectionClassCache);
+                if ($oldestKey !== null) {
+                    unset($this->reflectionClassCache[$oldestKey]);
+                }
+            }
+
             $this->reflectionClassCache[$entityClass] = new ReflectionClass($entityClass);
         }
 

@@ -129,7 +129,12 @@ final class PersistentCollection extends ArrayCollection
     {
         $this->initialize();
 
-        return self::fromArray(array_values(array_filter($this->elements, $predicate)));
+        /** @var static $filtered */
+        $filtered = new self();
+        $filtered->elements = array_values(array_filter($this->elements, $predicate));
+        $filtered->initialized = true;
+
+        return $filtered;
     }
 
     public function map(callable $callback): array

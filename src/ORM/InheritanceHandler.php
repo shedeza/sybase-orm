@@ -20,6 +20,9 @@ final class InheritanceHandler
     /** @var array<string, \ReflectionClass<object>> */
     private array $reflectionCache = [];
 
+    /** Maximum cached ReflectionClass instances */
+    private const REFLECTION_CACHE_MAX = 128;
+
     public function __construct(
         private readonly MetadataReaderInterface $metadataReader,
     ) {}
@@ -27,6 +30,13 @@ final class InheritanceHandler
     private function getReflectionClass(string $className): \ReflectionClass
     {
         if (!isset($this->reflectionCache[$className])) {
+            if (count($this->reflectionCache) >= self::REFLECTION_CACHE_MAX) {
+                $oldestKey = array_key_first($this->reflectionCache);
+                if ($oldestKey !== null) {
+                    unset($this->reflectionCache[$oldestKey]);
+                }
+            }
+
             $this->reflectionCache[$className] = new \ReflectionClass($className);
         }
 
