@@ -99,6 +99,32 @@ interface QueryBuilderInterface
      */
     public function getSingleScalarResult(): mixed;
 
+    /**
+     * Executes the query and returns all results as associative arrays (no hydration).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getArrayResult(): array;
+
+    /**
+     * Executes the query and returns the first result, or null.
+     * Throws if more than one result is returned.
+     *
+     * @throws \OverflowException If more than one result is found.
+     */
+    public function getOneOrNullResult(): mixed;
+
+    /**
+     * Executes an UPDATE or DELETE query and returns the number of affected rows.
+     */
+    public function execute(): int;
+
+    /**
+     * Returns the total count of rows matching the current conditions,
+     * without modifying the QueryBuilder's select or limit state.
+     */
+    public function getCount(): int;
+
     /** Sets the maximum number of results (alias for limit). */
     public function setMaxResults(int $maxResults): static;
 

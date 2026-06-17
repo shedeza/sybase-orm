@@ -489,6 +489,93 @@ final class QueryBuilder implements QueryBuilderInterface
     }
 
     /**
+     * Executes the query and returns all results as associative arrays (no hydration).
+     *
+     * @return array<int, array<string, mixed>>
+     * @throws \LogicException If no executor is configured.
+     */
+    public function getArrayResult(): array
+    {
+        if ($this->executor === null) {
+            throw new \LogicException(
+                'Cannot call getArrayResult() on a QueryBuilder without an executor. '
+                . 'Use EntityManager::createQueryBuilder() or EntityRepository::createQueryBuilder().',
+            );
+        }
+
+        return ($this->executor)($this->getSQL(), $this->getParameters(), 'array');
+    }
+
+    /**
+     * Executes the query and returns the first result, or null if empty.
+     * Throws if more than one result is returned.
+     *
+     * @return mixed Single entity/row or null
+     * @throws \LogicException If no executor is configured.
+     * @throws \OverflowException If more than one result is found.
+     */
+    public function getOneOrNullResult(): mixed
+    {
+        $this->limitValue = 2;
+        $results = $this->getResult();
+
+        if (count($results) > 1) {
+            throw new \OverflowException(
+                'getOneOrNullResult() expected 0 or 1 results, got more than 1.',
+            );
+        }
+
+        return $results[0] ?? null;
+    }
+
+    /**
+     * Executes an UPDATE or DELETE query and returns the number of affected rows.
+     *
+     * @return int Number of affected rows
+     * @throws \LogicException If no executor is configured.
+     */
+    public function execute(): int
+    {
+        if ($this->executor === null) {
+            throw new \LogicException(
+                'Cannot call execute() on a QueryBuilder without an executor. '
+                . 'Use EntityManager::createQueryBuilder() or EntityRepository::createQueryBuilder().',
+            );
+        }
+
+        $result = ($this->executor)($this->getSQL(), $this->getParameters(), 'execute');
+
+        return is_array($result) ? 0 : (int) $result;
+    }
+
+    /**
+     * Returns the total count of rows matching the current WHERE/JOIN conditions,
+     * without modifying the QueryBuilder's select or limit state.
+     *
+     * @return int Total row count
+     * @throws \LogicException If no executor is configured or no FROM is set.
+     */
+    public function getCount(): int
+    {
+        if ($this->executor === null) {
+            throw new \LogicException(
+                'Cannot call getCount() on a QueryBuilder without an executor.',
+            );
+        }
+
+        // Build a COUNT query reusing the current state without mutating it
+        $countQb = clone $this;
+        $countQb->selectColumns = ['COUNT(*)'];
+        $countQb->orderByClauses = [];
+        $countQb->limitValue = null;
+        $countQb->offsetValue = null;
+
+        $results = ($this->executor)($countQb->getSQL(), $countQb->getParameters(), 'scalar');
+
+        return (int) ($results[0] ?? 0);
+    }
+
+    /**
      * Alias for limit(). Doctrine-compatible naming.
      */
     public function setMaxResults(int $maxResults): static
