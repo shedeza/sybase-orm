@@ -598,4 +598,16 @@ final class QueryBuilder implements QueryBuilderInterface
     {
         return $this->entityClass;
     }
+
+    /**
+     * Returns $this for Doctrine API compatibility.
+     * In this ORM, execution methods live directly on the QueryBuilder,
+     * so no intermediate Query object is needed.
+     *
+     * Allows: $qb->where(...)->getQuery()->getResult()
+     */
+    public function getQuery(): static
+    {
+        return $this;
+    }
 }
