@@ -47,7 +47,7 @@ final class QueryBuilder implements QueryBuilderInterface
     /** @var array<string, mixed> */
     private array $havingParameters = [];
 
-    /** @var (callable(string $sql, array $params): array)|null Executor for getResult()/getSingleResult() */
+    /** @var (callable(string $sql, array $params, string $mode=): array|int)|null Executor for getResult()/getSingleResult()/execute() */
     private $executor = null;
 
     /** @var string|null Entity class for hydration context */
@@ -413,10 +413,10 @@ final class QueryBuilder implements QueryBuilderInterface
     // ── Execution methods ───────────────────────────────────────────
 
     /**
-     * Sets the executor callback used by getResult()/getSingleResult().
-     * The callback receives (string $sql, array $params) and returns hydrated results.
+     * Sets the executor callback used by getResult()/getSingleResult()/execute().
+     * The callback receives (string $sql, array $params, string $mode) and returns results.
      *
-     * @param callable(string, array): array $executor
+     * @param callable(string, array, string=): array|int $executor
      */
     public function setExecutor(callable $executor, ?string $entityClass = null): void
     {
@@ -439,7 +439,10 @@ final class QueryBuilder implements QueryBuilderInterface
             );
         }
 
-        return ($this->executor)($this->getSQL(), $this->getParameters());
+        /** @var array $result */
+        $result = ($this->executor)($this->getSQL(), $this->getParameters(), 'hydrate');
+
+        return $result;
     }
 
     /**
@@ -471,7 +474,10 @@ final class QueryBuilder implements QueryBuilderInterface
             );
         }
 
-        return ($this->executor)($this->getSQL(), $this->getParameters(), 'scalar');
+        /** @var array $result */
+        $result = ($this->executor)($this->getSQL(), $this->getParameters(), 'scalar');
+
+        return $result;
     }
 
     /**
@@ -503,7 +509,10 @@ final class QueryBuilder implements QueryBuilderInterface
             );
         }
 
-        return ($this->executor)($this->getSQL(), $this->getParameters(), 'array');
+        /** @var array $result */
+        $result = ($this->executor)($this->getSQL(), $this->getParameters(), 'array');
+
+        return $result;
     }
 
     /**
@@ -543,9 +552,10 @@ final class QueryBuilder implements QueryBuilderInterface
             );
         }
 
+        /** @var array|int $result */
         $result = ($this->executor)($this->getSQL(), $this->getParameters(), 'execute');
 
-        return is_array($result) ? 0 : (int) $result;
+        return is_int($result) ? $result : 0;
     }
 
     /**
@@ -570,6 +580,7 @@ final class QueryBuilder implements QueryBuilderInterface
         $countQb->limitValue = null;
         $countQb->offsetValue = null;
 
+        /** @var array $results */
         $results = ($this->executor)($countQb->getSQL(), $countQb->getParameters(), 'scalar');
 
         return (int) ($results[0] ?? 0);
