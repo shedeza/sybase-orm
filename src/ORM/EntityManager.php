@@ -369,11 +369,14 @@ final class EntityManager implements EntityManagerInterface
 
         // Wire executor so getResult()/getSingleResult()/getScalarResult()/etc. work
         $qb->setExecutor(function (string $sql, array $params, string $mode = 'hydrate') use ($entityClass): array|int {
+            // Expand named parameters (:name) to positional (?) for PDO
+            [$sql, $positionalParams] = $this->expandQueryBuilderParams($sql, $params);
+
             if ($mode === 'execute') {
-                return $this->connectionManager->executeStatement($sql, $params);
+                return $this->connectionManager->executeStatement($sql, $positionalParams);
             }
 
-            $stmt = $this->connectionManager->executeQuery($sql, $params);
+            $stmt = $this->connectionManager->executeQuery($sql, $positionalParams);
             $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
             $stmt->closeCursor();
 
@@ -998,6 +1001,62 @@ final class EntityManager implements EntityManagerInterface
         }
 
         return $this->oqlTranslator;
+    }
+
+    /**
+     * Expands named parameters from QueryBuilder into positional placeholders.
+     *
+     * The QueryBuilder uses named params (:name) in SQL, but ConnectionManager
+     * uses positional (?) binds. This method replaces all :name occurrences
+     * with ? and builds an ordered parameter array, handling arrays for IN clauses.
+     *
+     * @param string $sql SQL with named parameters
+     * @param array<string, mixed> $params Named parameter values
+     * @return array{0: string, 1: list<mixed>} [expandedSql, positionalParams]
+     */
+    private function expandQueryBuilderParams(string $sql, array $params): array
+    {
+        if (empty($params)) {
+            return [$sql, []];
+        }
+
+        $positionalParams = [];
+
+        // Sort by longest name first to avoid :name matching :name_extra
+        $names = array_keys($params);
+        usort($names, fn(string $a, string $b) => strlen($b) - strlen($a));
+
+        foreach ($names as $name) {
+            $value = $params[$name];
+            $pattern = '/\:' . preg_quote($name, '/') . '\b/';
+
+            if (!preg_match($pattern, $sql)) {
+                continue;
+            }
+
+            if (is_array($value)) {
+                if (empty($value)) {
+                    $sql = preg_replace($pattern, '1 = 0', $sql);
+                } else {
+                    $placeholders = implode(', ', array_fill(0, count($value), '?'));
+                    $occurrences = preg_match_all($pattern, $sql);
+                    $sql = preg_replace($pattern, $placeholders, $sql);
+                    for ($o = 0; $o < $occurrences; $o++) {
+                        foreach ($value as $item) {
+                            $positionalParams[] = $item;
+                        }
+                    }
+                }
+            } else {
+                $occurrences = preg_match_all($pattern, $sql);
+                $sql = preg_replace($pattern, '?', $sql);
+                for ($o = 0; $o < $occurrences; $o++) {
+                    $positionalParams[] = $value;
+                }
+            }
+        }
+
+        return [$sql, $positionalParams];
     }
 
     /**
