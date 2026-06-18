@@ -41,7 +41,13 @@ final class OrmFactory
             $connectionConfig = ConnectionUrlParser::parse($connectionConfig);
         }
 
-        $connectionManager = new ConnectionManager($connectionConfig, $logger);
+        // Instrumentation (null-object pattern — zero overhead if not configured)
+        $instrumentation = $config['instrumentation'] ?? null;
+        if ($instrumentation !== null && !($instrumentation instanceof \SybaseORM\Instrumentation\OrmInstrumentationInterface)) {
+            $instrumentation = null;
+        }
+
+        $connectionManager = new ConnectionManager($connectionConfig, $logger, $instrumentation);
 
         // 2. Instantiate SybaseDialect, TypeCaster, MetadataReader
         $dialect = new SybaseDialect();

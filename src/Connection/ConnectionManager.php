@@ -48,8 +48,11 @@ class ConnectionManager implements ConnectionManagerInterface
     /** @var array{host: string, port: int, dbname: string, username: string, password: string, charset: string, persistent: bool} */
     private array $config;
 
-    public function __construct(array $config, private readonly ?LoggerInterface $logger = null)
-    {
+    public function __construct(
+        array $config,
+        private readonly ?LoggerInterface $logger = null,
+        private readonly ?\SybaseORM\Instrumentation\OrmInstrumentationInterface $instrumentation = null,
+    ) {
         $this->charsetConversion = (bool) ($config['charset_conversion'] ?? false);
         $this->readOnly = (bool) ($config['read_only'] ?? false);
 
@@ -125,13 +128,15 @@ class ConnectionManager implements ConnectionManagerInterface
             $pdo = $this->getConnection();
             [$sql, $params] = $this->expandArrayParams($sql, $params);
 
-            // Don't use statement cache for queries — the returned statement
-            // has an open cursor that the caller will read from. Reusing it
-            // would cause "cursor already open" errors in Sybase ASE.
-            $stmt = $pdo->prepare($sql);
+            $this->instrumentation?->onQueryStart($sql, $params, $this->config['dbname']);
+            $startTime = microtime(true);
 
+            $stmt = $pdo->prepare($sql);
             $this->bindParams($stmt, $this->convertParams($params));
             $stmt->execute();
+
+            $timeMs = (microtime(true) - $startTime) * 1000;
+            $this->instrumentation?->onQueryEnd($sql, $params, $this->config['dbname'], $timeMs);
 
             return $stmt;
         } catch (\PDOException $e) {
@@ -151,12 +156,17 @@ class ConnectionManager implements ConnectionManagerInterface
             $pdo = $this->getConnection();
             [$sql, $params] = $this->expandArrayParams($sql, $params);
 
-            $stmt = $this->getCachedStatement($pdo, $sql);
+            $this->instrumentation?->onQueryStart($sql, $params, $this->config['dbname']);
+            $startTime = microtime(true);
 
+            $stmt = $this->getCachedStatement($pdo, $sql);
             $this->bindParams($stmt, $this->convertParams($params));
             $stmt->execute();
             $rowCount = $stmt->rowCount();
             $stmt->closeCursor();
+
+            $timeMs = (microtime(true) - $startTime) * 1000;
+            $this->instrumentation?->onQueryEnd($sql, $params, $this->config['dbname'], $timeMs);
 
             return $rowCount;
         } catch (\PDOException $e) {
@@ -177,6 +187,7 @@ class ConnectionManager implements ConnectionManagerInterface
         try {
             $pdo->beginTransaction();
             $this->inTransaction = true;
+            $this->instrumentation?->onTransactionBegin();
         } catch (\PDOException $e) {
             $this->handlePdoException($e);
         }
@@ -192,6 +203,7 @@ class ConnectionManager implements ConnectionManagerInterface
             $this->getConnection()->commit();
             $this->inTransaction = false;
             $this->savepointStack = [];
+            $this->instrumentation?->onTransactionCommit(0.0);
         } catch (\PDOException $e) {
             $this->handlePdoException($e);
         }
@@ -207,6 +219,7 @@ class ConnectionManager implements ConnectionManagerInterface
             $this->getConnection()->rollBack();
             $this->inTransaction = false;
             $this->savepointStack = [];
+            $this->instrumentation?->onTransactionRollback('explicit');
         } catch (\PDOException $e) {
             $this->handlePdoException($e);
         }
@@ -661,6 +674,50 @@ class ConnectionManager implements ConnectionManagerInterface
         $stmt->closeCursor();
 
         return is_array($row) ? ($row[0] ?? 'unknown') : 'unknown';
+    }
+
+    /**
+     * Returns the query execution plan using Sybase ASE's SHOWPLAN.
+     *
+     * @param string $sql The SQL query to explain
+     * @param array $params Query parameters (not used in execution)
+     * @return array<int, array{step: int, description: string}> Plan steps
+     */
+    public function explain(string $sql, array $params = []): array
+    {
+        $pdo = $this->getConnection();
+
+        try {
+            $pdo->exec('SET SHOWPLAN ON');
+            $pdo->exec('SET NOEXEC ON');
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute();
+
+            $plans = [];
+            $step = 0;
+
+            // SHOWPLAN output comes as result messages
+            do {
+                $row = $stmt->fetch(\PDO::FETCH_NUM);
+                if ($row !== false && isset($row[0])) {
+                    $plans[] = ['step' => ++$step, 'description' => trim((string) $row[0])];
+                }
+            } while ($row !== false);
+
+            $stmt->closeCursor();
+
+            // If no rows from the statement, try fetching messages via exec
+            if (empty($plans)) {
+                // Some dblib drivers return SHOWPLAN as informational messages
+                $plans[] = ['step' => 1, 'description' => '(Plan output may require server-side message capture)'];
+            }
+
+            return $plans;
+        } finally {
+            $pdo->exec('SET SHOWPLAN OFF');
+            $pdo->exec('SET NOEXEC OFF');
+        }
     }
 
     /**
