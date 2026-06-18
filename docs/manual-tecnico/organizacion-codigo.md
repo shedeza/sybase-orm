@@ -263,11 +263,30 @@ Sistema de profiling e instrumentación para monitorear el rendimiento de consul
 
 ### SybaseORM\Console
 
-Comandos de línea de comandos para gestión del ORM.
+Sistema CLI con arquitectura de comandos individuales.
 
 | Archivo | Propósito |
 |---------|-----------|
-| `MigrateCommand.php` | Comando para ejecutar, revertir y consultar estado de migraciones |
+| `CommandInterface.php` | Contrato para todos los comandos CLI |
+| `CommandRunner.php` | Dispatcher: rutea argv al comando apropiado, muestra help |
+| `IO.php` | Helper de salida: output, error, success, warning, table |
+
+#### Subdirectorio Console/Command
+
+| Archivo | Propósito |
+|---------|-----------|
+| `MigrateCommand.php` | Ejecutar migraciones pendientes |
+| `MigrateRollbackCommand.php` | Revertir la última migración |
+| `MigrateStatusCommand.php` | Mostrar estado de migraciones |
+| `MigrateGenerateCommand.php` | Generar migración desde diff de entidades |
+| `MigratePreviewCommand.php` | Previsualizar SQL sin ejecutar |
+| `MigrateFreshCommand.php` | Drop all + re-ejecutar migraciones (dev) |
+| `MigrateResetCommand.php` | Rollback de todas las migraciones |
+| `MakeMigrationCommand.php` | Crear archivo de migración vacío |
+| `MakeEntityCommand.php` | Generar clase entidad skeleton |
+| `SchemaValidateCommand.php` | Validar mapping vs esquema DB |
+| `CacheClearCommand.php` | Limpiar cachés de proxies y metadatos |
+| `OrmInfoCommand.php` | Mostrar entidades mapeadas con info de tablas |
 
 ### SybaseORM\Testing
 

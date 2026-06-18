@@ -64,7 +64,8 @@ graph TD
 
     subgraph "Capa de Console/CLI"
         CLI[bin/sybase-orm]
-        MIGCMD[MigrateCommand]
+        CMDRUN[CommandRunner]
+        MIGCMD[12 Commands]
     end
 
     %% Dependencias principales
@@ -227,13 +228,13 @@ graph TD
 
 **Namespace:** `SybaseORM\Console`
 
-**Responsabilidad:** Proveer comandos de línea de comandos para gestión de migraciones, caché y validación de esquema.
+**Responsabilidad:** Proveer comandos de línea de comandos para gestión de migraciones, generación de código, caché y validación de esquema.
 
-**Clases principales:** `MigrateCommand` (ejecutar, revertir y consultar estado de migraciones).
+**Clases principales:** `CommandRunner` (dispatcher con help y sugerencias), `CommandInterface` (contrato de comandos), `IO` (output helper), y 12 comandos en `Command/`: MigrateCommand, MigrateRollbackCommand, MigrateStatusCommand, MigrateGenerateCommand, MigratePreviewCommand, MigrateFreshCommand, MigrateResetCommand, MakeMigrationCommand, MakeEntityCommand, SchemaValidateCommand, CacheClearCommand, OrmInfoCommand.
 
 **Entry point:** `bin/sybase-orm` (ejecutable CLI del proyecto).
 
-**Dependencias:** Migration (para ejecutar migraciones), Connection (acceso a DB), Metadata (validación de esquema).
+**Dependencias:** Migration (para ejecutar migraciones), Connection (acceso a DB), Metadata (validación de esquema y orm:info).
 
 ---
 
@@ -296,8 +297,12 @@ EntityManager / Repository (orquestación)
        │      └── MetadataReader (estado deseado)
        │
        └── Console / CLI (bin/sybase-orm)
-              ├── MigrateCommand → MigrationManager
-              └── Validación de esquema → MetadataReader + Connection
+              ├── CommandRunner (dispatcher)
+              ├── migrate, migrate:rollback, migrate:status, migrate:generate
+              ├── migrate:preview, migrate:fresh, migrate:reset
+              ├── make:migration, make:entity
+              ├── schema:validate, cache:clear, orm:info
+              └── IO (output helpers)
 ```
 
 **Principios clave:**

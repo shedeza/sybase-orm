@@ -82,7 +82,11 @@ $runner->add(new \SybaseORM\Console\Command\MigrateGenerateCommand($migrationMan
 $runner->add(new \SybaseORM\Console\Command\MigratePreviewCommand($migrationManager));
 $runner->add(new \SybaseORM\Console\Command\MigrateFreshCommand($migrationManager));
 $runner->add(new \SybaseORM\Console\Command\MigrateResetCommand($migrationManager));
-$runner->add(new \SybaseORM\Console\Command\MakeMigrationCommand($migrationsDir));
+$runner->add(new \SybaseORM\Console\Command\MakeMigrationCommand(
+    migrationManager: $migrationManager,
+    migrationsDirectory: $migrationsDir,
+    entityClasses: $config['entity_classes'] ?? [],
+));
 $runner->add(new \SybaseORM\Console\Command\MakeEntityCommand(
     defaultEntityDirectory: $config['entity_directories'][0] ?? getcwd() . '/src/Entity',
     defaultNamespace: $config['entity_namespace'] ?? 'App\\Entity',

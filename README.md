@@ -316,12 +316,25 @@ composer cs-fix
 ## CLI
 
 ```bash
-php bin/sybase-orm migrate           # Run pending migrations
-php bin/sybase-orm migrate:rollback  # Rollback last migration
-php bin/sybase-orm migrate:status    # Show migration status
-php bin/sybase-orm migrate:generate  # Generate migration from entity diff
-php bin/sybase-orm cache:clear       # Clear proxy and metadata caches
-php bin/sybase-orm schema:validate   # Validate mapping vs DB schema
+php bin/sybase-orm help               # Show all commands
+
+# Migrations
+php bin/sybase-orm migrate            # Run pending migrations
+php bin/sybase-orm migrate:rollback   # Rollback last migration
+php bin/sybase-orm migrate:status     # Show migration status
+php bin/sybase-orm migrate:generate   # Generate migration from entity diff
+php bin/sybase-orm migrate:preview    # Preview SQL without executing
+php bin/sybase-orm migrate:fresh      # Drop all + re-run (requires --force)
+php bin/sybase-orm migrate:reset      # Rollback ALL migrations (requires --force)
+
+# Generators
+php bin/sybase-orm make:migration     # Create empty migration file
+php bin/sybase-orm make:entity User   # Generate entity class skeleton
+
+# Schema & Cache
+php bin/sybase-orm schema:validate    # Validate mapping vs DB schema
+php bin/sybase-orm cache:clear        # Clear proxy and metadata caches
+php bin/sybase-orm orm:info           # Show all mapped entities
 ```
 
 ## Licencia
