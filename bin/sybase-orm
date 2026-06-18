@@ -4,25 +4,20 @@
 declare(strict_types=1);
 
 /**
- * Sybase ORM CLI entry point.
+ * Sybase ORM CLI.
  *
  * Usage:
- *     php bin/sybase-orm migrate
- *     php bin/sybase-orm migrate:rollback
- *     php bin/sybase-orm migrate:status
- *     php bin/sybase-orm migrate:generate App\Entity\User
- *     php bin/sybase-orm cache:clear
- *     php bin/sybase-orm schema:validate App\Entity\User
+ *     php bin/sybase-orm <command> [arguments]
+ *     php bin/sybase-orm help
  *
  * Configuration:
- *     Create a sybase-orm.config.php file in your project root that returns
- *     the ORM configuration array (same format as OrmFactory::create).
+ *     Create sybase-orm.config.php in your project root.
  */
 
 // Find autoloader
 $autoloadPaths = [
-    __DIR__ . '/../vendor/autoload.php',        // when installed as a package
-    __DIR__ . '/../../../autoload.php',          // when inside vendor/shedeza/sybase-orm/bin
+    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../../../autoload.php',
 ];
 
 $autoloaded = false;
@@ -68,18 +63,38 @@ if ($config === null) {
 $em = \SybaseORM\ORM\OrmFactory::create($config);
 
 // Build MigrationManager
+$migrationsDir = $config['migrations_directory'] ?? getcwd() . '/migrations';
 $migrationManager = new \SybaseORM\Migration\MigrationManager(
     connection: $em->getConnection(),
     metadataReader: $em->getMetadataReader(),
     dialect: $em->getDialect(),
-    migrationsDirectory: $config['migrations_directory'] ?? getcwd() . '/migrations',
+    migrationsDirectory: $migrationsDir,
 );
 
-// Build and run CLI
-$command = new \SybaseORM\Console\MigrateCommand(
-    migrationManager: $migrationManager,
+// Build command runner
+$runner = new \SybaseORM\Console\CommandRunner();
+
+// Register commands
+$runner->add(new \SybaseORM\Console\Command\MigrateCommand($migrationManager));
+$runner->add(new \SybaseORM\Console\Command\MigrateRollbackCommand($migrationManager));
+$runner->add(new \SybaseORM\Console\Command\MigrateStatusCommand($migrationManager));
+$runner->add(new \SybaseORM\Console\Command\MigrateGenerateCommand($migrationManager));
+$runner->add(new \SybaseORM\Console\Command\MigratePreviewCommand($migrationManager));
+$runner->add(new \SybaseORM\Console\Command\MigrateFreshCommand($migrationManager));
+$runner->add(new \SybaseORM\Console\Command\MigrateResetCommand($migrationManager));
+$runner->add(new \SybaseORM\Console\Command\MakeMigrationCommand($migrationsDir));
+$runner->add(new \SybaseORM\Console\Command\MakeEntityCommand(
+    defaultEntityDirectory: $config['entity_directories'][0] ?? getcwd() . '/src/Entity',
+    defaultNamespace: $config['entity_namespace'] ?? 'App\\Entity',
+));
+$runner->add(new \SybaseORM\Console\Command\SchemaValidateCommand($migrationManager));
+$runner->add(new \SybaseORM\Console\Command\CacheClearCommand(
     proxyDirectory: $config['proxy_directory'] ?? null,
     metadataCacheDir: $config['metadata_cache_dir'] ?? null,
-);
+));
+$runner->add(new \SybaseORM\Console\Command\OrmInfoCommand(
+    metadataReader: $em->getMetadataReader(),
+    entityClasses: $config['entity_classes'] ?? [],
+));
 
-exit($command->run($argv));
+exit($runner->run($argv));
