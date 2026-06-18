@@ -328,7 +328,8 @@ php bin/sybase-orm migrate:fresh      # Drop all + re-run (requires --force)
 php bin/sybase-orm migrate:reset      # Rollback ALL migrations (requires --force)
 
 # Generators
-php bin/sybase-orm make:migration     # Create empty migration file
+php bin/sybase-orm make:migration     # Auto-diff entities vs DB, generate migration
+php bin/sybase-orm make:migration --empty  # Create empty migration for manual SQL
 php bin/sybase-orm make:entity User   # Generate entity class skeleton
 
 # Schema & Cache

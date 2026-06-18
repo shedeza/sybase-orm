@@ -282,7 +282,7 @@ Sistema CLI con arquitectura de comandos individuales.
 | `MigratePreviewCommand.php` | Previsualizar SQL sin ejecutar |
 | `MigrateFreshCommand.php` | Drop all + re-ejecutar migraciones (dev) |
 | `MigrateResetCommand.php` | Rollback de todas las migraciones |
-| `MakeMigrationCommand.php` | Crear archivo de migración vacío |
+| `MakeMigrationCommand.php` | Auto-diff entidades vs DB y generar migración (o --empty para manual) |
 | `MakeEntityCommand.php` | Generar clase entidad skeleton |
 | `SchemaValidateCommand.php` | Validar mapping vs esquema DB |
 | `CacheClearCommand.php` | Limpiar cachés de proxies y metadatos |
