@@ -15,6 +15,10 @@ Punto de entrada central a toda la documentación del proyecto `shedeza/sybase-o
 - [Configuración y Conexión](./usuario-manual/configuracion-conexion.md)
 - [Mapeo de Entidades](./usuario-manual/mapeo-entidades.md)
 - [Sistema de Consultas (OQL)](./usuario-manual/sistema-consultas.md)
+- [Sistema de Migraciones](./usuario-manual/sistema-migraciones.md)
+- [Instrumentación y Profiling](./usuario-manual/caracteristicas-avanzadas.md)
+- [Batch Processing](./usuario-manual/caracteristicas-avanzadas.md)
+- [Testing (Factories)](./usuario-manual/caracteristicas-avanzadas.md)
 - [Troubleshooting](./manual-operacion/troubleshooting.md)
 - [Guías de Contribución](./manual-tecnico/guias-contribucion.md)
 

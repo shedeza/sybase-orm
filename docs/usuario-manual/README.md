@@ -20,6 +20,13 @@ Documentación completa de uso del ORM `shedeza/sybase-orm` para PHP. Este manua
 | 12 | [Repositorio de Entidades](./repositorio-entidades.md) | API completa de EntityRepository: find, save, delete, count, exists y repositorios personalizados |
 | 13 | [Manejo de Errores](./manejo-errores.md) | Jerarquía de excepciones, detección de deadlocks y patrones de retry |
 | 14 | [Características Avanzadas](./caracteristicas-avanzadas.md) | Raw SQL, clear/detach/merge/refresh, modo read-only, caché LRU y reconexión automática |
+| 15 | [Instrumentación y Profiling](./caracteristicas-avanzadas.md) | Sistema de instrumentación, profiling de queries y explain plan (SHOWPLAN) |
+| 16 | [CLI de Migraciones](./sistema-migraciones.md) | Comandos CLI: migrate, rollback, status, generate, cache:clear, schema:validate |
+| 17 | [Timestamps automáticos](./mapeo-entidades.md) | Atributo #[Timestamps] para created_at/updated_at automáticos |
+| 18 | [Paginación](./sistema-consultas-querybuilder.md) | Método paginate() con metadatos de paginación |
+| 19 | [Batch Processing](./caracteristicas-avanzadas.md) | Procesamiento en lotes para grandes datasets |
+| 20 | [Native SQL](./caracteristicas-avanzadas.md) | Mapeo de consultas SQL nativas con createNativeQuery() |
+| 21 | [Testing (Factories)](./caracteristicas-avanzadas.md) | Model factories para testing con EntityFactory |
 
 ## Otros Manuales
 

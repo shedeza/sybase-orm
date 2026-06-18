@@ -10,16 +10,19 @@ src/
 ├── Cache/           → Sistema de caché de segundo nivel
 ├── Collection/      → Colecciones de entidades
 ├── Connection/      → Gestión de conexiones a base de datos
+├── Console/         → Comandos CLI (migraciones, caché, validación)
 ├── Dialect/         → Dialectos SQL específicos del motor
 ├── Exception/       → Jerarquía de excepciones del ORM
 ├── Hook/            → Sistema de eventos y lifecycle hooks
 ├── Hydrator/        → Transformación de resultados a objetos
+├── Instrumentation/ → Sistema de profiling e instrumentación
 ├── Metadata/        → Lectura y almacenamiento de metadatos de entidades
 ├── Migration/       → Sistema de migraciones de esquema
 ├── ORM/             → Núcleo del ORM (EntityManager, UnitOfWork, IdentityMap)
 ├── PHPStan/         → Reglas personalizadas de análisis estático
 ├── Proxy/           → Generación de proxies para lazy loading
 ├── Query/           → Parser OQL, QueryBuilder y AST
+├── Testing/         → Herramientas de testing (EntityFactory)
 └── Type/            → Sistema de tipos y conversión de valores
 ```
 
@@ -54,6 +57,13 @@ Define los atributos PHP 8 utilizados para mapear entidades, columnas, relacione
 | `PreRemove.php` | Hook ejecutado antes de eliminar |
 | `PreUpdate.php` | Hook ejecutado antes de actualizar |
 | `SoftDelete.php` | Activación de eliminación lógica |
+| `Timestamps.php` | Gestión automática de campos created_at/updated_at |
+| `GlobalScope.php` | Define un query scope global aplicado automáticamente |
+| `Accessor.php` | Define un accessor (getter personalizado) para una propiedad |
+| `Mutator.php` | Define un mutator (setter personalizado) para una propiedad |
+| `ReadOnly.php` / `Immutable` | Marca una entidad como de solo lectura (no permite persist/update) |
+| `EntityListener.php` | Registra un listener externo para eventos de la entidad |
+| `CacheRegion.php` | Define la región de caché específica para la entidad |
 
 ### SybaseORM\Cache
 
@@ -84,6 +94,7 @@ Capa de conexión a base de datos: gestión del ciclo de vida, parsing de URLs y
 | `ConnectionManager.php` | Gestión de conexiones PDO, pooling y reconexión |
 | `ConnectionManagerInterface.php` | Contrato del administrador de conexiones |
 | `ConnectionUrlParser.php` | Parsing de URLs DSN de conexión |
+| `ExplainableConnectionInterface.php` | Contrato para conexiones que soportan EXPLAIN/SHOWPLAN |
 | `SqlParameterExpander.php` | Expansión de arrays para cláusulas IN |
 | `RetryConnectionManager.php` | Decorator con reintentos automáticos ante pérdida de conexión |
 
@@ -239,6 +250,38 @@ Reglas personalizadas de análisis estático para el proyecto.
 | Archivo | Propósito |
 |---------|-----------|
 | `NoSymfonyImportsRule.php` | Regla que prohíbe imports directos de Symfony |
+
+### SybaseORM\Instrumentation
+
+Sistema de profiling e instrumentación para monitorear el rendimiento de consultas y operaciones del ORM.
+
+| Archivo | Propósito |
+|---------|-----------|
+| `OrmInstrumentationInterface.php` | Contrato de instrumentación |
+| `NullInstrumentation.php` | Implementación noop (sin overhead en producción) |
+| `InstrumentationCollector.php` | Recolector de métricas: tiempos de query, flush, hydration |
+
+### SybaseORM\Console
+
+Comandos de línea de comandos para gestión del ORM.
+
+| Archivo | Propósito |
+|---------|-----------|
+| `MigrateCommand.php` | Comando para ejecutar, revertir y consultar estado de migraciones |
+
+### SybaseORM\Testing
+
+Herramientas para testing de entidades y repositorios.
+
+| Archivo | Propósito |
+|---------|-----------|
+| `EntityFactory.php` | Factory para generar entidades con datos de prueba |
+
+### bin/ (Entry Points)
+
+| Archivo | Propósito |
+|---------|-----------|
+| `bin/sybase-orm` | Ejecutable CLI principal del ORM (migraciones, caché, validación de esquema) |
 
 ## Convenciones del Proyecto
 

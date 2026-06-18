@@ -23,6 +23,22 @@ ORM puro en PHP para **Sybase ASE**, independiente de framework. Soporta mapeo d
 - Value Objects embebibles
 - Conexiones múltiples con EntityManagerRegistry
 - Soporte para conexiones de solo lectura
+- CLI de migraciones (`bin/sybase-orm`)
+- Timestamps automáticos (`#[Timestamps]`)
+- Paginación con metadatos (`paginate()`)
+- Query Scopes globales (`#[GlobalScope]`)
+- Subqueries en QueryBuilder (`whereIn`, `whereNotIn`, `whereExists`)
+- Serialización (`toArray()`/`toJson()`)
+- Mass assignment protection (`fill()`/`forceFill()`)
+- Batch processing para grandes datasets
+- Native SQL mapping (`createNativeQuery()`)
+- Entity listeners externos (`#[EntityListener]`)
+- Read-only entities (`#[Immutable]`)
+- Cache regions por entidad (`#[CacheRegion]`)
+- Model factories para testing (`EntityFactory`)
+- Sistema de instrumentación/profiling
+- Query Explain Plan (SHOWPLAN)
+- Metadata introspection
 
 ## Requisitos del sistema
 
@@ -295,6 +311,17 @@ composer phpstan
 
 # Formateo de código
 composer cs-fix
+```
+
+## CLI
+
+```bash
+php bin/sybase-orm migrate           # Run pending migrations
+php bin/sybase-orm migrate:rollback  # Rollback last migration
+php bin/sybase-orm migrate:status    # Show migration status
+php bin/sybase-orm migrate:generate  # Generate migration from entity diff
+php bin/sybase-orm cache:clear       # Clear proxy and metadata caches
+php bin/sybase-orm schema:validate   # Validate mapping vs DB schema
 ```
 
 ## Licencia

@@ -57,6 +57,16 @@ graph TD
         MIG[MigrationManager]
     end
 
+    subgraph "Capa de Instrumentación"
+        INSTR[InstrumentationCollector]
+        NULLINSTR[NullInstrumentation]
+    end
+
+    subgraph "Capa de Console/CLI"
+        CLI[bin/sybase-orm]
+        MIGCMD[MigrateCommand]
+    end
+
     %% Dependencias principales
     EM --> UOW
     EM --> HYD
@@ -95,6 +105,12 @@ graph TD
     MIG --> CONN
     MIG --> MR
     MIG --> DIAL
+
+    INSTR --> CONN
+    INSTR --> EM
+
+    CLI --> MIGCMD
+    MIGCMD --> MIG
 ```
 
 ## Capas y Responsabilidades
@@ -195,6 +211,44 @@ graph TD
 
 ---
 
+### 9. Instrumentation (Instrumentación)
+
+**Namespace:** `SybaseORM\Instrumentation`
+
+**Responsabilidad:** Proveer un sistema de profiling y métricas para consultas y operaciones del ORM.
+
+**Clases principales:** `OrmInstrumentationInterface` (contrato de instrumentación), `NullInstrumentation` (implementación noop para producción), `InstrumentationCollector` (recolector de métricas: tiempos de query, flush, hydration).
+
+**Dependencias:** Ninguna obligatoria. Se inyecta opcionalmente en EntityManager y ConnectionManager.
+
+---
+
+### 10. Console (CLI)
+
+**Namespace:** `SybaseORM\Console`
+
+**Responsabilidad:** Proveer comandos de línea de comandos para gestión de migraciones, caché y validación de esquema.
+
+**Clases principales:** `MigrateCommand` (ejecutar, revertir y consultar estado de migraciones).
+
+**Entry point:** `bin/sybase-orm` (ejecutable CLI del proyecto).
+
+**Dependencias:** Migration (para ejecutar migraciones), Connection (acceso a DB), Metadata (validación de esquema).
+
+---
+
+### 11. Testing
+
+**Namespace:** `SybaseORM\Testing`
+
+**Responsabilidad:** Proveer herramientas para testing de entidades y repositorios.
+
+**Clases principales:** `EntityFactory` (factory para generar entidades con datos de prueba, similar a Laravel factories).
+
+**Dependencias:** Metadata (para conocer campos de la entidad).
+
+---
+
 ## Capas de Soporte
 
 | Capa | Namespace | Propósito |
@@ -234,9 +288,16 @@ EntityManager / Repository (orquestación)
        │      ├── IdentityMap (L1)
        │      └── RedisCacheAdapter (L2)
        │
-       └── MigrationManager (esquema)
-              ├── ConnectionManager (DDL)
-              └── MetadataReader (estado deseado)
+       ├── InstrumentationCollector (profiling)
+       │      └── OrmInstrumentationInterface (contrato)
+       │
+       ├── MigrationManager (esquema)
+       │      ├── ConnectionManager (DDL)
+       │      └── MetadataReader (estado deseado)
+       │
+       └── Console / CLI (bin/sybase-orm)
+              ├── MigrateCommand → MigrationManager
+              └── Validación de esquema → MetadataReader + Connection
 ```
 
 **Principios clave:**

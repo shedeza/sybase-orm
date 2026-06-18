@@ -306,6 +306,47 @@ $qb->select('e.category', 'e.brand')
    ->addOrderBy('e.brand', 'ASC');
 ```
 
+## Subqueries
+
+El QueryBuilder soporta subqueries para condiciones `WHERE IN`, `WHERE NOT IN` y `WHERE EXISTS`. Se construyen como instancias independientes del QueryBuilder y se pasan como argumento.
+
+### WHERE IN subquery
+
+```php
+// Obtener usuarios que tienen órdenes con total > 1000
+$subQb = $em->createQueryBuilder(Order::class)
+    ->select('e.user_id')
+    ->where('e.total > :min')
+    ->setParameter('min', 1000);
+
+$users = $em->createQueryBuilder(User::class)
+    ->whereIn('e.id', $subQb)
+    ->getResult();
+```
+
+### WHERE NOT IN subquery
+
+```php
+// Usuarios que NO tienen órdenes con total > 1000
+$users = $em->createQueryBuilder(User::class)
+    ->whereNotIn('e.id', $subQb)
+    ->getResult();
+```
+
+### WHERE EXISTS / NOT EXISTS
+
+```php
+// WHERE EXISTS
+$qb->whereExists($subQb);
+
+// WHERE NOT EXISTS
+$qb->whereNotExists($subQb);
+```
+
+Las subqueries se renderizan como SQL parametrizado y sus parámetros se fusionan automáticamente con los de la consulta principal.
+
+---
+
 ### Reutilización del QueryBuilder
 
 ```php
