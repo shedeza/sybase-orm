@@ -36,6 +36,9 @@ use SybaseORM\ORM\EntityManagerInterface;
  *     // Override attributes
  *     $admin = UserFactory::new($em)->create(['role' => 'admin']);
  */
+/**
+ * @phpstan-consistent-constructor
+ */
 abstract class EntityFactory
 {
     protected int $sequence = 0;
@@ -52,10 +55,15 @@ abstract class EntityFactory
 
     /**
      * Creates a new factory instance.
+     *
+     * @return static
      */
     public static function new(?EntityManagerInterface $entityManager = null): static
     {
-        return new static($entityManager);
+        /** @var static */
+        $instance = new static($entityManager);
+
+        return $instance;
     }
 
     /**

@@ -56,10 +56,10 @@ final class MigrateCommand
         try {
             $executed = $this->migrationManager->migrate();
 
-            if ($executed === 0) {
+            if (count($executed) === 0) {
                 $this->output('  Nothing to migrate. Database is up to date.');
             } else {
-                $this->output(sprintf('  ✓ %d migration(s) executed successfully.', $executed));
+                $this->output(sprintf('  ✓ %d migration(s) executed successfully.', count($executed)));
             }
 
             return 0;
@@ -142,7 +142,8 @@ final class MigrateCommand
         }
 
         try {
-            $sql = $this->migrationManager->preview($entityClasses);
+            $result = $this->migrationManager->preview($entityClasses);
+            $sql = $result['up'];
 
             if (empty($sql)) {
                 $this->output('  No schema changes detected.');
@@ -198,7 +199,8 @@ final class MigrateCommand
         }
 
         try {
-            $sql = $this->migrationManager->preview($entityClasses);
+            $result = $this->migrationManager->preview($entityClasses);
+            $sql = $result['up'];
 
             if (empty($sql)) {
                 $this->output('  ✓ Schema is in sync with entity mappings.');
