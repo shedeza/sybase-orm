@@ -20,6 +20,4 @@ use Attribute;
  *     class UserStats { ... }
  */
 #[Attribute(Attribute::TARGET_CLASS)]
-final class Immutable
-{
-}
+final class Immutable {}
