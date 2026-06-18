@@ -75,6 +75,9 @@ final class HookDispatcher
     {
         $metadata = $this->metadataReader->getClassMetadata($entity::class);
 
+        // 0. Handle automatic timestamps
+        $this->handleTimestamps($entity, $hookType);
+
         // 1. Dispatch entity-level hooks (attribute-based)
         $methods = $metadata->lifecycleHooks[$hookType] ?? [];
 
@@ -90,10 +93,81 @@ final class HookDispatcher
             $entity->$method();
         }
 
-        // 2. Notify external subscribers
+        // 2. Dispatch entity listeners (external classes via #[EntityListener])
+        $this->dispatchEntityListeners($entity, $hookType);
+
+        // 3. Notify external subscribers
         foreach ($this->subscribers as $subscriber) {
             if (in_array($hookType, $subscriber->getSubscribedEvents(), true)) {
                 $subscriber->onEvent($entity, $hookType);
+            }
+        }
+    }
+
+    /**
+     * Handles automatic timestamp management via #[Timestamps] attribute.
+     */
+    private function handleTimestamps(object $entity, string $hookType): void
+    {
+        $reflection = new \ReflectionClass($entity);
+        $attrs = $reflection->getAttributes(\SybaseORM\Attribute\Timestamps::class);
+
+        if (empty($attrs)) {
+            return;
+        }
+
+        $timestamps = $attrs[0]->newInstance();
+        $now = new \DateTimeImmutable();
+
+        if ($hookType === 'PrePersist') {
+            if ($reflection->hasProperty($timestamps->createdAt)) {
+                $prop = $reflection->getProperty($timestamps->createdAt);
+                $prop->setAccessible(true);
+                if ($prop->getValue($entity) === null) {
+                    $prop->setValue($entity, $now);
+                }
+            }
+            if ($reflection->hasProperty($timestamps->updatedAt)) {
+                $prop = $reflection->getProperty($timestamps->updatedAt);
+                $prop->setAccessible(true);
+                $prop->setValue($entity, $now);
+            }
+        } elseif ($hookType === 'PreUpdate') {
+            if ($reflection->hasProperty($timestamps->updatedAt)) {
+                $prop = $reflection->getProperty($timestamps->updatedAt);
+                $prop->setAccessible(true);
+                $prop->setValue($entity, $now);
+            }
+        }
+    }
+
+    /**
+     * Dispatches entity listeners registered via #[EntityListener] attribute.
+     */
+    private function dispatchEntityListeners(object $entity, string $hookType): void
+    {
+        $reflection = new \ReflectionClass($entity);
+        $attrs = $reflection->getAttributes(\SybaseORM\Attribute\EntityListener::class);
+
+        if (empty($attrs)) {
+            return;
+        }
+
+        // Convert hook type to camelCase method name: PrePersist → prePersist
+        $methodName = lcfirst($hookType);
+
+        foreach ($attrs as $attr) {
+            $listenerAttr = $attr->newInstance();
+            $listenerClass = $listenerAttr->listenerClass;
+
+            if (!class_exists($listenerClass)) {
+                continue;
+            }
+
+            $listener = new $listenerClass();
+
+            if (method_exists($listener, $methodName)) {
+                $listener->$methodName($entity);
             }
         }
     }

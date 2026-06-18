@@ -1,0 +1,85 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Sybase ORM CLI entry point.
+ *
+ * Usage:
+ *     php bin/sybase-orm migrate
+ *     php bin/sybase-orm migrate:rollback
+ *     php bin/sybase-orm migrate:status
+ *     php bin/sybase-orm migrate:generate App\Entity\User
+ *     php bin/sybase-orm cache:clear
+ *     php bin/sybase-orm schema:validate App\Entity\User
+ *
+ * Configuration:
+ *     Create a sybase-orm.config.php file in your project root that returns
+ *     the ORM configuration array (same format as OrmFactory::create).
+ */
+
+// Find autoloader
+$autoloadPaths = [
+    __DIR__ . '/../vendor/autoload.php',        // when installed as a package
+    __DIR__ . '/../../../autoload.php',          // when inside vendor/shedeza/sybase-orm/bin
+];
+
+$autoloaded = false;
+foreach ($autoloadPaths as $autoloadPath) {
+    if (file_exists($autoloadPath)) {
+        require_once $autoloadPath;
+        $autoloaded = true;
+        break;
+    }
+}
+
+if (!$autoloaded) {
+    fwrite(STDERR, "Error: Could not find Composer autoloader.\n");
+    fwrite(STDERR, "Run 'composer install' first.\n");
+    exit(1);
+}
+
+// Find configuration file
+$configPaths = [
+    getcwd() . '/sybase-orm.config.php',
+    getcwd() . '/config/sybase-orm.config.php',
+];
+
+$config = null;
+foreach ($configPaths as $configPath) {
+    if (file_exists($configPath)) {
+        $config = require $configPath;
+        break;
+    }
+}
+
+if ($config === null) {
+    fwrite(STDERR, "Error: Configuration file not found.\n");
+    fwrite(STDERR, "Create sybase-orm.config.php in your project root.\n");
+    fwrite(STDERR, "Expected locations:\n");
+    foreach ($configPaths as $path) {
+        fwrite(STDERR, "  - {$path}\n");
+    }
+    exit(1);
+}
+
+// Build EntityManager
+$em = \SybaseORM\ORM\OrmFactory::create($config);
+
+// Build MigrationManager
+$migrationManager = new \SybaseORM\Migration\MigrationManager(
+    connection: $em->getConnection(),
+    metadataReader: $em->getMetadataReader(),
+    dialect: $em->getDialect(),
+    migrationsDirectory: $config['migrations_directory'] ?? getcwd() . '/migrations',
+);
+
+// Build and run CLI
+$command = new \SybaseORM\Console\MigrateCommand(
+    migrationManager: $migrationManager,
+    proxyDirectory: $config['proxy_directory'] ?? null,
+    metadataCacheDir: $config['metadata_cache_dir'] ?? null,
+);
+
+exit($command->run($argv));

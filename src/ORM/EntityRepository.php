@@ -249,6 +249,25 @@ class EntityRepository
         return ((int) ($count ?? 0)) > 0;
     }
 
+    /**
+     * Returns a paginated result set with metadata.
+     *
+     * @param array<string, mixed> $criteria Filter criteria
+     * @param int $page Page number (1-based)
+     * @param int $perPage Items per page
+     * @param array<string, string>|null $orderBy Optional ordering
+     * @return PaginatedResult<object>
+     */
+    public function paginate(array $criteria = [], int $page = 1, int $perPage = 15, ?array $orderBy = null): PaginatedResult
+    {
+        $page = max(1, $page);
+        $total = $this->count($criteria);
+        $offset = ($page - 1) * $perPage;
+        $data = $this->findBy($criteria, $orderBy, $perPage, $offset);
+
+        return new PaginatedResult($data, $total, $page, $perPage);
+    }
+
     // ── OQL convenience ────────────────────────────────────────────
 
     /**

@@ -126,6 +126,64 @@ final class QueryBuilder implements QueryBuilderInterface
         return $this;
     }
 
+    /**
+     * Adds a WHERE column IN (subquery) condition.
+     *
+     * @param string $column The column to check (e.g. 'e.id')
+     * @param QueryBuilderInterface $subquery A QueryBuilder generating the subquery
+     */
+    public function whereIn(string $column, QueryBuilderInterface $subquery): static
+    {
+        $subSql = $subquery->getSQL();
+        $this->whereClauses[] = ['condition' => $column . ' IN (' . $subSql . ')', 'type' => 'AND'];
+        $this->parameters = array_merge($this->parameters, $subquery->getParameters());
+
+        return $this;
+    }
+
+    /**
+     * Adds a WHERE column NOT IN (subquery) condition.
+     *
+     * @param string $column The column to check (e.g. 'e.id')
+     * @param QueryBuilderInterface $subquery A QueryBuilder generating the subquery
+     */
+    public function whereNotIn(string $column, QueryBuilderInterface $subquery): static
+    {
+        $subSql = $subquery->getSQL();
+        $this->whereClauses[] = ['condition' => $column . ' NOT IN (' . $subSql . ')', 'type' => 'AND'];
+        $this->parameters = array_merge($this->parameters, $subquery->getParameters());
+
+        return $this;
+    }
+
+    /**
+     * Adds a WHERE EXISTS (subquery) condition.
+     *
+     * @param QueryBuilderInterface $subquery A QueryBuilder generating the subquery
+     */
+    public function whereExists(QueryBuilderInterface $subquery): static
+    {
+        $subSql = $subquery->getSQL();
+        $this->whereClauses[] = ['condition' => 'EXISTS (' . $subSql . ')', 'type' => 'AND'];
+        $this->parameters = array_merge($this->parameters, $subquery->getParameters());
+
+        return $this;
+    }
+
+    /**
+     * Adds a WHERE NOT EXISTS (subquery) condition.
+     *
+     * @param QueryBuilderInterface $subquery A QueryBuilder generating the subquery
+     */
+    public function whereNotExists(QueryBuilderInterface $subquery): static
+    {
+        $subSql = $subquery->getSQL();
+        $this->whereClauses[] = ['condition' => 'NOT EXISTS (' . $subSql . ')', 'type' => 'AND'];
+        $this->parameters = array_merge($this->parameters, $subquery->getParameters());
+
+        return $this;
+    }
+
     public function join(string $join, string $alias, string $condition): static
     {
         $this->joins[] = [

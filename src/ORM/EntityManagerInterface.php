@@ -109,6 +109,14 @@ interface EntityManagerInterface
     /** Detaches an entity from the persistence context. */
     public function detach(object $entity): void;
 
+    /**
+     * Creates a NativeQuery for raw SQL execution with optional entity hydration.
+     *
+     * @param string $sql Raw SQL query
+     * @param class-string|null $entityClass Entity class to hydrate into (null for raw arrays)
+     */
+    public function createNativeQuery(string $sql, ?string $entityClass = null): NativeQuery;
+
     /** Returns the metadata reader. */
     public function getMetadataReader(): \SybaseORM\Metadata\MetadataReaderInterface;
 

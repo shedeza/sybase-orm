@@ -27,6 +27,18 @@ interface QueryBuilderInterface
     /** Appends an OR WHERE condition. */
     public function orWhere(string $condition, array $params = []): static;
 
+    /** Adds a WHERE column IN (subquery) condition. */
+    public function whereIn(string $column, QueryBuilderInterface $subquery): static;
+
+    /** Adds a WHERE column NOT IN (subquery) condition. */
+    public function whereNotIn(string $column, QueryBuilderInterface $subquery): static;
+
+    /** Adds a WHERE EXISTS (subquery) condition. */
+    public function whereExists(QueryBuilderInterface $subquery): static;
+
+    /** Adds a WHERE NOT EXISTS (subquery) condition. */
+    public function whereNotExists(QueryBuilderInterface $subquery): static;
+
     /** Adds a JOIN to the query. */
     public function join(string $join, string $alias, string $condition): static;
 

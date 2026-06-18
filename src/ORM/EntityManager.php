@@ -909,6 +909,16 @@ final class EntityManager implements EntityManagerInterface
         }
     }
 
+    public function createNativeQuery(string $sql, ?string $entityClass = null): NativeQuery
+    {
+        return new NativeQuery(
+            connectionManager: $this->connectionManager,
+            hydrator: $this->hydrator,
+            sql: $sql,
+            entityClass: $entityClass,
+        );
+    }
+
     public function getMetadataReader(): MetadataReaderInterface
     {
         return $this->metadataReader;
