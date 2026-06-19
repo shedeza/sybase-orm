@@ -14,6 +14,8 @@ use SybaseORM\Query\AST\GroupByClause;
 use SybaseORM\Query\AST\HavingClause;
 use SybaseORM\Query\AST\InExpression;
 use SybaseORM\Query\AST\IsNullExpression;
+use SybaseORM\Query\AST\BetweenExpression;
+use SybaseORM\Query\AST\ExistsExpression;
 use SybaseORM\Query\AST\JoinClause;
 use SybaseORM\Query\AST\Literal;
 use SybaseORM\Query\AST\LogicalExpression;
@@ -53,12 +55,20 @@ final class OqlParser
     /** @var string The original OQL string being parsed (for error messages) */
     private string $originalOql = '';
 
-    private const COMPARISON_OPERATORS = ['=', '!=', '<', '>', '<=', '>=', 'LIKE'];
+    private const COMPARISON_OPERATORS = ['=', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', 'NOT LIKE'];
 
     private const AGGREGATE_FUNCTIONS = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'];
 
     /** @var string[] */
-    private array $customFunctions = ['CONVERT', 'RAND'];
+    private array $customFunctions = [
+        'CONVERT', 'RAND',
+        'UPPER', 'LOWER', 'TRIM', 'LTRIM', 'RTRIM',
+        'LEN', 'SUBSTRING', 'REPLACE', 'CHARINDEX',
+        'COALESCE', 'ISNULL', 'NULLIF',
+        'ABS', 'CEILING', 'FLOOR', 'ROUND',
+        'GETDATE', 'DATEADD', 'DATEDIFF', 'DATEPART',
+        'CAST', 'STR',
+    ];
 
     /**
      * Registers a custom function name so the parser recognizes it.
@@ -469,9 +479,9 @@ final class OqlParser
      * Task 6.1 & 6.2: Extended to support IS NULL, IS NOT NULL, IN, NOT IN
      * in addition to standard comparisons and logical expressions.
      *
-     * @return Comparison|LogicalExpression|IsNullExpression|InExpression
+     * @return Comparison|LogicalExpression|IsNullExpression|InExpression|BetweenExpression|ExistsExpression
      */
-    private function parseCondition(): Comparison|LogicalExpression|IsNullExpression|InExpression
+    private function parseCondition(): Comparison|LogicalExpression|IsNullExpression|InExpression|BetweenExpression|ExistsExpression
     {
         $left = $this->parseSingleCondition();
 
@@ -491,7 +501,7 @@ final class OqlParser
      *
      * @return Comparison|IsNullExpression|InExpression|LogicalExpression
      */
-    private function parseSingleCondition(): Comparison|IsNullExpression|InExpression|LogicalExpression
+    private function parseSingleCondition(): Comparison|IsNullExpression|InExpression|LogicalExpression|BetweenExpression|ExistsExpression
     {
         // Parenthesized condition group: ( condition )
         if ($this->isAt('(')) {
@@ -500,6 +510,19 @@ final class OqlParser
             $this->expect(')');
 
             return $inner;
+        }
+
+        // EXISTS (subquery) / NOT EXISTS (subquery)
+        if ($this->isAt('EXISTS')) {
+            $this->advance();
+
+            return new ExistsExpression($this->parseSubqueryRaw(), negated: false);
+        }
+        if ($this->isAt('NOT') && $this->peek() !== null && strtoupper($this->peek()) === 'EXISTS') {
+            $this->advance(); // consume NOT
+            $this->advance(); // consume EXISTS
+
+            return new ExistsExpression($this->parseSubqueryRaw(), negated: true);
         }
 
         // Check if the left operand is an aggregate function (for HAVING conditions)
@@ -522,7 +545,7 @@ final class OqlParser
             return new Comparison($left, $operator, $right);
         }
 
-        // Check if the left operand is a custom function (CONVERT, RAND)
+        // Check if the left operand is a custom function (CONVERT, RAND, UPPER, etc.)
         if (in_array(strtoupper($token), $this->customFunctions, true)) {
             $left = $this->parseCustomFunctionCall();
 
@@ -573,6 +596,34 @@ final class OqlParser
             ));
         }
 
+        // BETWEEN / NOT BETWEEN
+        if ($this->isAt('BETWEEN')) {
+            if (!($left instanceof PropertyAccess)) {
+                throw new OqlParseException('BETWEEN requires a property access on the left side.');
+            }
+            $this->advance(); // consume BETWEEN
+
+            $low = $this->parseBetweenOperand();
+            $this->expect('AND');
+            $high = $this->parseBetweenOperand();
+
+            return new BetweenExpression($left, $low, $high, negated: false);
+        }
+
+        if ($this->isAt('NOT') && $this->peek() !== null && strtoupper($this->peek()) === 'BETWEEN') {
+            if (!($left instanceof PropertyAccess)) {
+                throw new OqlParseException('NOT BETWEEN requires a property access on the left side.');
+            }
+            $this->advance(); // consume NOT
+            $this->advance(); // consume BETWEEN
+
+            $low = $this->parseBetweenOperand();
+            $this->expect('AND');
+            $high = $this->parseBetweenOperand();
+
+            return new BetweenExpression($left, $low, $high, negated: true);
+        }
+
         // Task 6.2: Check for NOT IN
         if ($this->isAt('NOT') && $this->peek() !== null && strtoupper($this->peek()) === 'IN') {
             if (!($left instanceof PropertyAccess)) {
@@ -604,8 +655,11 @@ final class OqlParser
             return new InExpression($left, $values, negated: false);
         }
 
-        // Standard comparison
+        // Standard comparison (including <> as alias for !=)
         $operator = strtoupper($this->current());
+        if ($operator === '<>') {
+            $operator = '!=';
+        }
         if (!in_array($operator, self::COMPARISON_OPERATORS, true)) {
             throw new OqlParseException(sprintf(
                 'Expected comparison operator, got "%s".',
@@ -617,6 +671,64 @@ final class OqlParser
         $right = $this->parseOperand();
 
         return new Comparison($left, $operator, $right);
+    }
+
+    /**
+     * Parses a BETWEEN operand (parameter or literal).
+     */
+    private function parseBetweenOperand(): Parameter|Literal
+    {
+        $token = $this->current();
+
+        if (str_starts_with($token, ':')) {
+            $this->advance();
+
+            return new Parameter(ltrim($token, ':'));
+        }
+
+        $this->advance();
+
+        if (is_numeric($token)) {
+            return new Literal(str_contains($token, '.') ? 'float' : 'integer', $token);
+        }
+
+        // String literal (remove quotes)
+        if ((str_starts_with($token, "'") && str_ends_with($token, "'"))
+            || (str_starts_with($token, '"') && str_ends_with($token, '"'))) {
+            return new Literal('string', substr($token, 1, -1));
+        }
+
+        return new Literal('string', $token);
+    }
+
+    /**
+     * Parses a raw subquery inside parentheses for EXISTS.
+     * Returns the raw OQL string between ( and ).
+     */
+    private function parseSubqueryRaw(): string
+    {
+        $this->expect('(');
+
+        $depth = 1;
+        $tokens = [];
+
+        while ($depth > 0 && $this->pos < count($this->tokens)) {
+            $token = $this->current();
+            if ($token === '(') {
+                $depth++;
+            } elseif ($token === ')') {
+                $depth--;
+                if ($depth === 0) {
+                    break;
+                }
+            }
+            $tokens[] = $token;
+            $this->advance();
+        }
+
+        $this->expect(')');
+
+        return implode(' ', $tokens);
     }
 
     /**

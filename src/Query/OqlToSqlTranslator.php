@@ -473,7 +473,7 @@ final class OqlToSqlTranslator
         return implode(', ', $parts);
     }
 
-    private function resolveCondition(Comparison|LogicalExpression|IsNullExpression|InExpression $condition, array &$parameters): string
+    private function resolveCondition(Comparison|LogicalExpression|IsNullExpression|InExpression|\SybaseORM\Query\AST\BetweenExpression|\SybaseORM\Query\AST\ExistsExpression $condition, array &$parameters): string
     {
         if ($condition instanceof IsNullExpression) {
             return $this->resolveIsNull($condition);
@@ -481,6 +481,14 @@ final class OqlToSqlTranslator
 
         if ($condition instanceof InExpression) {
             return $this->resolveInExpression($condition, $parameters);
+        }
+
+        if ($condition instanceof \SybaseORM\Query\AST\BetweenExpression) {
+            return $this->resolveBetweenExpression($condition, $parameters);
+        }
+
+        if ($condition instanceof \SybaseORM\Query\AST\ExistsExpression) {
+            return $this->resolveExistsExpression($condition);
         }
 
         if ($condition instanceof Comparison) {
@@ -492,6 +500,43 @@ final class OqlToSqlTranslator
         $right = $this->resolveCondition($condition->right, $parameters);
 
         return '(' . $left . ' ' . $condition->operator . ' ' . $right . ')';
+    }
+
+    private function resolveBetweenExpression(\SybaseORM\Query\AST\BetweenExpression $expr, array &$parameters): string
+    {
+        $column = $this->resolvePropertyToColumn($expr->property->alias, $expr->property->property);
+
+        $lowSql = $this->resolveBetweenOperand($expr->low, $parameters);
+        $highSql = $this->resolveBetweenOperand($expr->high, $parameters);
+
+        $not = $expr->negated ? 'NOT ' : '';
+
+        return $column . ' ' . $not . 'BETWEEN ' . $lowSql . ' AND ' . $highSql;
+    }
+
+    private function resolveBetweenOperand(Parameter|Literal $operand, array &$parameters): string
+    {
+        if ($operand instanceof Parameter) {
+            $parameters[] = $operand->name;
+
+            return ':' . $operand->name;
+        }
+
+        if ($operand->type === 'string') {
+            return "'" . str_replace("'", "''", (string) $operand->value) . "'";
+        }
+
+        return (string) $operand->value;
+    }
+
+    private function resolveExistsExpression(\SybaseORM\Query\AST\ExistsExpression $expr): string
+    {
+        $not = $expr->negated ? 'NOT ' : '';
+
+        // The subquery is raw OQL that was captured between parentheses.
+        // For now, pass it through as-is (it should be pre-translated by the caller
+        // or used with raw SQL subqueries in the QueryBuilder).
+        return $not . 'EXISTS (' . $expr->subquery . ')';
     }
 
     private function resolveComparison(Comparison $comparison, array &$parameters): string

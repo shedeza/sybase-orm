@@ -39,6 +39,30 @@ interface QueryBuilderInterface
     /** Adds a WHERE NOT EXISTS (subquery) condition. */
     public function whereNotExists(QueryBuilderInterface $subquery): static;
 
+    /** Adds a WHERE column BETWEEN :min AND :max condition. */
+    public function whereBetween(string $column, string $minParam, string $maxParam): static;
+
+    /** Adds a WHERE column NOT BETWEEN :min AND :max condition. */
+    public function whereNotBetween(string $column, string $minParam, string $maxParam): static;
+
+    /** Adds a WHERE column IS NULL condition. */
+    public function whereNull(string $column): static;
+
+    /** Adds a WHERE column IS NOT NULL condition. */
+    public function whereNotNull(string $column): static;
+
+    /** Adds a WHERE column LIKE :param condition. */
+    public function whereLike(string $column, string $paramName): static;
+
+    /** Adds a WHERE column NOT LIKE :param condition. */
+    public function whereNotLike(string $column, string $paramName): static;
+
+    /** Adds a raw WHERE condition (escape hatch for complex SQL). */
+    public function whereRaw(string $sql, array $params = []): static;
+
+    /** Combines with another query via UNION [ALL]. */
+    public function union(QueryBuilderInterface $other, bool $all = false): static;
+
     /** Adds a JOIN to the query. */
     public function join(string $join, string $alias, string $condition): static;
 

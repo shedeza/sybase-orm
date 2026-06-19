@@ -184,6 +184,106 @@ final class QueryBuilder implements QueryBuilderInterface
         return $this;
     }
 
+    /**
+     * Adds a WHERE column BETWEEN min AND max condition.
+     */
+    public function whereBetween(string $column, string $minParam, string $maxParam): static
+    {
+        $this->whereClauses[] = [
+            'condition' => $column . ' BETWEEN :' . $minParam . ' AND :' . $maxParam,
+            'type' => 'AND',
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Adds a WHERE column NOT BETWEEN min AND max condition.
+     */
+    public function whereNotBetween(string $column, string $minParam, string $maxParam): static
+    {
+        $this->whereClauses[] = [
+            'condition' => $column . ' NOT BETWEEN :' . $minParam . ' AND :' . $maxParam,
+            'type' => 'AND',
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Adds a WHERE column IS NULL condition.
+     */
+    public function whereNull(string $column): static
+    {
+        $this->whereClauses[] = ['condition' => $column . ' IS NULL', 'type' => 'AND'];
+
+        return $this;
+    }
+
+    /**
+     * Adds a WHERE column IS NOT NULL condition.
+     */
+    public function whereNotNull(string $column): static
+    {
+        $this->whereClauses[] = ['condition' => $column . ' IS NOT NULL', 'type' => 'AND'];
+
+        return $this;
+    }
+
+    /**
+     * Adds a WHERE column LIKE pattern condition.
+     */
+    public function whereLike(string $column, string $paramName): static
+    {
+        $this->whereClauses[] = ['condition' => $column . ' LIKE :' . $paramName, 'type' => 'AND'];
+
+        return $this;
+    }
+
+    /**
+     * Adds a WHERE column NOT LIKE pattern condition.
+     */
+    public function whereNotLike(string $column, string $paramName): static
+    {
+        $this->whereClauses[] = ['condition' => $column . ' NOT LIKE :' . $paramName, 'type' => 'AND'];
+
+        return $this;
+    }
+
+    /**
+     * Adds a raw WHERE condition (escape hatch for complex SQL).
+     *
+     * @param string $sql Raw SQL condition
+     * @param array<string, mixed> $params Named parameters for the condition
+     */
+    public function whereRaw(string $sql, array $params = []): static
+    {
+        $this->whereClauses[] = ['condition' => $sql, 'type' => 'AND'];
+        $this->parameters = array_merge($this->parameters, $params);
+
+        return $this;
+    }
+
+    /**
+     * Combines this QueryBuilder with another via UNION.
+     *
+     * @param QueryBuilderInterface $other The other query to union
+     * @param bool $all If true, uses UNION ALL (keeps duplicates)
+     */
+    public function union(QueryBuilderInterface $other, bool $all = false): static
+    {
+        $unionType = $all ? 'UNION ALL' : 'UNION';
+        $thisSql = $this->getSQL();
+        $otherSql = $other->getSQL();
+
+        // Reset and build as a raw combined query
+        $this->selectColumns = [$thisSql . ' ' . $unionType . ' ' . $otherSql];
+        $this->fromTable = null;
+        $this->parameters = array_merge($this->parameters, $other->getParameters());
+
+        return $this;
+    }
+
     public function join(string $join, string $alias, string $condition): static
     {
         $this->joins[] = [
