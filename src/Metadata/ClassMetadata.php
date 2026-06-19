@@ -41,6 +41,7 @@ final class ClassMetadata
         public readonly string $entityClass,
         public readonly string $tableName,
         public readonly ?string $schema = null,
+        public readonly ?string $database = null,
         public readonly array $columns = [],
         ?string $idField = null,
         public readonly array $relationships = [],
@@ -76,11 +77,22 @@ final class ClassMetadata
     }
 
     /**
-     * Returns the fully qualified table name including schema if present.
-     * E.g. "dbo.users" or just "users" if no schema.
+     * Returns the fully qualified table name including database and schema if present.
+     *
+     * Sybase ASE cross-database format: database..table or database.schema.table
+     * Same-database format: schema.table or just table
      */
     public function getQualifiedTableName(): string
     {
+        if ($this->database !== null) {
+            // Cross-database: database..table or database.schema.table
+            if ($this->schema !== null) {
+                return $this->database . '.' . $this->schema . '.' . $this->tableName;
+            }
+
+            return $this->database . '..' . $this->tableName;
+        }
+
         if ($this->schema !== null) {
             return $this->schema . '.' . $this->tableName;
         }

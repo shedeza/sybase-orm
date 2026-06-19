@@ -172,7 +172,7 @@ final class OqlToSqlTranslator
         // Sybase ASE doesn't support table aliases in UPDATE statements
         $this->stripAlias = true;
 
-        $tableName = $this->dialect->quoteIdentifier($metadata->tableName);
+        $tableName = $this->quoteQualifiedTableName($metadata);
 
         // Build SET clauses
         $setClauses = [];
@@ -213,7 +213,7 @@ final class OqlToSqlTranslator
         // Sybase ASE doesn't support table aliases in DELETE statements
         $this->stripAlias = true;
 
-        $tableName = $this->dialect->quoteIdentifier($metadata->tableName);
+        $tableName = $this->quoteQualifiedTableName($metadata);
 
         $sql = 'DELETE FROM ' . $tableName;
 
@@ -361,7 +361,7 @@ final class OqlToSqlTranslator
 
         $this->aliasToEntity[$from->alias] = $entityClass;
 
-        return $this->dialect->quoteIdentifier($metadata->tableName)
+        return $this->quoteQualifiedTableName($metadata)
             . ' ' . $this->dialect->quoteIdentifier($from->alias);
     }
 
@@ -432,7 +432,7 @@ final class OqlToSqlTranslator
         return sprintf(
             '%s %s %s ON %s',
             $join->joinType,
-            $this->dialect->quoteIdentifier($targetMeta->tableName),
+            $this->quoteQualifiedTableName($targetMeta),
             $this->dialect->quoteIdentifier($join->alias),
             $onCondition,
         );
@@ -662,10 +662,36 @@ final class OqlToSqlTranslator
         return sprintf(
             '%s %s %s ON %s',
             $join->joinType,
-            $this->dialect->quoteIdentifier($targetMeta->tableName),
+            $this->quoteQualifiedTableName($targetMeta),
             $this->dialect->quoteIdentifier($join->alias),
             $onCondition,
         );
+    }
+
+    /**
+     * Quotes a fully qualified table name (database..table or schema.table or just table).
+     * Sybase ASE cross-database format does NOT quote the dots.
+     */
+    private function quoteQualifiedTableName(\SybaseORM\Metadata\ClassMetadata $metadata): string
+    {
+        if ($metadata->database !== null) {
+            // Cross-database: don't quote the whole thing as one identifier
+            if ($metadata->schema !== null) {
+                return $this->dialect->quoteIdentifier($metadata->database)
+                    . '.' . $this->dialect->quoteIdentifier($metadata->schema)
+                    . '.' . $this->dialect->quoteIdentifier($metadata->tableName);
+            }
+
+            return $this->dialect->quoteIdentifier($metadata->database)
+                . '..' . $this->dialect->quoteIdentifier($metadata->tableName);
+        }
+
+        if ($metadata->schema !== null) {
+            return $this->dialect->quoteIdentifier($metadata->schema)
+                . '.' . $this->dialect->quoteIdentifier($metadata->tableName);
+        }
+
+        return $this->dialect->quoteIdentifier($metadata->tableName);
     }
 
     private function resolvePropertyToColumn(string $alias, string $property): string
