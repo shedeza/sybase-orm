@@ -50,6 +50,20 @@ $filtrado = $em->query(
 );
 ```
 
+### BETWEEN
+
+```php
+$em->query('SELECT u FROM User u WHERE u.age BETWEEN :min AND :max', ['min' => 18, 'max' => 65]);
+$em->query('SELECT u FROM User u WHERE u.salary NOT BETWEEN :lo AND :hi', ['lo' => 1000, 'hi' => 5000]);
+```
+
+### EXISTS
+
+```php
+$em->query('SELECT u FROM User u WHERE EXISTS (SELECT o FROM Order o WHERE o.userId = u.id)');
+$em->query('SELECT u FROM User u WHERE NOT EXISTS (SELECT b FROM Ban b WHERE b.userId = u.id)');
+```
+
 ### JOIN
 
 ```php
@@ -99,6 +113,65 @@ $promedio = $em->queryScalar(
 
 // COUNT con DISTINCT
 $unicos = $em->queryScalar('SELECT COUNT(DISTINCT u.email) FROM User u');
+```
+
+### Funciones Built-in
+
+A partir de v3.7.0, OQL soporta un conjunto de funciones built-in que se traducen directamente a sus equivalentes SQL en Sybase ASE.
+
+#### String
+
+| Función | Descripción |
+|---------|-------------|
+| `UPPER(expr)` | Convierte a mayúsculas |
+| `LOWER(expr)` | Convierte a minúsculas |
+| `TRIM(expr)` | Elimina espacios al inicio y final |
+| `LTRIM(expr)` | Elimina espacios a la izquierda |
+| `RTRIM(expr)` | Elimina espacios a la derecha |
+| `LEN(expr)` | Longitud de la cadena |
+| `SUBSTRING(expr, start, length)` | Extrae subcadena |
+| `REPLACE(expr, search, replace)` | Reemplaza ocurrencias |
+| `CHARINDEX(search, expr)` | Posición de una subcadena |
+
+#### Numeric
+
+| Función | Descripción |
+|---------|-------------|
+| `ABS(expr)` | Valor absoluto |
+| `CEILING(expr)` | Redondeo hacia arriba |
+| `FLOOR(expr)` | Redondeo hacia abajo |
+| `ROUND(expr, decimals)` | Redondeo con precisión |
+
+#### Date
+
+| Función | Descripción |
+|---------|-------------|
+| `GETDATE()` | Fecha/hora actual del servidor |
+| `DATEADD(part, number, date)` | Suma intervalo a una fecha |
+| `DATEDIFF(part, start, end)` | Diferencia entre dos fechas |
+| `DATEPART(part, date)` | Extrae parte de una fecha |
+
+#### Null
+
+| Función | Descripción |
+|---------|-------------|
+| `COALESCE(expr1, expr2, ...)` | Primer valor no nulo |
+| `ISNULL(expr, replacement)` | Reemplaza NULL con un valor |
+| `NULLIF(expr1, expr2)` | Devuelve NULL si ambos son iguales |
+
+#### Conversion
+
+| Función | Descripción |
+|---------|-------------|
+| `CAST(expr AS type)` | Conversión explícita de tipo |
+| `CONVERT(type, expr)` | Conversión de tipo (sintaxis Sybase) |
+| `STR(expr)` | Convierte numérico a string |
+
+#### Ejemplos de uso
+
+```php
+$em->query('SELECT u FROM User u WHERE UPPER(u.name) = :name', ['name' => 'JUAN']);
+$em->queryScalar('SELECT COALESCE(u.nickname, u.name) FROM User u WHERE u.id = :id', ['id' => 1]);
 ```
 
 ## Métodos de Ejecución

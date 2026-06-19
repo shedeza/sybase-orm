@@ -28,6 +28,10 @@ ORM puro en PHP para **Sybase ASE**, independiente de framework. Soporta mapeo d
 - Paginación con metadatos (`paginate()`)
 - Query Scopes globales (`#[GlobalScope]`)
 - Subqueries en QueryBuilder (`whereIn`, `whereNotIn`, `whereExists`)
+- BETWEEN, NOT BETWEEN, IS NULL, LIKE, NOT LIKE en OQL y QueryBuilder
+- Funciones SQL built-in (UPPER, LOWER, COALESCE, LEN, DATEADD, etc.)
+- UNION / UNION ALL entre queries
+- Todos los JOINs: INNER, LEFT, RIGHT, CROSS, FULL OUTER
 - Serialización (`toArray()`/`toJson()`)
 - Mass assignment protection (`fill()`/`forceFill()`)
 - Batch processing para grandes datasets

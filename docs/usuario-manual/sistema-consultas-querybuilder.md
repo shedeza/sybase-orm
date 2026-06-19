@@ -345,6 +345,37 @@ $qb->whereNotExists($subQb);
 
 Las subqueries se renderizan como SQL parametrizado y sus parámetros se fusionan automáticamente con los de la consulta principal.
 
+## Condiciones Especializadas
+
+A partir de v3.7.0, el QueryBuilder incluye métodos dedicados para condiciones SQL comunes, eliminando la necesidad de escribir expresiones raw en la mayoría de los casos.
+
+```php
+// IS NULL / IS NOT NULL
+$qb->whereNull('e.deletedAt');
+$qb->whereNotNull('e.email');
+
+// BETWEEN
+$qb->whereBetween('e.age', 'min', 'max')
+   ->setParameter('min', 18)
+   ->setParameter('max', 65);
+$qb->whereNotBetween('e.salary', 'lo', 'hi');
+
+// LIKE / NOT LIKE
+$qb->whereLike('e.name', 'pattern')
+   ->setParameter('pattern', '%García%');
+$qb->whereNotLike('e.email', 'exclude')
+   ->setParameter('exclude', '%test%');
+
+// Raw WHERE (escape hatch)
+$qb->whereRaw('DATEDIFF(day, e.created_at, GETDATE()) > 30');
+
+// UNION
+$qb1 = $em->createQueryBuilder(User::class)->where('e.active = :a', ['a' => 1]);
+$qb2 = $em->createQueryBuilder(User::class)->where('e.role = :r', ['r' => 'admin']);
+$qb1->union($qb2);              // UNION (removes duplicates)
+$qb1->union($qb2, all: true);   // UNION ALL (keeps duplicates)
+```
+
 ---
 
 ### Reutilización del QueryBuilder

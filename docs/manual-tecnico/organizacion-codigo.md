@@ -218,6 +218,9 @@ Nodos del árbol de sintaxis abstracta (AST) para representar consultas OQL pars
 | `HavingClause.php` | Cláusula HAVING |
 | `InExpression.php` | Expresión IN (...) |
 | `IsNullExpression.php` | Expresión IS NULL / IS NOT NULL |
+| `BetweenExpression.php` | Expresión BETWEEN / NOT BETWEEN |
+| `ExistsExpression.php` | Expresión EXISTS / NOT EXISTS con subquery |
+| `CaseExpression.php` | Expresión CASE WHEN (reservada para uso futuro) |
 | `JoinClause.php` | Cláusula JOIN |
 | `Literal.php` | Valor literal (string, número) |
 | `LogicalExpression.php` | Expresión lógica (AND, OR) |
