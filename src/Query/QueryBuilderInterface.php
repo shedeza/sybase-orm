@@ -48,6 +48,12 @@ interface QueryBuilderInterface
     /** Adds a RIGHT JOIN to the query. */
     public function rightJoin(string $join, string $alias, string $condition): static;
 
+    /** Adds a CROSS JOIN to the query (no ON condition). */
+    public function crossJoin(string $join, string $alias): static;
+
+    /** Adds a FULL [OUTER] JOIN to the query. */
+    public function fullJoin(string $join, string $alias, string $condition): static;
+
     /** Defines the result ordering. */
     public function orderBy(string $column, string $direction = 'ASC'): static;
 

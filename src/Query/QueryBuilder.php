@@ -220,6 +220,30 @@ final class QueryBuilder implements QueryBuilderInterface
         return $this;
     }
 
+    public function crossJoin(string $join, string $alias): static
+    {
+        $this->joins[] = [
+            'type' => 'CROSS JOIN',
+            'table' => $join,
+            'alias' => $alias,
+            'condition' => '',
+        ];
+
+        return $this;
+    }
+
+    public function fullJoin(string $join, string $alias, string $condition): static
+    {
+        $this->joins[] = [
+            'type' => 'FULL JOIN',
+            'table' => $join,
+            'alias' => $alias,
+            'condition' => $condition,
+        ];
+
+        return $this;
+    }
+
     public function orderBy(string $column, string $direction = 'ASC'): static
     {
         $this->orderByClauses[] = [
@@ -399,13 +423,23 @@ final class QueryBuilder implements QueryBuilderInterface
 
         $parts = [];
         foreach ($this->joins as $join) {
-            $parts[] = sprintf(
-                ' %s %s %s ON %s',
-                $join['type'],
-                $join['table'],
-                $join['alias'],
-                $join['condition'],
-            );
+            if ($join['type'] === 'CROSS JOIN' || $join['condition'] === '') {
+                // CROSS JOIN has no ON clause
+                $parts[] = sprintf(
+                    ' %s %s %s',
+                    $join['type'],
+                    $join['table'],
+                    $join['alias'],
+                );
+            } else {
+                $parts[] = sprintf(
+                    ' %s %s %s ON %s',
+                    $join['type'],
+                    $join['table'],
+                    $join['alias'],
+                    $join['condition'],
+                );
+            }
         }
 
         return implode('', $parts);

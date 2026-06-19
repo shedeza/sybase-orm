@@ -362,10 +362,23 @@ final class OqlParser
         if ($this->isAt('JOIN')) {
             return true;
         }
-        if ($this->isAt('LEFT') && $this->peek() !== null && strtoupper($this->peek()) === 'JOIN') {
+
+        $next = $this->peek();
+        $nextUpper = $next !== null ? strtoupper($next) : '';
+
+        if ($this->isAt('LEFT') && $nextUpper === 'JOIN') {
             return true;
         }
-        if ($this->isAt('INNER') && $this->peek() !== null && strtoupper($this->peek()) === 'JOIN') {
+        if ($this->isAt('INNER') && $nextUpper === 'JOIN') {
+            return true;
+        }
+        if ($this->isAt('RIGHT') && $nextUpper === 'JOIN') {
+            return true;
+        }
+        if ($this->isAt('CROSS') && $nextUpper === 'JOIN') {
+            return true;
+        }
+        if ($this->isAt('FULL') && ($nextUpper === 'JOIN' || $nextUpper === 'OUTER')) {
             return true;
         }
 
@@ -373,7 +386,9 @@ final class OqlParser
     }
 
     /**
-     * Task 6.5: Extended to support entity-based JOIN with WITH condition.
+     * Parses JOIN clauses with support for all join types:
+     * JOIN, INNER JOIN, LEFT JOIN, RIGHT JOIN, CROSS JOIN, FULL [OUTER] JOIN.
+     *
      * If the identifier after JOIN contains a dot, it's a relationship-based join.
      * Otherwise, it's an entity-based join: JOIN EntityName alias WITH condition.
      */
@@ -385,9 +400,25 @@ final class OqlParser
             $joinType = 'LEFT JOIN';
             $this->advance();
             $this->expect('JOIN');
+        } elseif ($this->isAt('RIGHT')) {
+            $joinType = 'RIGHT JOIN';
+            $this->advance();
+            $this->expect('JOIN');
         } elseif ($this->isAt('INNER')) {
             $joinType = 'JOIN';
             $this->advance();
+            $this->expect('JOIN');
+        } elseif ($this->isAt('CROSS')) {
+            $joinType = 'CROSS JOIN';
+            $this->advance();
+            $this->expect('JOIN');
+        } elseif ($this->isAt('FULL')) {
+            $joinType = 'FULL JOIN';
+            $this->advance();
+            // FULL OUTER JOIN or FULL JOIN
+            if ($this->isAt('OUTER')) {
+                $this->advance();
+            }
             $this->expect('JOIN');
         } else {
             $this->expect('JOIN');
