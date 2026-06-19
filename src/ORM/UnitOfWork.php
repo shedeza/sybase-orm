@@ -423,6 +423,9 @@ final class UnitOfWork implements UnitOfWorkInterface
                 continue;
             }
 
+            // Validate #[UniqueEntity] constraints before INSERT
+            $this->validateUniqueEntity($entity);
+
             $metadata = $this->metadataReader->getClassMetadata($entity::class);
             $idColumn = $metadata->getIdColumn();
 
@@ -531,6 +534,9 @@ final class UnitOfWork implements UnitOfWorkInterface
             if (empty($changeset)) {
                 continue;
             }
+
+            // Validate #[UniqueEntity] if any unique field was modified
+            $this->validateUniqueEntity($entity, $changeset);
 
             $metadata = $this->metadataReader->getClassMetadata($entity::class);
             $idColumns = $metadata->getIdColumns();
@@ -817,6 +823,104 @@ final class UnitOfWork implements UnitOfWorkInterface
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Validates #[UniqueEntity] constraints by querying the database.
+     *
+     * For INSERTs: checks all unique constraints.
+     * For UPDATEs: only checks constraints whose fields were modified.
+     *
+     * @param object $entity The entity to validate
+     * @param array<string, array{old: mixed, new: mixed}>|null $changeset If provided (update), only validates affected constraints
+     * @throws \SybaseORM\Exception\UniqueConstraintViolationException If a duplicate is found
+     */
+    private function validateUniqueEntity(object $entity, ?array $changeset = null): void
+    {
+        $reflection = new \ReflectionClass($entity);
+        $attrs = $reflection->getAttributes(\SybaseORM\Attribute\UniqueEntity::class);
+
+        if (empty($attrs)) {
+            return;
+        }
+
+        $metadata = $this->metadataReader->getClassMetadata($entity::class);
+
+        foreach ($attrs as $attr) {
+            $uniqueAttr = $attr->newInstance();
+            $fields = $uniqueAttr->fields;
+
+            // For updates: skip if none of the unique fields were modified
+            if ($changeset !== null) {
+                $hasChangedField = false;
+                foreach ($fields as $field) {
+                    if (isset($changeset[$field])) {
+                        $hasChangedField = true;
+                        break;
+                    }
+                }
+                if (!$hasChangedField) {
+                    continue;
+                }
+            }
+
+            // Build WHERE clause to check for existing record with same values
+            $conditions = [];
+            $values = [];
+
+            foreach ($fields as $field) {
+                $column = $metadata->getColumn($field);
+                if ($column === null) {
+                    continue;
+                }
+
+                $refProp = $this->getReflectionProperty($entity::class, $field);
+                $fieldValue = $refProp->getValue($entity);
+
+                if ($fieldValue === null) {
+                    // NULL values don't violate uniqueness in most SQL databases
+                    continue 2; // skip this constraint entirely
+                }
+
+                $conditions[] = $this->dialect->quoteIdentifier($column->columnName) . ' = ?';
+                $values[] = $this->typeCaster->toDatabaseValue($fieldValue, $column->type);
+            }
+
+            if (empty($conditions)) {
+                continue;
+            }
+
+            // Exclude the current entity itself (for updates)
+            $idColumns = $metadata->getIdColumns();
+            foreach ($idColumns as $idCol) {
+                $idProp = $this->getReflectionProperty($entity::class, $idCol->propertyName);
+                $idValue = $idProp->getValue($entity);
+                if ($idValue !== null) {
+                    $conditions[] = $this->dialect->quoteIdentifier($idCol->columnName) . ' != ?';
+                    $values[] = $this->typeCaster->toDatabaseValue($idValue, $idCol->type);
+                }
+            }
+
+            $sql = $this->dialect->generateSelect(
+                ['COUNT(*)'],
+                $metadata->getQualifiedTableName(),
+            );
+            $sql .= ' WHERE ' . implode(' AND ', $conditions);
+
+            $stmt = $this->connectionManager->executeQuery($sql, $values);
+            $row = $stmt->fetch(\PDO::FETCH_NUM);
+            $stmt->closeCursor();
+
+            $count = (int) ($row[0] ?? 0);
+
+            if ($count > 0) {
+                throw new \SybaseORM\Exception\UniqueConstraintViolationException(
+                    $entity::class,
+                    $fields,
+                    $uniqueAttr->message,
+                );
             }
         }
     }
