@@ -11,7 +11,7 @@ namespace SybaseORM\Query\AST;
 final class SelectExpression
 {
     public function __construct(
-        public readonly string|FunctionCall $expression,
+        public readonly string|FunctionCall|CustomFunctionCall $expression,
         public readonly ?string $alias = null,
     ) {}
 }

@@ -293,6 +293,20 @@ final class OqlParser
             return new SelectExpression($functionCall, $alias);
         }
 
+        // Handle custom/built-in functions (GETDATE, UPPER, COALESCE, etc.)
+        if (in_array(strtoupper($token), $this->customFunctions, true)) {
+            $customFunctionCall = $this->parseCustomFunctionCall();
+
+            $alias = null;
+            if ($this->isAt('AS')) {
+                $this->advance();
+                $alias = $this->current();
+                $this->advance();
+            }
+
+            return new SelectExpression($customFunctionCall, $alias);
+        }
+
         $expr = $this->current();
         $this->advance();
 

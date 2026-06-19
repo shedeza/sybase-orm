@@ -445,11 +445,14 @@ final class OqlToSqlTranslator
     {
         $parts = [];
 
+        $parameters = [];
         foreach ($expressions as $expr) {
             $partSql = '';
 
             if ($expr->expression instanceof FunctionCall) {
                 $partSql = $this->resolveFunctionCall($expr->expression);
+            } elseif ($expr->expression instanceof CustomFunctionCall) {
+                $partSql = $this->resolveCustomFunctionCall($expr->expression, $parameters);
             } elseif ($expr->expression === '*') {
                 $partSql = '*';
             } elseif (str_contains($expr->expression, '.')) {
