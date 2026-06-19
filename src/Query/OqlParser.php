@@ -712,7 +712,7 @@ final class OqlParser
         $depth = 1;
         $tokens = [];
 
-        while ($depth > 0 && $this->pos < count($this->tokens)) {
+        while ($this->pos < count($this->tokens)) {
             $token = $this->current();
             if ($token === '(') {
                 $depth++;
