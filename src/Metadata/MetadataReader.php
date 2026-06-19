@@ -30,6 +30,7 @@ use SybaseORM\Attribute\PrePersist;
 use SybaseORM\Attribute\PreRemove;
 use SybaseORM\Attribute\PreUpdate;
 use SybaseORM\Attribute\SoftDelete;
+use SybaseORM\Attribute\UniqueConstraint;
 
 /**
  * Reads PHP Attributes from entity classes using the Reflection API
@@ -172,6 +173,7 @@ final class MetadataReader implements MetadataReaderInterface
         [$inheritanceType, $discriminatorColumn, $discriminatorMap] = $this->readInheritanceMetadata($reflectionClass);
         $lifecycleHooks = $this->readLifecycleHooks($reflectionClass);
         $softDeleteColumn = $this->readSoftDeleteMetadata($reflectionClass);
+        $uniqueConstraints = $this->readUniqueConstraints($reflectionClass);
 
         $metadata = new ClassMetadata(
             entityClass: $entityClass,
@@ -188,6 +190,7 @@ final class MetadataReader implements MetadataReaderInterface
             embeddeds: $embeddeds,
             connection: $entityAttr->connection,
             softDeleteColumn: $softDeleteColumn,
+            uniqueConstraints: $uniqueConstraints,
         );
 
         // Validate metadata consistency
@@ -426,6 +429,27 @@ final class MetadataReader implements MetadataReaderInterface
         $attr = $this->getClassAttribute($reflectionClass, SoftDelete::class);
 
         return $attr?->column;
+    }
+
+    /**
+     * Reads #[UniqueConstraint] attributes from the entity class.
+     *
+     * @return array<int, array{columns: string[], name: string|null}>
+     */
+    private function readUniqueConstraints(ReflectionClass $reflectionClass): array
+    {
+        $attrs = $reflectionClass->getAttributes(UniqueConstraint::class);
+        $constraints = [];
+
+        foreach ($attrs as $attr) {
+            $instance = $attr->newInstance();
+            $constraints[] = [
+                'columns' => $instance->columns,
+                'name' => $instance->name,
+            ];
+        }
+
+        return $constraints;
     }
 
     private function readLifecycleHooks(ReflectionClass $reflectionClass): array

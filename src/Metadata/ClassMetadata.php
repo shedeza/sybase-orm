@@ -55,6 +55,8 @@ final class ClassMetadata
         public readonly array $embeddeds = [],
         public readonly string $connection = 'default',
         ?string $softDeleteColumn = null,
+        /** @var array<int, array{columns: string[], name: string|null}> */
+        public readonly array $uniqueConstraints = [],
     ) {
         $this->softDeleteColumn = $softDeleteColumn;
         // Compute idFields and idField for backward compatibility
