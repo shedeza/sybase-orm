@@ -99,6 +99,8 @@ final class OrmFactory
         );
 
         // 4. Instantiate UnitOfWork, Hydrator
+        $entityValidator = new EntityValidator(metadataReader: $metadataReader);
+
         $unitOfWork = new UnitOfWork(
             connectionManager: $connectionManager,
             metadataReader: $metadataReader,
@@ -106,6 +108,7 @@ final class OrmFactory
             typeCaster: $typeCaster,
             identityMap: $identityMap,
             hookDispatcher: $hookDispatcher,
+            entityValidator: $entityValidator,
         );
 
         $proxyDirectory = $config['proxy_directory'] ?? sys_get_temp_dir() . '/sybase-orm-proxies';

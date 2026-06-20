@@ -47,6 +47,7 @@ final class UnitOfWork implements UnitOfWorkInterface
         private readonly TypeCasterInterface $typeCaster,
         private readonly IdentityMapInterface $identityMap,
         private readonly ?HookDispatcher $hookDispatcher = null,
+        private readonly ?EntityValidator $entityValidator = null,
     ) {
         $this->newEntities = new \SplObjectStorage();
         $this->deletedEntities = new \SplObjectStorage();
@@ -423,6 +424,9 @@ final class UnitOfWork implements UnitOfWorkInterface
                 continue;
             }
 
+            // Validate entity data constraints (length, not-null, precision)
+            $this->entityValidator?->validate($entity);
+
             // Validate #[UniqueEntity] constraints before INSERT
             $this->validateUniqueEntity($entity);
 
@@ -534,6 +538,9 @@ final class UnitOfWork implements UnitOfWorkInterface
             if (empty($changeset)) {
                 continue;
             }
+
+            // Validate entity data constraints for changed fields
+            $this->entityValidator?->validate($entity);
 
             // Validate #[UniqueEntity] if any unique field was modified
             $this->validateUniqueEntity($entity, $changeset);

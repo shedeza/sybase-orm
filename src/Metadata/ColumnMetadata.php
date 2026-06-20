@@ -19,6 +19,7 @@ final class ColumnMetadata
         public readonly ?int $scale = null,
         public readonly bool $isId = false,
         public readonly ?string $generatedValue = null,
+        public readonly mixed $default = null,
     ) {}
 
     /**

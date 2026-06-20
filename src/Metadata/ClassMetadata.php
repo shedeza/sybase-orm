@@ -57,6 +57,10 @@ final class ClassMetadata
         ?string $softDeleteColumn = null,
         /** @var array<int, array{columns: string[], name: string|null}> */
         public readonly array $uniqueConstraints = [],
+        /** @var array<int, array{columns: string[], name: string|null}> */
+        public readonly array $indexes = [],
+        /** @var array<int, array{expression: string, message: string|null, name: string|null}> */
+        public readonly array $checkConstraints = [],
     ) {
         $this->softDeleteColumn = $softDeleteColumn;
         // Compute idFields and idField for backward compatibility

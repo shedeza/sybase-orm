@@ -174,6 +174,8 @@ final class MetadataReader implements MetadataReaderInterface
         $lifecycleHooks = $this->readLifecycleHooks($reflectionClass);
         $softDeleteColumn = $this->readSoftDeleteMetadata($reflectionClass);
         $uniqueConstraints = $this->readUniqueConstraints($reflectionClass);
+        $indexes = $this->readIndexes($reflectionClass);
+        $checkConstraints = $this->readCheckConstraints($reflectionClass);
 
         $metadata = new ClassMetadata(
             entityClass: $entityClass,
@@ -191,6 +193,8 @@ final class MetadataReader implements MetadataReaderInterface
             connection: $entityAttr->connection,
             softDeleteColumn: $softDeleteColumn,
             uniqueConstraints: $uniqueConstraints,
+            indexes: $indexes,
+            checkConstraints: $checkConstraints,
         );
 
         // Validate metadata consistency
@@ -284,6 +288,7 @@ final class MetadataReader implements MetadataReaderInterface
             scale: $columnAttr->scale,
             isId: $isId,
             generatedValue: $generatedValueAttr?->strategy,
+            default: $columnAttr->default,
         );
     }
 
@@ -450,6 +455,49 @@ final class MetadataReader implements MetadataReaderInterface
         }
 
         return $constraints;
+    }
+
+    /**
+     * Reads #[Index] attributes from the entity class.
+     *
+     * @return array<int, array{columns: string[], name: string|null}>
+     */
+    private function readIndexes(ReflectionClass $reflectionClass): array
+    {
+        $attrs = $reflectionClass->getAttributes(\SybaseORM\Attribute\Index::class);
+        $indexes = [];
+
+        foreach ($attrs as $attr) {
+            $instance = $attr->newInstance();
+            $indexes[] = [
+                'columns' => $instance->columns,
+                'name' => $instance->name,
+            ];
+        }
+
+        return $indexes;
+    }
+
+    /**
+     * Reads #[Check] attributes from the entity class.
+     *
+     * @return array<int, array{expression: string, message: string|null, name: string|null}>
+     */
+    private function readCheckConstraints(ReflectionClass $reflectionClass): array
+    {
+        $attrs = $reflectionClass->getAttributes(\SybaseORM\Attribute\Check::class);
+        $checks = [];
+
+        foreach ($attrs as $attr) {
+            $instance = $attr->newInstance();
+            $checks[] = [
+                'expression' => $instance->expression,
+                'message' => $instance->message,
+                'name' => $instance->name,
+            ];
+        }
+
+        return $checks;
     }
 
     private function readLifecycleHooks(ReflectionClass $reflectionClass): array
