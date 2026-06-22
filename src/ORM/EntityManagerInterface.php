@@ -152,4 +152,19 @@ interface EntityManagerInterface
      * @param string[] $entityClasses Fully qualified class names
      */
     public function setEntityClasses(array $entityClasses): void;
+
+    /**
+     * Finds an entity by ID with a specific lock mode.
+     *
+     * @param int $lockMode One of LockMode::PESSIMISTIC_READ, LockMode::PESSIMISTIC_WRITE
+     */
+    public function findWithLock(string $entityClass, mixed $id, int $lockMode): ?object;
+
+    /**
+     * Locks an already-loaded entity.
+     *
+     * @param int $lockMode One of LockMode constants
+     * @param int|null $lockVersion Expected version for optimistic locking
+     */
+    public function lock(object $entity, int $lockMode, ?int $lockVersion = null): void;
 }

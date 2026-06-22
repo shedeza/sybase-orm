@@ -995,6 +995,118 @@ final class EntityManager implements EntityManagerInterface
         $this->identityMap->put($entityClass, $id, $entity);
     }
 
+    public function findWithLock(string $entityClass, mixed $id, int $lockMode): ?object
+    {
+        $metadata = $this->metadataReader->getClassMetadata($entityClass);
+        $idColumn = $metadata->getIdColumn();
+
+        if ($idColumn === null) {
+            return null;
+        }
+
+        $whereClause = $this->dialect->quoteIdentifier($idColumn->columnName) . ' = ?';
+        $dbValues = [$this->typeCaster->toDatabaseValue($id, $idColumn->type)];
+
+        $sql = $this->dialect->generateSelect(['*'], $metadata->getQualifiedTableName());
+        $sql .= ' WHERE ' . $whereClause;
+
+        // Apply lock hint for Sybase ASE
+        if ($lockMode === LockMode::PESSIMISTIC_READ) {
+            $sql .= ' AT ISOLATION READ COMMITTED';
+        } elseif ($lockMode === LockMode::PESSIMISTIC_WRITE) {
+            $sql .= ' AT ISOLATION SERIALIZABLE';
+        }
+
+        $stmt = $this->connectionManager->executeQuery($sql, $dbValues);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        $stmt->closeCursor();
+
+        if ($row === false) {
+            return null;
+        }
+
+        $row = $this->connectionManager->convertResultRow($row);
+        $entity = $this->hydrator->hydrate($row, $entityClass);
+        $this->unitOfWork->registerClean($entity);
+
+        return $entity;
+    }
+
+    public function lock(object $entity, int $lockMode, ?int $lockVersion = null): void
+    {
+        if ($lockMode === LockMode::OPTIMISTIC) {
+            // Verify version matches
+            $metadata = $this->metadataReader->getClassMetadata($entity::class);
+            $versionField = $this->findVersionField($metadata);
+
+            if ($versionField === null) {
+                throw new \SybaseORM\Exception\PersistenceException(
+                    sprintf('Cannot use optimistic locking on "%s": no #[Version] field found.', $entity::class),
+                );
+            }
+
+            if ($lockVersion !== null) {
+                $refProp = (new \ReflectionClass($entity))->getProperty($versionField);
+                $currentVersion = $refProp->getValue($entity);
+
+                if ($currentVersion !== $lockVersion) {
+                    $idColumns = $metadata->getIdColumns();
+                    $id = null;
+                    if (!empty($idColumns)) {
+                        $idProp = (new \ReflectionClass($entity))->getProperty($idColumns[0]->propertyName);
+                        $id = $idProp->getValue($entity);
+                    }
+
+                    throw new \SybaseORM\Exception\OptimisticLockException(
+                        $entity::class,
+                        $id,
+                        $lockVersion,
+                        $currentVersion,
+                    );
+                }
+            }
+
+            return;
+        }
+
+        // Pessimistic lock: re-select with lock
+        $metadata = $this->metadataReader->getClassMetadata($entity::class);
+        $idColumns = $metadata->getIdColumns();
+
+        if (empty($idColumns)) {
+            return;
+        }
+
+        $reflectionClass = $this->getReflectionClass($entity::class);
+        $idProp = $reflectionClass->getProperty($idColumns[0]->propertyName);
+        $id = $idProp->getValue($entity);
+
+        if ($id !== null) {
+            $this->findWithLock($entity::class, $id, $lockMode);
+        }
+    }
+
+    /**
+     * Finds the #[Version] field property name in metadata, or null.
+     */
+    private function findVersionField(\SybaseORM\Metadata\ClassMetadata $metadata): ?string
+    {
+        foreach ($metadata->columns as $column) {
+            if (str_contains($column->propertyName, '.')) {
+                continue;
+            }
+
+            $reflection = new \ReflectionProperty($metadata->entityClass, $column->propertyName);
+            $versionAttrs = $reflection->getAttributes(\SybaseORM\Attribute\Version::class);
+
+            if (!empty($versionAttrs)) {
+                return $column->propertyName;
+            }
+        }
+
+        return null;
+    }
+
     /**
      * Ensures the OQL→SQL translator is initialized with all custom functions.
      */
