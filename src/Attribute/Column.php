@@ -22,5 +22,6 @@ final class Column
         public readonly ?int $length = null,
         public readonly ?int $precision = null,
         public readonly ?int $scale = null,
+        public readonly mixed $default = null,
     ) {}
 }
