@@ -27,6 +27,10 @@ Documentación completa de uso del ORM `shedeza/sybase-orm` para PHP. Este manua
 | 19 | [Batch Processing](./caracteristicas-avanzadas.md) | Procesamiento en lotes para grandes datasets |
 | 20 | [Native SQL](./caracteristicas-avanzadas.md) | Mapeo de consultas SQL nativas con createNativeQuery() |
 | 21 | [Testing (Factories)](./caracteristicas-avanzadas.md) | Model factories para testing con EntityFactory |
+| 22 | [Locking (Optimistic y Pessimistic)](./caracteristicas-avanzadas.md) | Optimistic locking con #[Version] y pessimistic locking con LockMode (HOLDLOCK/UPDLOCK) |
+| 23 | [Validación de Entidades](./caracteristicas-avanzadas.md) | Validación pre-persist: length, NOT NULL, precision, #[UniqueEntity] |
+| 24 | [Audit Trail](./caracteristicas-avanzadas.md) | Auditoría automática de cambios con #[Auditable] y AuditSubscriber |
+| 25 | [Seeders](./caracteristicas-avanzadas.md) | Database seeders con SeederInterface y SeederRunner para datos iniciales/testing |
 
 ## Otros Manuales
 

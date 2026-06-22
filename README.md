@@ -43,6 +43,18 @@ ORM puro en PHP para **Sybase ASE**, independiente de framework. Soporta mapeo d
 - Sistema de instrumentación/profiling
 - Query Explain Plan (SHOWPLAN)
 - Metadata introspection
+- Optimistic locking (`#[Version]`)
+- Pessimistic locking (HOLDLOCK/UPDLOCK vía `LockMode`)
+- Connection pooling para workers long-running
+- Partial entity loading (cargar solo columnas específicas)
+- Result Set Mapping para Native SQL multi-entidad
+- Audit trail automático (`#[Auditable]`)
+- Database seeders (`SeederInterface`)
+- Validación pre-persist (length, NOT NULL, precision)
+- `#[UniqueEntity]` — validación de unicidad antes de INSERT
+- `#[Index]`, `#[Check]`, `#[UniqueConstraint]` — DDL constraints
+- `#[Column(default: value)]` — valores por defecto
+- `#[JoinColumn(onDelete: 'CASCADE')]` — FK referential actions
 
 ## Requisitos del sistema
 
@@ -340,6 +352,25 @@ php bin/sybase-orm make:entity User   # Generate entity class skeleton
 php bin/sybase-orm schema:validate    # Validate mapping vs DB schema
 php bin/sybase-orm cache:clear        # Clear proxy and metadata caches
 php bin/sybase-orm orm:info           # Show all mapped entities
+```
+
+## Seeders
+
+```php
+use SybaseORM\Testing\SeederInterface;
+
+class UserSeeder implements SeederInterface {
+    public function run(\SybaseORM\ORM\EntityManagerInterface $em): void {
+        $user = new User();
+        $user->email = 'admin@app.com';
+        $em->persist($user);
+        $em->flush();
+    }
+}
+
+// Run seeders
+$runner = new \SybaseORM\Testing\SeederRunner($em);
+$runner->run([new UserSeeder(), new ProductSeeder()]);
 ```
 
 ## Licencia

@@ -64,6 +64,12 @@ Define los atributos PHP 8 utilizados para mapear entidades, columnas, relacione
 | `ReadOnly.php` / `Immutable` | Marca una entidad como de solo lectura (no permite persist/update) |
 | `EntityListener.php` | Registra un listener externo para eventos de la entidad |
 | `CacheRegion.php` | Define la región de caché específica para la entidad |
+| `Version.php` | Versionado para optimistic locking |
+| `Auditable.php` | Marca entidad para audit trail |
+| `Index.php` | Índices no-unique |
+| `Check.php` | CHECK constraints |
+| `UniqueEntity.php` | Validación de unicidad pre-persist |
+| `UniqueConstraint.php` | Unique indexes DDL |
 
 ### SybaseORM\Cache
 
@@ -92,6 +98,7 @@ Capa de conexión a base de datos: gestión del ciclo de vida, parsing de URLs y
 | Archivo | Propósito |
 |---------|-----------|
 | `ConnectionManager.php` | Gestión de conexiones PDO, pooling y reconexión |
+| `ConnectionPool.php` | Pool de conexiones reutilizables |
 | `ConnectionManagerInterface.php` | Contrato del administrador de conexiones |
 | `ConnectionUrlParser.php` | Parsing de URLs DSN de conexión |
 | `ExplainableConnectionInterface.php` | Contrato para conexiones que soportan EXPLAIN/SHOWPLAN |
@@ -120,6 +127,9 @@ Jerarquía de excepciones del ORM con tipos específicos por dominio de error.
 | `PersistenceException.php` | Error en operaciones de persistencia |
 | `TransactionException.php` | Error en gestión de transacciones |
 | `TypeConversionException.php` | Error en conversión de tipos PHP ↔ DB |
+| `OptimisticLockException.php` | Error de version mismatch |
+| `ValidationException.php` | Error de validación pre-persist |
+| `UniqueConstraintViolationException.php` | Error de unicidad |
 
 ### SybaseORM\Hook
 
@@ -131,6 +141,8 @@ Sistema de eventos para hooks de ciclo de vida e integración con dispatchers ex
 | `EventSubscriberInterface.php` | Contrato para subscribers de eventos |
 | `HookDispatcher.php` | Dispatcher interno de hooks |
 | `SymfonyEventDispatcherSubscriber.php` | Puente con Symfony EventDispatcher |
+| `AuditEntry.php` | Value object de entrada de auditoría |
+| `AuditSubscriber.php` | Subscriber que registra cambios |
 
 ### SybaseORM\Hydrator
 
@@ -181,6 +193,10 @@ Núcleo del ORM que implementa los patrones Unit of Work, Identity Map y Reposit
 | `PersistentCollection.php` | Colección con carga lazy de relaciones |
 | `UnitOfWork.php` | Patrón Unit of Work: changeset y flush |
 | `UnitOfWorkInterface.php` | Contrato del Unit of Work |
+| `LockMode.php` | Enum de modos de locking |
+| `PartialEntity.php` | Carga parcial de entidades |
+| `ResultSetMapping.php` | Mapeo de SQL nativo a entidades |
+| `EntityValidator.php` | Validador pre-persist |
 
 ### SybaseORM\Proxy
 
@@ -298,6 +314,8 @@ Herramientas para testing de entidades y repositorios.
 | Archivo | Propósito |
 |---------|-----------|
 | `EntityFactory.php` | Factory para generar entidades con datos de prueba |
+| `SeederInterface.php` | Contrato para seeders |
+| `SeederRunner.php` | Ejecutor de seeders |
 
 ### bin/ (Entry Points)
 

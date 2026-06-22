@@ -53,6 +53,11 @@ graph TD
         ES[EventSubscribers]
     end
 
+    subgraph "Capa de Validación"
+        VAL[EntityValidator]
+        UE[UniqueEntity Check]
+    end
+
     subgraph "Capa de Migración"
         MIG[MigrationManager]
     end
@@ -102,6 +107,11 @@ graph TD
     HD --> ES
 
     PG --> LP
+
+    UOW --> VAL
+    VAL --> MR
+    VAL --> CONN
+    VAL --> UE
 
     MIG --> CONN
     MIG --> MR
@@ -244,9 +254,29 @@ graph TD
 
 **Responsabilidad:** Proveer herramientas para testing de entidades y repositorios.
 
-**Clases principales:** `EntityFactory` (factory para generar entidades con datos de prueba, similar a Laravel factories).
+**Clases principales:** `EntityFactory` (factory para generar entidades con datos de prueba, similar a Laravel factories), `SeederInterface` (contrato para seeders de datos), `SeederRunner` (ejecutor de seeders).
 
-**Dependencias:** Metadata (para conocer campos de la entidad).
+**Dependencias:** Metadata (para conocer campos de la entidad), EntityManager (para persistir datos de seed).
+
+---
+
+### 12. Validation (Validación)
+
+**Namespace:** `SybaseORM\ORM`
+
+**Responsabilidad:** Validar entidades antes de INSERT/UPDATE, verificando constraints como length, NOT NULL, precision y unicidad.
+
+**Clases principales:** `EntityValidator` (validador pre-persist que inspecciona metadatos de columna y ejecuta validaciones), `UniqueEntity` atributo (validación de unicidad consultando la base de datos antes de insertar).
+
+**Flujo de validación:** Antes de cada INSERT o UPDATE en el `flush()`, el `UnitOfWork` invoca al `EntityValidator`. Este:
+1. Lee los metadatos de la entidad desde `ClassMetadata`
+2. Verifica que los campos NOT NULL tengan valor
+3. Valida que strings no excedan el `length` definido en `#[Column]`
+4. Verifica que valores numéricos respeten `precision` y `scale`
+5. Si la entidad tiene `#[UniqueEntity]`, consulta la base de datos para confirmar que no existe un registro duplicado
+6. Si alguna validación falla, lanza `ValidationException` o `UniqueConstraintViolationException`
+
+**Dependencias:** Metadata (para leer constraints), Connection (para validación de unicidad).
 
 ---
 
@@ -272,7 +302,8 @@ EntityManager / Repository (orquestación)
        │      ├── ConnectionManager (SQL)
        │      ├── MetadataReader (mapeo)
        │      ├── HookDispatcher (eventos)
-       │      └── IdentityMap (identidad)
+       │      ├── IdentityMap (identidad)
+       │      └── EntityValidator (validación pre-persist)
        │
        ├── Query Pipeline (consultas)
        │      ├── OqlParser → AST
