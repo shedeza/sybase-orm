@@ -49,7 +49,9 @@ ORM puro en PHP para **Sybase ASE**, independiente de framework. Soporta mapeo d
 - Partial entity loading (cargar solo columnas específicas)
 - Result Set Mapping para Native SQL multi-entidad
 - Audit trail automático (`#[Auditable]`)
-- Database seeders (`SeederInterface`)
+- **Data Fixtures & Seeders** (`FixtureInterface`) integrados con consola
+- **Criteria API** (Patrón Specification) para consultas orientadas a objetos
+- **Reverse Engineering (Scaffolding)**: Generación automática de entidades desde BD
 - Validación pre-persist (length, NOT NULL, precision)
 - `#[UniqueEntity]` — validación de unicidad antes de INSERT
 - `#[Index]`, `#[Check]`, `#[UniqueConstraint]` — DDL constraints
@@ -352,25 +354,60 @@ php bin/sybase-orm make:entity User   # Generate entity class skeleton
 php bin/sybase-orm schema:validate    # Validate mapping vs DB schema
 php bin/sybase-orm cache:clear        # Clear proxy and metadata caches
 php bin/sybase-orm orm:info           # Show all mapped entities
+
+# Advanced Features
+php bin/sybase-orm orm:scaffold       # Reverse engineer DB schema to Entity classes
+php bin/sybase-orm orm:db:seed        # Run data fixtures to populate database
 ```
 
-## Seeders
+## Criteria API
+
+La Criteria API te permite construir consultas dinámicas de forma orientada a objetos sin concatenar strings. Se integra directamente con el patrón Repositorio:
 
 ```php
-use SybaseORM\Testing\SeederInterface;
+use SybaseORM\Query\Criteria\Criteria;
 
-class UserSeeder implements SeederInterface {
-    public function run(\SybaseORM\ORM\EntityManagerInterface $em): void {
+$criteria = Criteria::create()
+    ->where(Criteria::expr()->eq('status', 'active'))
+    ->andWhere(Criteria::expr()->in('role', ['admin', 'manager']))
+    ->orderBy(['createdAt' => Criteria::DESC])
+    ->setFirstResult(0)
+    ->setMaxResults(10);
+
+// Ejecuta la consulta usando el QueryBuilder subyacente
+$users = $entityManager->getRepository(User::class)->matching($criteria);
+```
+
+## Fixtures / Seeders
+
+Pobla rápidamente tu base de datos para entornos de prueba usando el sistema de Fixtures.
+
+```php
+namespace App\Fixture;
+
+use SybaseORM\Fixture\FixtureInterface;
+use SybaseORM\ORM\EntityManagerInterface;
+use App\Entity\User;
+
+class UserFixture implements FixtureInterface {
+    public function load(EntityManagerInterface $em): void {
         $user = new User();
         $user->email = 'admin@app.com';
+        $user->status = 'active';
+        
         $em->persist($user);
-        $em->flush();
+        // NOTA: No es necesario hacer $em->flush(), el FixtureLoader lo hace automáticamente al final.
     }
 }
+```
 
-// Run seeders
-$runner = new \SybaseORM\Testing\SeederRunner($em);
-$runner->run([new UserSeeder(), new ProductSeeder()]);
+Ejecución desde consola:
+```bash
+# Ejecutar todos los fixtures en database/seeds/
+php bin/sybase-orm orm:db:seed --dir=database/seeds
+
+# O especificar una clase directamente
+php bin/sybase-orm orm:db:seed --class="App\Fixture\UserFixture"
 ```
 
 ## Licencia

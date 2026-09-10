@@ -269,6 +269,66 @@ echo $connection->getHost();           // Host configurado
 echo $connection->getPort();           // Puerto (default: 5000)
 ```
 
+## Reverse Engineering (Scaffolding)
+
+SybaseORM incluye herramientas de línea de comandos para generar automáticamente tus clases de entidad a partir de tablas existentes en tu base de datos Sybase ASE. Esto es ideal para proyectos *Database-First*.
+
+### Comando orm:scaffold
+
+Ejecuta el siguiente comando para inspeccionar la base de datos y crear clases en `src/Entity`:
+
+```bash
+# Escanear todas las tablas de usuario
+php bin/sybase-orm orm:scaffold
+
+# Especificar una tabla en particular
+php bin/sybase-orm orm:scaffold --table=usuarios
+```
+
+El generador:
+- Lee tipos de datos de Sybase y los mapea a PHP (`varchar` -> `string`, `datetime` -> `\DateTime`).
+- Detecta nulabilidad (`?type`).
+- Detecta claves primarias y añade el atributo `#[Id]`.
+- Añade automáticamente el atributo `#[Column]` con el nombre original del campo.
+
+## Data Fixtures (Seeders)
+
+Para poblar rápidamente tu base de datos con datos de prueba, SybaseORM proporciona el sistema de Fixtures.
+
+### 1. Crear un Fixture
+Implementa la interfaz `FixtureInterface`:
+
+```php
+namespace App\Fixture;
+
+use SybaseORM\Fixture\FixtureInterface;
+use SybaseORM\ORM\EntityManagerInterface;
+use App\Entity\Role;
+
+class RoleFixture implements FixtureInterface
+{
+    public function load(EntityManagerInterface $em): void
+    {
+        $admin = new Role();
+        $admin->nombre = 'Administrador';
+        
+        $em->persist($admin);
+        // No necesitas llamar a flush(), el loader lo hace automáticamente.
+    }
+}
+```
+
+### 2. Ejecutar los Fixtures
+Puedes correr todos los fixtures de un directorio, o una clase específica:
+
+```bash
+# Ejecutar todos los fixtures en una carpeta
+php bin/sybase-orm orm:db:seed --dir=database/seeds
+
+# Ejecutar un fixture específico
+php bin/sybase-orm orm:db:seed --class="App\Fixture\RoleFixture"
+```
+
 ---
 
 ← [Anterior](./manejo-errores.md) | [Índice](./README.md)

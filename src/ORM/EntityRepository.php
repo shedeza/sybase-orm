@@ -344,6 +344,67 @@ class EntityRepository
 
     // ── Utilidades ──────────────────────────────────────────────────
 
+    /**
+     * Executes a Criteria query against the repository.
+     *
+     * @param \SybaseORM\Query\Criteria\Criteria $criteria
+     * @return object[]
+     */
+    public function matching(\SybaseORM\Query\Criteria\Criteria $criteria): array
+    {
+        $qb = $this->entityManager->createQueryBuilder($this->entityClass);
+        $qb->select($this->entityShortName);
+        $qb->fromEntity($this->entityClass, $this->entityShortName);
+
+        if ($where = $criteria->getWhereExpression()) {
+            $qb->where($this->translateExpression($where, $this->entityShortName));
+        }
+
+        foreach ($criteria->getOrderings() as $field => $dir) {
+            $qb->orderBy($this->entityShortName . '.' . $field, $dir);
+        }
+
+        if ($first = $criteria->getFirstResult()) {
+            $qb->setFirstResult($first);
+        }
+
+        if ($max = $criteria->getMaxResults()) {
+            $qb->setMaxResults($max);
+        }
+
+        return $qb->getQuery()->getResult();
+    }
+
+    private function translateExpression(\SybaseORM\Query\Criteria\ExpressionInterface $expr, string $alias): string
+    {
+        if ($expr instanceof \SybaseORM\Query\Criteria\Comparison) {
+            $field = $alias . '.' . $expr->getField();
+            $op = $expr->getOperator();
+            $val = $expr->getValue();
+
+            if (is_array($val)) {
+                $valList = implode(', ', array_map(fn($v) => is_numeric($v) ? $v : "'" . addslashes((string) $v) . "'", $val));
+                return "$field $op ($valList)";
+            }
+            if ($val === null) {
+                return $op === '=' ? "$field IS NULL" : "$field IS NOT NULL";
+            }
+
+            $valStr = is_numeric($val) ? $val : "'" . addslashes((string) $val) . "'";
+            return "$field $op $valStr";
+        }
+
+        if ($expr instanceof \SybaseORM\Query\Criteria\CompositeExpression) {
+            $parts = [];
+            foreach ($expr->getExpressions() as $child) {
+                $parts[] = '(' . $this->translateExpression($child, $alias) . ')';
+            }
+            return implode(' ' . $expr->getType() . ' ', $parts);
+        }
+
+        return '';
+    }
+
     public function getEntityClass(): string
     {
         return $this->entityClass;

@@ -247,6 +247,22 @@ $resultados = $qb->where('e.edad > :edad')
     ->getResult();
 ```
 
+### matching() (Criteria API)
+
+Ejecuta una consulta dinámica construida de forma orientada a objetos usando el Patrón Specification. Esto permite crear filtros complejos sin lidiar con concatenación de strings OQL.
+
+```php
+use SybaseORM\Query\Criteria\Criteria;
+
+$criteria = Criteria::create()
+    ->where(Criteria::expr()->eq('departamento', 'ventas'))
+    ->andWhere(Criteria::expr()->gt('edad', 25))
+    ->orderBy(['fecha_ingreso' => Criteria::DESC])
+    ->setMaxResults(10);
+
+$resultados = $repository->matching($criteria);
+```
+
 ---
 
 ← [Anterior](./transacciones.md) | [Índice](./README.md) | [Siguiente →](./manejo-errores.md)
