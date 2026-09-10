@@ -112,7 +112,6 @@ final class MetadataReader implements MetadataReaderInterface
             }
         }
 
-        // 3. Read from reflection
         $reflectionClass = new ReflectionClass($entityClass);
 
         $entityAttr = $this->getClassAttribute($reflectionClass, Entity::class);
@@ -120,8 +119,24 @@ final class MetadataReader implements MetadataReaderInterface
             throw new \RuntimeException(sprintf('Class "%s" is not annotated with #[Entity].', $entityClass));
         }
 
-        $tableName = $entityAttr->table ?? $this->toSnakeCase($reflectionClass->getShortName());
+        [$inheritanceType, $discriminatorColumn, $discriminatorMap, $rootEntityClass] = $this->readInheritanceMetadata($reflectionClass);
+
+        $tableName = $entityAttr->table;
         $schema = $entityAttr->schema;
+
+        if ($tableName === null && $inheritanceType === 'TPH' && $rootEntityClass !== null && $rootEntityClass !== $entityClass) {
+            $rootReflection = new ReflectionClass($rootEntityClass);
+            $rootEntityAttr = $this->getClassAttribute($rootReflection, Entity::class);
+            if ($rootEntityAttr !== null && $rootEntityAttr->table !== null) {
+                $tableName = $rootEntityAttr->table;
+                if ($schema === null) {
+                    $schema = $rootEntityAttr->schema;
+                }
+            }
+        }
+        if ($tableName === null) {
+            $tableName = $this->toSnakeCase($reflectionClass->getShortName());
+        }
 
         $columns = [];
         $idFields = [];
@@ -177,7 +192,6 @@ final class MetadataReader implements MetadataReaderInterface
             }
         }
 
-        [$inheritanceType, $discriminatorColumn, $discriminatorMap] = $this->readInheritanceMetadata($reflectionClass);
         $lifecycleHooks = $this->readLifecycleHooks($reflectionClass);
         $softDeleteColumn = $this->readSoftDeleteMetadata($reflectionClass);
         $uniqueConstraints = $this->readUniqueConstraints($reflectionClass);
@@ -202,6 +216,7 @@ final class MetadataReader implements MetadataReaderInterface
             uniqueConstraints: $uniqueConstraints,
             indexes: $indexes,
             checkConstraints: $checkConstraints,
+            rootEntityClass: $rootEntityClass,
         );
 
         // Validate metadata consistency
@@ -407,17 +422,20 @@ final class MetadataReader implements MetadataReaderInterface
     }
 
     /**
-     * @return array{?string, ?string, array<string, string>}
+     * @param ReflectionClass<object> $reflectionClass
+     * @return array{?string, ?string, array<string, string>, ?string} [inheritanceType, discriminatorColumn, discriminatorMap, rootEntityClass]
      */
     private function readInheritanceMetadata(ReflectionClass $reflectionClass): array
     {
         $inheritanceType = null;
         $discriminatorColumn = null;
         $discriminatorMap = [];
+        $rootEntityClass = null;
 
         $inheritanceAttr = $this->getClassAttribute($reflectionClass, InheritanceType::class);
         if ($inheritanceAttr !== null) {
             $inheritanceType = $inheritanceAttr->strategy;
+            $rootEntityClass = $reflectionClass->getName();
         }
 
         $discColAttr = $this->getClassAttribute($reflectionClass, DiscriminatorColumn::class);
@@ -430,7 +448,35 @@ final class MetadataReader implements MetadataReaderInterface
             $discriminatorMap = $discMapAttr->map;
         }
 
-        return [$inheritanceType, $discriminatorColumn, $discriminatorMap];
+        // If not defined on this class, check parent classes in hierarchy
+        if ($inheritanceType === null) {
+            $parent = $reflectionClass->getParentClass();
+            while ($parent !== false) {
+                $parentInheritanceAttr = $this->getClassAttribute($parent, InheritanceType::class);
+                if ($parentInheritanceAttr !== null) {
+                    $inheritanceType = $parentInheritanceAttr->strategy;
+                    $rootEntityClass = $parent->getName();
+
+                    if ($discriminatorColumn === null) {
+                        $parentDiscColAttr = $this->getClassAttribute($parent, DiscriminatorColumn::class);
+                        if ($parentDiscColAttr !== null) {
+                            $discriminatorColumn = $parentDiscColAttr->name;
+                        }
+                    }
+
+                    if (empty($discriminatorMap)) {
+                        $parentDiscMapAttr = $this->getClassAttribute($parent, DiscriminatorMap::class);
+                        if ($parentDiscMapAttr !== null) {
+                            $discriminatorMap = $parentDiscMapAttr->map;
+                        }
+                    }
+                    break;
+                }
+                $parent = $parent->getParentClass();
+            }
+        }
+
+        return [$inheritanceType, $discriminatorColumn, $discriminatorMap, $rootEntityClass];
     }
 
     /**

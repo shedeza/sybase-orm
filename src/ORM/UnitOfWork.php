@@ -45,12 +45,7 @@ final class UnitOfWork implements UnitOfWorkInterface
     private const REFLECTION_CACHE_MAX = 256;
 
     /**
-     * @var array<class-string, array{
-     *     sql: string,
-     *     extractors: list<array{propertyName: string, type: string}>,
-     *     identityColumnName: string|null,
-     *     idColumn: ?ColumnMetadata
-     * }> Caché de planes de INSERT precompilados por clase
+     * @var array<string, array<string, mixed>> Caché de planes de INSERT precompilados por clase
      */
     private array $insertPlanCache = [];
 
@@ -65,6 +60,7 @@ final class UnitOfWork implements UnitOfWorkInterface
         private readonly IdentityMapInterface $identityMap,
         private readonly ?HookDispatcher $hookDispatcher = null,
         private readonly ?EntityValidator $entityValidator = null,
+        private readonly ?InheritanceHandler $inheritanceHandler = null,
     ) {
         $this->newEntities = new \SplObjectStorage();
         $this->deletedEntities = new \SplObjectStorage();
@@ -466,7 +462,9 @@ final class UnitOfWork implements UnitOfWorkInterface
 
             $values = [];
             foreach ($plan['extractors'] as $extractor) {
-                $phpValue = $this->getEntityPropertyValue($entity, $extractor['propertyName']);
+                $phpValue = $extractor['propertyName'] !== null
+                    ? $this->getEntityPropertyValue($entity, $extractor['propertyName'])
+                    : ($extractor['constantValue'] ?? null);
                 $values[] = $this->typeCaster->toDatabaseValue($phpValue, $extractor['type']);
             }
 
@@ -1052,12 +1050,7 @@ final class UnitOfWork implements UnitOfWorkInterface
      * Pre-compiles and caches an INSERT plan for an entity class.
      *
      * @param class-string $className
-     * @return array{
-     *     sql: string,
-     *     extractors: list<array{propertyName: string, type: string}>,
-     *     identityColumnName: string|null,
-     *     idColumn: ?ColumnMetadata
-     * }
+     * @return array<string, mixed>
      */
     private function getInsertPlan(string $className, ClassMetadata $metadata): array
     {
@@ -1089,6 +1082,19 @@ final class UnitOfWork implements UnitOfWorkInterface
             $valueExpressions[] = $this->typeCaster->getDatabaseValueSQL('?', $column->type);
         }
 
+        // TPH inheritance: automatically inject discriminator column if not already mapped
+        $discriminatorValue = null;
+        $injectDiscriminator = false;
+        if ($metadata->inheritanceType === 'TPH' && $metadata->discriminatorColumn !== null) {
+            $discriminatorValue = $this->resolveDiscriminatorValue($className, $metadata);
+            if ($discriminatorValue !== null && !in_array($metadata->discriminatorColumn, $columns, true)) {
+                $columns[] = $metadata->discriminatorColumn;
+                $placeholders[] = '?';
+                $valueExpressions[] = $this->typeCaster->getDatabaseValueSQL('?', 'string');
+                $injectDiscriminator = true;
+            }
+        }
+
         // Normalize value expressions: if expression equals '?', set to null (no wrapping needed)
         $normalizedExpressions = array_map(
             fn(string $expr) => $expr === '?' ? null : $expr,
@@ -1114,11 +1120,41 @@ final class UnitOfWork implements UnitOfWorkInterface
             }
         }
 
+        if ($injectDiscriminator && $discriminatorValue !== null) {
+            $extractors[] = [
+                'propertyName' => null,
+                'constantValue' => $discriminatorValue,
+                'type' => 'string',
+            ];
+        }
+
         return $this->insertPlanCache[$className] = [
             'sql' => $sql,
             'extractors' => $extractors,
             'identityColumnName' => $identityColumnName,
             'idColumn' => $idColumn,
         ];
+    }
+
+    /**
+     * Resolves the discriminator value for a class in a TPH hierarchy.
+     */
+    private function resolveDiscriminatorValue(string $className, ClassMetadata $metadata): ?string
+    {
+        if ($this->inheritanceHandler !== null) {
+            $rootMetadata = $metadata->rootEntityClass !== null && $metadata->rootEntityClass !== $metadata->entityClass
+                ? $this->metadataReader->getClassMetadata($metadata->rootEntityClass)
+                : $metadata;
+
+            return $this->inheritanceHandler->getTPHDiscriminatorValue($className, $rootMetadata);
+        }
+
+        foreach ($metadata->discriminatorMap as $val => $class) {
+            if ($class === $className) {
+                return (string) $val;
+            }
+        }
+
+        return null;
     }
 }

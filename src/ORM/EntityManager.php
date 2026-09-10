@@ -384,6 +384,12 @@ final class EntityManager implements EntityManagerInterface
 
         // 4. Hydrate and register
         $entity = $this->hydrator->hydrate($row, $entityClass);
+
+        // In inheritance hierarchies, verify the concrete entity matches the requested class
+        if (!($entity instanceof $entityClass)) {
+            return null;
+        }
+
         $this->unitOfWork->registerClean($entity);
         $this->cacheManager->put($entityClass, $id, $entity);
 

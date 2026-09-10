@@ -98,8 +98,9 @@ final class OrmFactory
             metadataReader: $metadataReader,
         );
 
-        // 4. Instantiate UnitOfWork, Hydrator
+        // 4. Instantiate UnitOfWork, Hydrator, InheritanceHandler
         $entityValidator = new EntityValidator(metadataReader: $metadataReader);
+        $inheritanceHandler = new InheritanceHandler(metadataReader: $metadataReader);
 
         $unitOfWork = new UnitOfWork(
             connectionManager: $connectionManager,
@@ -109,6 +110,7 @@ final class OrmFactory
             identityMap: $identityMap,
             hookDispatcher: $hookDispatcher,
             entityValidator: $entityValidator,
+            inheritanceHandler: $inheritanceHandler,
         );
 
         $proxyDirectory = $config['proxy_directory'] ?? sys_get_temp_dir() . '/sybase-orm-proxies';
@@ -121,6 +123,7 @@ final class OrmFactory
             unitOfWork: $unitOfWork,
             proxyGenerator: $proxyGenerator,
             connectionManager: $connectionManager,
+            inheritanceHandler: $inheritanceHandler,
         );
 
         // 5. Instantiate EntityManager, wire entity directories

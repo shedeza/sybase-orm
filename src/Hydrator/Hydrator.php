@@ -15,6 +15,7 @@ use SybaseORM\Metadata\ClassMetadata;
 use SybaseORM\Metadata\MetadataReaderInterface;
 use SybaseORM\ORM\EntityManagerInterface;
 use SybaseORM\ORM\IdentityMapInterface;
+use SybaseORM\ORM\InheritanceHandler;
 use SybaseORM\ORM\UnitOfWorkInterface;
 use SybaseORM\Proxy\LazyLoadingProxy;
 use SybaseORM\Proxy\ProxyGenerator;
@@ -57,6 +58,7 @@ final class Hydrator implements HydratorInterface
         private readonly ?ProxyGenerator $proxyGenerator = null,
         private ?EntityManagerInterface $entityManager = null,
         private ?ConnectionManagerInterface $connectionManager = null,
+        private readonly ?InheritanceHandler $inheritanceHandler = null,
     ) {}
 
     /**
@@ -87,6 +89,12 @@ final class Hydrator implements HydratorInterface
     public function hydrate(array $row, string $entityClass): object
     {
         $plan = $this->getHydrationPlan($entityClass);
+        if ($plan->metadata->inheritanceType === 'TPH' && !empty($plan->metadata->discriminatorMap)) {
+            $targetClass = $this->resolveConcreteClassWithMetadata($row, $plan->metadata);
+            if ($targetClass !== $entityClass) {
+                $plan = $this->getHydrationPlan($targetClass);
+            }
+        }
 
         return $this->hydrateWithPlan($row, $plan, true);
     }
@@ -98,13 +106,44 @@ final class Hydrator implements HydratorInterface
         }
 
         $plan = $this->getHydrationPlan($entityClass);
-        $entities = [];
+        $isTph = $plan->metadata->inheritanceType === 'TPH' && !empty($plan->metadata->discriminatorMap);
 
+        if (!$isTph) {
+            $entities = [];
+            foreach ($rows as $row) {
+                $entities[] = $this->hydrateWithPlan($row, $plan, true);
+            }
+
+            return $entities;
+        }
+
+        $entities = [];
         foreach ($rows as $row) {
-            $entities[] = $this->hydrateWithPlan($row, $plan, true);
+            $targetClass = $this->resolveConcreteClassWithMetadata($row, $plan->metadata);
+            $rowPlan = $targetClass === $entityClass ? $plan : $this->getHydrationPlan($targetClass);
+            $entities[] = $this->hydrateWithPlan($row, $rowPlan, true);
         }
 
         return $entities;
+    }
+
+    /**
+     * Resolves the concrete entity class using pre-resolved metadata.
+     */
+    private function resolveConcreteClassWithMetadata(array $row, ClassMetadata $metadata): string
+    {
+        if ($metadata->inheritanceType === 'TPH' && $metadata->discriminatorColumn !== null) {
+            if ($this->inheritanceHandler !== null) {
+                return $this->inheritanceHandler->resolveTPHClass($row, $metadata);
+            }
+
+            $discVal = $row[$metadata->discriminatorColumn] ?? null;
+            if ($discVal !== null && isset($metadata->discriminatorMap[$discVal])) {
+                return $metadata->discriminatorMap[$discVal];
+            }
+        }
+
+        return $metadata->entityClass;
     }
 
     /**
