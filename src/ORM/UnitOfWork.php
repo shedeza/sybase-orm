@@ -493,6 +493,23 @@ final class UnitOfWork implements UnitOfWorkInterface
                     // Propagar el ID generado a entidades dependientes (FK)
                     $this->propagateGeneratedId($entity, $generatedId);
                 }
+            } else {
+                // Register entities with natural or composite keys in identity map
+                $idColumns = $metadata->getIdColumns();
+                if (count($idColumns) === 1) {
+                    $refProp = $this->getReflectionProperty($entity::class, $idColumns[0]->propertyName);
+                    $idVal = $refProp->getValue($entity);
+                    if ($idVal !== null) {
+                        $this->identityMap->put($entity::class, $idVal, $entity);
+                    }
+                } elseif (count($idColumns) > 1) {
+                    $compositeId = [];
+                    foreach ($idColumns as $idCol) {
+                        $refProp = $this->getReflectionProperty($entity::class, $idCol->propertyName);
+                        $compositeId[$idCol->propertyName] = $refProp->getValue($entity);
+                    }
+                    $this->identityMap->put($entity::class, $compositeId, $entity);
+                }
             }
 
             // Take snapshot after insert so entity is now "clean"
@@ -891,7 +908,8 @@ final class UnitOfWork implements UnitOfWorkInterface
 
             // Exclude the current entity itself (for updates)
             $idColumns = $metadata->getIdColumns();
-            foreach ($idColumns as $idCol) {
+            if (count($idColumns) === 1) {
+                $idCol = $idColumns[0];
                 // RISK-03: Use the original snapshot ID, because the PK might have been changed
                 // in the current entity. If we exclude the new PK, we won't exclude the original row.
                 $originalId = $this->entitySnapshots[$entity][$idCol->propertyName] ?? null;
@@ -904,6 +922,27 @@ final class UnitOfWork implements UnitOfWorkInterface
                 if ($originalId !== null) {
                     $conditions[] = $this->dialect->quoteIdentifier($idCol->columnName) . ' != ?';
                     $values[] = $this->typeCaster->toDatabaseValue($originalId, $idCol->type);
+                }
+            } elseif (count($idColumns) > 1) {
+                $excludeConditions = [];
+                $excludeValues = [];
+                foreach ($idColumns as $idCol) {
+                    $originalId = $this->entitySnapshots[$entity][$idCol->propertyName] ?? null;
+
+                    if ($originalId === null) {
+                        $idProp = $this->getReflectionProperty($entity::class, $idCol->propertyName);
+                        $originalId = $idProp->getValue($entity);
+                    }
+
+                    if ($originalId !== null) {
+                        $excludeConditions[] = $this->dialect->quoteIdentifier($idCol->columnName) . ' = ?';
+                        $excludeValues[] = $this->typeCaster->toDatabaseValue($originalId, $idCol->type);
+                    }
+                }
+
+                if (count($excludeConditions) === count($idColumns)) {
+                    $conditions[] = 'NOT (' . implode(' AND ', $excludeConditions) . ')';
+                    $values = array_merge($values, $excludeValues);
                 }
             }
 
