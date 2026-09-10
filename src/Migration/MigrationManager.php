@@ -39,9 +39,16 @@ final class MigrationManager
         $upStatements = [];
         $downStatements = [];
 
+        $processedTables = [];
+
         foreach ($entityClasses as $entityClass) {
             $metadata = $this->metadataReader->getClassMetadata($entityClass);
             $qualifiedTableName = $metadata->getQualifiedTableName();
+
+            if (isset($processedTables[$qualifiedTableName])) {
+                continue;
+            }
+            $processedTables[$qualifiedTableName] = true;
 
             if ($this->tableExists($metadata->tableName)) {
                 [$alterUp, $alterDown] = $this->generateAlterStatements($metadata);
@@ -219,9 +226,16 @@ final class MigrationManager
         $upStatements = [];
         $downStatements = [];
 
+        $processedTables = [];
+
         foreach ($entityClasses as $entityClass) {
             $metadata = $this->metadataReader->getClassMetadata($entityClass);
             $qualifiedTableName = $metadata->getQualifiedTableName();
+
+            if (isset($processedTables[$qualifiedTableName])) {
+                continue;
+            }
+            $processedTables[$qualifiedTableName] = true;
 
             if ($this->tableExists($metadata->tableName)) {
                 [$alterUp, $alterDown] = $this->generateAlterStatements($metadata);
@@ -261,6 +275,46 @@ final class MigrationManager
 
         foreach ($metadata->columns as $column) {
             $columnDefs[] = $this->buildColumnDefinition($column);
+        }
+
+        // In TPH, ensure discriminator column is created if not mapped as a regular property
+        if ($metadata->inheritanceType === 'TPH' && $metadata->discriminatorColumn !== null) {
+            if ($metadata->getColumnByName($metadata->discriminatorColumn) === null) {
+                $columnDefs[] = sprintf(
+                    '%s VARCHAR(32) NOT NULL',
+                    $this->dialect->quoteIdentifier($metadata->discriminatorColumn),
+                );
+            }
+        }
+
+        // In TPH root entities, also include columns defined on subclasses (nullable)
+        if ($metadata->inheritanceType === 'TPH' && !empty($metadata->discriminatorMap)) {
+            $existingCols = [];
+            foreach ($metadata->columns as $c) {
+                $existingCols[$c->columnName] = true;
+            }
+            if ($metadata->discriminatorColumn !== null) {
+                $existingCols[$metadata->discriminatorColumn] = true;
+            }
+
+            foreach ($metadata->discriminatorMap as $childClass) {
+                if ($childClass === $metadata->entityClass) {
+                    continue;
+                }
+                if ($this->metadataReader->isEntity($childClass)) {
+                    $childMeta = $this->metadataReader->getClassMetadata($childClass);
+                    foreach ($childMeta->columns as $childCol) {
+                        if (!isset($existingCols[$childCol->columnName])) {
+                            $colDef = $this->buildColumnDefinition($childCol);
+                            if (str_contains($colDef, ' NOT NULL')) {
+                                $colDef = str_replace(' NOT NULL', ' NULL', $colDef);
+                            }
+                            $columnDefs[] = $colDef;
+                            $existingCols[$childCol->columnName] = true;
+                        }
+                    }
+                }
+            }
         }
 
         // Add PRIMARY KEY constraint for composite keys (single-key uses IDENTITY)

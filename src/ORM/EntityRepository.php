@@ -493,6 +493,33 @@ class EntityRepository
             $conditions[] = sprintf('e.%s IS NULL', $softDeleteProp);
         }
 
+        // Apply TPH Discriminator filter for concrete subclasses
+        if (
+            $metadata->inheritanceType === 'TPH'
+            && $metadata->discriminatorColumn !== null
+            && $metadata->rootEntityClass !== null
+            && $metadata->rootEntityClass !== $this->entityClass
+        ) {
+            $matchingValues = [];
+            foreach ($metadata->discriminatorMap as $val => $class) {
+                if ($class === $this->entityClass || is_subclass_of($class, $this->entityClass)) {
+                    $matchingValues[] = (string) $val;
+                }
+            }
+
+            if (!empty($matchingValues)) {
+                $discCol = $metadata->getColumnByName($metadata->discriminatorColumn);
+                $discProp = $discCol !== null ? $discCol->propertyName : $metadata->discriminatorColumn;
+
+                if (count($matchingValues) === 1) {
+                    $conditions[] = sprintf("e.%s = '%s'", $discProp, addslashes($matchingValues[0]));
+                } else {
+                    $inList = implode(', ', array_map(fn($v) => "'" . addslashes($v) . "'", $matchingValues));
+                    $conditions[] = sprintf('e.%s IN (%s)', $discProp, $inList);
+                }
+            }
+        }
+
         foreach ($criteria as $property => $value) {
             $paramName = $prefix . $i;
             $column = $metadata->getColumn($property);

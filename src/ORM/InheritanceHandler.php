@@ -20,6 +20,9 @@ final class InheritanceHandler
     /** @var array<string, \ReflectionClass<object>> */
     private array $reflectionCache = [];
 
+    /** @var array<string, array<string, string>> Inverted class-to-discriminator value cache */
+    private array $classToDiscriminatorCache = [];
+
     /** Maximum cached ReflectionClass instances */
     private const REFLECTION_CACHE_MAX = 128;
 
@@ -79,13 +82,16 @@ final class InheritanceHandler
      */
     public function getTPHDiscriminatorValue(string $entityClass, ClassMetadata $baseMetadata): ?string
     {
-        foreach ($baseMetadata->discriminatorMap as $value => $class) {
-            if ($class === $entityClass) {
-                return (string) $value;
+        $baseClass = $baseMetadata->entityClass;
+        if (!isset($this->classToDiscriminatorCache[$baseClass])) {
+            $inverted = [];
+            foreach ($baseMetadata->discriminatorMap as $value => $class) {
+                $inverted[$class] = (string) $value;
             }
+            $this->classToDiscriminatorCache[$baseClass] = $inverted;
         }
 
-        return null;
+        return $this->classToDiscriminatorCache[$baseClass][$entityClass] ?? null;
     }
 
     /**
