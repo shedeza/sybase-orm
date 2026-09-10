@@ -131,14 +131,17 @@ flowchart LR
 
 En este ejemplo, el orden de inserción sería: Customer → Order → OrderItem.
 
-### Propagación de IDs Generados
+### Propagación de IDs Generados y Llaves Compuestas
 
-Después de cada INSERT con identity/autoincrement, el UoW:
+Después de cada INSERT, el UoW:
 
-1. Recupera el ID generado via `SELECT @@identity`.
-2. Asigna el valor a la propiedad ID de la entidad vía Reflection.
-3. Registra la entidad en el Identity Map.
-4. Propaga el ID a entidades dependientes que tienen una FK apuntando a la entidad recién insertada.
+1. **Entidades con autoincrement**: Recupera el ID generado vía `SELECT @@identity`, lo asigna a la propiedad ID vía Reflection y registra la entidad en el Identity Map.
+2. **Entidades con llave natural o compuesta**: Extrae los valores de clave primaria actuales y registra inmediatamente la entidad en el Identity Map (bajo la clave canónica), permitiendo su resolución inmediata en el primer nivel de caché.
+3. Propaga el ID a entidades dependientes que tienen una FK apuntando a la entidad recién insertada.
+
+### Validación de Unicidad (#[UniqueEntity])
+
+Antes de insertar o actualizar, si la entidad tiene el atributo `#[UniqueEntity]`, el UoW verifica que no exista otra fila con los mismos valores de los campos únicos. Para entidades con llaves compuestas, excluye la propia fila utilizando `NOT (col1 = ? AND col2 = ?)`.
 
 ### Updates Parciales
 

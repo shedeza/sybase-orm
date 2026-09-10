@@ -91,7 +91,7 @@ El `ProxyGenerator` produce una clase PHP que:
 
 1. **Extiende** la entidad original (hereda todas las propiedades)
 2. **Implementa** `LazyLoadingProxy` (añade control de inicialización)
-3. **Sobreescribe** todos los métodos públicos no estáticos, no finales
+3. **Sobreescribe** todos los métodos públicos no estáticos, no finales (incluyendo métodos heredados de clases padre o abstractas del usuario)
 4. **Invoca** `__initialize()` al inicio de cada método sobreescrito
 
 ```php

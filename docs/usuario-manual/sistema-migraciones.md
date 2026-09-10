@@ -219,7 +219,13 @@ try {
 - **Tablas nuevas**: entidades sin tabla correspondiente → `CREATE TABLE`
 - **Columnas nuevas**: propiedades mapeadas sin columna en la tabla → `ALTER TABLE ADD`
 - **Columnas eliminadas**: columnas en la tabla sin propiedad mapeada → `ALTER TABLE DROP`
-- **Claves foráneas**: relaciones `ManyToOne` y `OneToOne` con `JoinColumn` → `CONSTRAINT FOREIGN KEY`
+## Soporte para Jerarquías de Herencia (TPH)
+
+Cuando se generan migraciones para entidades estructuradas con herencia Single Table (TPH):
+
+- **Deduplicación automática de tablas**: Múltiples clases pertenecientes a la misma jerarquía (ej. `Animal`, `Dog`, `Cat`) comparten la misma tabla física (`animals`). `MigrationManager` rastrea las tablas procesadas y genera exactamente un único `CREATE TABLE`.
+- **Columna discriminadora**: Si la columna declarada en `#[DiscriminatorColumn]` no está explícitamente mapeada como propiedad en la entidad, se genera automáticamente en el DDL como `VARCHAR(32) NOT NULL`.
+- **Columnas de subclases**: Las propiedades declaradas exclusivamente en subclases concretas se agregan a la tabla física como columnas `NULL` (evitando violaciones de restricción para filas de otras subclases).
 
 ---
 

@@ -85,6 +85,49 @@ class Usuario
 
 La estrategia `IDENTITY` recupera el ID generado inmediatamente después del INSERT usando `@@identity` de Sybase ASE.
 
+### Claves Primarias Compuestas y Naturales
+
+El ORM soporta claves primarias compuestas marcando múltiples propiedades con `#[Id]`:
+
+```php
+use SybaseORM\Attribute\{Entity, Id, Column};
+
+#[Entity(table: 'orden_detalles')]
+class OrdenDetalle
+{
+    #[Id]
+    #[Column(type: 'integer')]
+    public int $ordenId;
+
+    #[Id]
+    #[Column(type: 'integer')]
+    public int $productoId;
+
+    #[Column(type: 'integer')]
+    public int $cantidad;
+
+    #[Column(type: 'decimal', precision: 10, scale: 2)]
+    public string $precioUnitario;
+}
+```
+
+Para consultar entidades con claves compuestas:
+```php
+// Búsqueda por array asociativo con los nombres de las propiedades PK
+$detalle = $em->find(OrdenDetalle::class, [
+    'ordenId'    => 1001,
+    'productoId' => 45,
+]);
+
+// A través de repositorios
+$detalle = $em->getRepository(OrdenDetalle::class)->find([
+    'ordenId'    => 1001,
+    'productoId' => 45,
+]);
+```
+
+El `IdentityMap` y el `UnitOfWork` manejan claves compuestas de forma transparente, calculando identificadores canónicos (ej. `ordenId:1001#productoId:45`) y registrándolas inmediatamente tras el `INSERT`.
+
 ## Tipos de Columna Soportados
 
 | Tipo | PHP | Sybase ASE | Notas |
@@ -96,7 +139,9 @@ La estrategia `IDENTITY` recupera el ID generado inmediatamente después del INS
 | `string` | `string` | `VARCHAR(length)` | Cadena de longitud variable |
 | `text` | `string` | `TEXT` | Texto largo |
 | `boolean` | `bool` | `BIT` | Verdadero/falso |
-| `datetime` | `string` | `DATETIME` | Fecha y hora |
+| `datetime` | `DateTime` / `string` | `DATETIME` | Fecha y hora completa |
+| `date` | `DateTime` / `string` | `DATE` | Fecha (año-mes-día) |
+| `time` | `DateTime` / `string` | `TIME` | Hora (hora:minuto:segundo) |
 | `float` | `float` | `FLOAT` | Punto flotante |
 | `real` | `float` | `REAL` | Punto flotante de precisión simple |
 | `decimal` | `string` | `DECIMAL(p,s)` | Decimal exacto con precisión y escala |

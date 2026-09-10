@@ -276,7 +276,27 @@ Cuando el ORM lee filas de una tabla con herencia TPH, el `InheritanceHandler` d
 
 ### Inserción automática del discriminador
 
-Al persistir una entidad, el ORM determina automáticamente el valor discriminador. Busca en el mapa inverso (clase → valor) y lo inserta en la columna discriminadora sin intervención del desarrollador.
+Al persistir una entidad, el ORM determina automáticamente el valor discriminador mediante una caché invertida O(1) (`clase → valor`) y lo inserta en la columna discriminadora sin requerir mapeo manual como propiedad en la entidad.
+
+### Filtrado automático en Repositorios de Subclases
+
+Cuando se trabaja con el repositorio de una subclase concreta en TPH (por ejemplo `$em->getRepository(SmsNotification::class)`):
+- Métodos como `findBy()`, `findOneBy()`, `findAll()` y `count()` inyectan automáticamente en la cláusula `WHERE` la condición del discriminador (ej. `e.type = 'sms'`).
+- Si la subclase posee a su vez clases derivadas en el mapa, se expande como `e.type IN ('sms', '...')`.
+- Consultar a través del repositorio de la clase raíz (`Notification::class`) no restringe por discriminador, permitiendo recuperar la colección polimórfica completa.
+
+### Búsqueda por ID (`find`) y Verificación Polimórfica
+
+Al ejecutar `$em->find(SmsNotification::class, $id)`:
+1. El ORM consulta la fila por clave primaria y resuelve la clase concreta mediante la columna discriminadora.
+2. Si la fila corresponde a un tipo diferente (por ejemplo, una `EmailNotification`), `find()` verifica la coincidencia de tipo (`instanceof`) y devuelve `null` de forma segura.
+
+### Migraciones con Jerarquías TPH
+
+El sistema de migraciones (`MigrationManager`) maneja jerarquías TPH de forma nativa:
+- **Deduplicación de tablas**: Si se inspeccionan `Notification`, `EmailNotification` y `SmsNotification` en la misma ejecución, solo se genera un único `CREATE TABLE notifications`.
+- **Columna discriminadora**: Se crea automáticamente en el DDL (`VARCHAR(32) NOT NULL`) aunque no esté definida como propiedad PHP.
+- **Columnas de subclases**: Se incorporan en la tabla física única como columnas `NULL` (permitiendo que cada fila almacene únicamente sus atributos específicos).
 
 ## Consideraciones
 

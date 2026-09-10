@@ -13,11 +13,14 @@ ORM puro en PHP para **Sybase ASE**, independiente de framework. Soporta mapeo d
 
 - Mapeo de entidades con atributos nativos de PHP 8.1 (sin XML ni YAML)
 - Patrón Data Mapper con Unit of Work e Identity Map
-- Lenguaje de consultas OQL y QueryBuilder fluido
+- Llaves primarias compuestas y naturales (`#[Id]` múltiple, búsqueda por array asociativo)
+- Lenguaje de consultas OQL y QueryBuilder fluido con estado inmutable e inspección (`getLimit()`, `getOffset()`)
 - Relaciones ManyToOne, OneToMany, OneToOne, ManyToMany con lazy/eager loading
-- Herencia de entidades (TPH, TPT, TPC)
-- Caché de dos niveles (memoria + Redis)
-- Sistema de migraciones integrado
+- Herencia de entidades completa (TPH con discriminador automático, resolución polimórfica y filtrado en repositorios, TPT, TPC)
+- Proxies con lazy loading e intercepción de métodos de jerarquías de herencia
+- Caché de dos niveles (memoria + Redis) con recuperación de circuito (circuit-breaker)
+- Sistema de migraciones integrado con deduplicación de tablas compartidas en TPH y columnas de subtipos
+- Preprocesamiento seguro de parámetros SQL con soporte completo de comillas dobles y secuencias de escape
 - Soft delete declarativo
 - Hooks de ciclo de vida (PrePersist, PostPersist, PreUpdate, etc.)
 - Value Objects embebibles
@@ -53,7 +56,7 @@ ORM puro en PHP para **Sybase ASE**, independiente de framework. Soporta mapeo d
 - **Criteria API** (Patrón Specification) para consultas orientadas a objetos
 - **Reverse Engineering (Scaffolding)**: Generación automática de entidades desde BD
 - Validación pre-persist (length, NOT NULL, precision)
-- `#[UniqueEntity]` — validación de unicidad antes de INSERT
+- `#[UniqueEntity]` — validación de unicidad antes de INSERT (incluyendo llaves compuestas)
 - `#[Index]`, `#[Check]`, `#[UniqueConstraint]` — DDL constraints
 - `#[Column(default: value)]` — valores por defecto
 - `#[JoinColumn(onDelete: 'CASCADE')]` — FK referential actions

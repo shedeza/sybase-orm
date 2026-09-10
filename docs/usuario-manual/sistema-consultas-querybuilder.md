@@ -161,7 +161,7 @@ $usuarios = $qb->where('e.active = :a')
 
 ### getSingleResult()
 
-Ejecuta la consulta con limit 1 y devuelve el primer resultado o `null`.
+Ejecuta la consulta con limit 1 y devuelve el primer resultado o `null`. Restaura de forma segura el límite previo del `QueryBuilder` (sin mutar su estado para ejecuciones posteriores).
 
 ```php
 $usuario = $qb->where('e.email = :email')
@@ -171,7 +171,7 @@ $usuario = $qb->where('e.email = :email')
 
 ### getOneOrNullResult()
 
-Como `getSingleResult()`, pero lanza `OverflowException` si hay más de un resultado.
+Como `getSingleResult()`, pero lanza `OverflowException` si hay más de un resultado. También preserva el estado de límite del builder.
 
 ```php
 $usuario = $qb->where('e.token = :token')
@@ -246,6 +246,15 @@ Aliases de `limit()` y `offset()` para compatibilidad Doctrine.
 
 ```php
 $qb->setMaxResults(10)->setFirstResult(20); // equivale a ->limit(10)->offset(20)
+```
+
+### getLimit() y getOffset()
+
+Métodos de inspección que devuelven el límite y desplazamiento actualmente configurados en la instancia, o `null` si no han sido establecidos.
+
+```php
+$limit  = $qb->getLimit();  // ?int
+$offset = $qb->getOffset(); // ?int
 ```
 
 ## Ejemplos de Consultas Complejas
