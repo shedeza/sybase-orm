@@ -45,7 +45,7 @@ final class EntityManagerTest extends TestCase
                 tableName: 'test_table',
                 lifecycleHooks: [
                     'PrePersist' => ['prePersistMethod'],
-                    'PreRemove' => ['preRemoveMethod']
+                    'PreRemove' => ['preRemoveMethod'],
                 ]
             )
         );

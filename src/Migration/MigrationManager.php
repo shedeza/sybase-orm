@@ -365,11 +365,11 @@ final class MigrationManager
                 // Check for modifications
                 $dbCol = $existingColumns[$column->columnName];
                 $expectedType = $this->mapColumnType($column);
-                
+
                 // Very basic normalization for comparison
                 $dbTypeNormalized = strtolower(preg_replace('/\s+/', '', $dbCol['type_def']));
                 $expectedTypeNormalized = strtolower(preg_replace('/\s+/', '', $expectedType));
-                
+
                 $typeChanged = $dbTypeNormalized !== $expectedTypeNormalized;
                 $nullabilityChanged = $dbCol['nullable'] !== $column->nullable;
 
@@ -379,7 +379,7 @@ final class MigrationManager
                         $this->dialect->quoteIdentifier($qualifiedName),
                         $expectedDef
                     );
-                    
+
                     $downNullable = $dbCol['nullable'] ? 'NULL' : 'NOT NULL';
                     $downStatements[] = sprintf(
                         'ALTER TABLE %s MODIFY %s %s %s',
@@ -443,7 +443,7 @@ final class MigrationManager
         $columns = [];
         while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             $typeDef = strtoupper($row['type_name']);
-            
+
             // Append length or precision/scale for types that need it
             if (in_array($typeDef, ['VARCHAR', 'CHAR', 'NVARCHAR', 'NCHAR', 'VARBINARY', 'BINARY'])) {
                 $typeDef .= '(' . $row['length'] . ')';

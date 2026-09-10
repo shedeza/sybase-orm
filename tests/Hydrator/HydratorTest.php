@@ -43,22 +43,22 @@ final class HydratorTest extends TestCase
             columnName: 'name',
             type: 'string'
         );
-        
+
         $meta = new ClassMetadata(
             entityClass: DummyHydratorEntity::class,
             tableName: 'users',
             columns: [$column]
         );
-        
+
         $this->metadataReader->method('getClassMetadata')->willReturn($meta);
-        
+
         // Pass the raw row through typecaster
         $this->typeCaster->method('toPhpValue')->willReturnArgument(0);
-        
+
         $row = ['name' => 'John Doe'];
-        
+
         $result = $this->hydrator->hydrateAll([$row], DummyHydratorEntity::class);
-        
+
         $this->assertCount(1, $result);
         $this->assertInstanceOf(DummyHydratorEntity::class, $result[0]);
         $this->assertSame('John Doe', $result[0]->name);

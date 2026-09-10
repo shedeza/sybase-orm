@@ -34,7 +34,7 @@ final class ConnectionManagerTest extends TestCase
 
         $this->assertIsArray($result);
         $this->assertCount(2, $result);
-        
+
         [$newSql, $newParams] = $result;
 
         $this->assertSame('SELECT * FROM users WHERE id IN (?, ?, ?) AND status = ?', $newSql);
@@ -73,9 +73,9 @@ final class ConnectionManagerTest extends TestCase
         $reflection->setAccessible(true);
 
         $binaryString = "bin\0ary";
-        
+
         $result = $reflection->invoke($this->connectionManager, $binaryString);
-        
+
         $this->assertSame($binaryString, $result);
     }
 }

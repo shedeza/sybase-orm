@@ -30,7 +30,7 @@ final class SybaseDialectTest extends TestCase
     {
         $sql = 'SELECT id, name FROM users ORDER BY id ASC';
         $paged = $this->dialect->applyPagination($sql, 10, 20);
-        
+
         $expected = 'SELECT * FROM (SELECT ROW_NUMBER() OVER (ORDER BY id ASC) AS [__row_number], __inner.* FROM (SELECT id, name FROM users) AS __inner) AS __paged WHERE [__row_number] BETWEEN 21 AND 30';
         $this->assertSame($expected, $paged);
     }
