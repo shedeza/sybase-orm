@@ -120,6 +120,7 @@ final class OrmFactory
             identityMap: $identityMap,
             unitOfWork: $unitOfWork,
             proxyGenerator: $proxyGenerator,
+            connectionManager: $connectionManager,
         );
 
         // 5. Instantiate EntityManager, wire entity directories

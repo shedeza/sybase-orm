@@ -115,6 +115,33 @@ final class EntityManagerTest extends TestCase
 
         $this->entityManager->flush();
     }
+
+    public function testOqlQueryCacheReusesCachedExecutionPlan(): void
+    {
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetchAll')->willReturn([['id' => 1]]);
+
+        $this->connectionManager->expects($this->exactly(2))
+            ->method('executeQuery')
+            ->willReturn($stmt);
+
+        $dummy = new DummyEntityForHooks();
+        $this->hydrator->expects($this->exactly(2))
+            ->method('hydrateAll')
+            ->willReturn([$dummy]);
+
+        $this->entityManager->setEntityClasses([DummyEntityForHooks::class]);
+
+        $oql = 'SELECT e FROM DummyEntityForHooks e WHERE e.id = :id';
+
+        // 1st run: compiles and caches
+        $res1 = $this->entityManager->query($oql, ['id' => 1]);
+        $this->assertSame([$dummy], $res1);
+
+        // 2nd run: bypasses OQL parsing and uses cached translation/AST metadata
+        $res2 = $this->entityManager->query($oql, ['id' => 2]);
+        $this->assertSame([$dummy], $res2);
+    }
 }
 
 class DummyEntityForHooks

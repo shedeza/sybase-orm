@@ -4,34 +4,47 @@ declare(strict_types=1);
 
 namespace SybaseORM\Hydrator;
 
+use DateTime;
+use DateTimeImmutable;
+use DateTimeInterface;
 use ReflectionClass;
+use ReflectionNamedType;
+use ReflectionProperty;
+use SybaseORM\Connection\ConnectionManagerInterface;
 use SybaseORM\Metadata\ClassMetadata;
 use SybaseORM\Metadata\MetadataReaderInterface;
 use SybaseORM\ORM\EntityManagerInterface;
 use SybaseORM\ORM\IdentityMapInterface;
 use SybaseORM\ORM\UnitOfWorkInterface;
+use SybaseORM\Proxy\LazyLoadingProxy;
 use SybaseORM\Proxy\ProxyGenerator;
 use SybaseORM\Type\TypeCasterInterface;
 
 /**
  * Converts database result rows into entity instances using the Reflection API.
  *
- * Integrates with TypeCaster for type conversion and IdentityMap for
- * ensuring object identity within a session.
+ * Employs a pre-computed HydrationPlan to eliminate reflection and metadata lookups
+ * during iteration loops, and performs single-pass charset conversion.
  */
 final class Hydrator implements HydratorInterface
 {
     /** @var array<string, ReflectionClass<object>> Caché de ReflectionClass por nombre de clase */
     private array $reflectionClassCache = [];
 
-    /** @var array<string, array<string, \ReflectionProperty>> Caché de ReflectionProperty por clase y propiedad */
+    /** @var array<string, array<string, ReflectionProperty>> Caché de ReflectionProperty por clase y propiedad */
     private array $reflectionPropertyCache = [];
+
+    /** @var array<string, HydrationPlan> Caché de planes de hidratación por clase de entidad */
+    private array $hydrationPlanCache = [];
 
     /** Maximum cached ReflectionClass instances */
     private const REFLECTION_CLASS_CACHE_MAX = 256;
 
     /** Maximum cached classes in property cache */
     private const REFLECTION_PROPERTY_CACHE_MAX = 256;
+
+    /** Maximum cached hydration plans */
+    private const HYDRATION_PLAN_CACHE_MAX = 256;
 
     /** @var (callable(string $entityClass, string $propertyName, object $owner): array)|null */
     private $collectionLoader = null;
@@ -43,6 +56,7 @@ final class Hydrator implements HydratorInterface
         private readonly ?UnitOfWorkInterface $unitOfWork = null,
         private readonly ?ProxyGenerator $proxyGenerator = null,
         private ?EntityManagerInterface $entityManager = null,
+        private ?ConnectionManagerInterface $connectionManager = null,
     ) {}
 
     /**
@@ -57,19 +71,59 @@ final class Hydrator implements HydratorInterface
         $this->collectionLoader = $loader;
     }
 
+    public function setConnectionManager(ConnectionManagerInterface $connectionManager): void
+    {
+        $this->connectionManager = $connectionManager;
+    }
+
+    public function setEntityManager(EntityManagerInterface $entityManager): void
+    {
+        $this->entityManager = $entityManager;
+        if ($this->connectionManager === null) {
+            $this->connectionManager = $entityManager->getConnection();
+        }
+    }
+
     public function hydrate(array $row, string $entityClass): object
     {
-        $metadata = $this->metadataReader->getClassMetadata($entityClass);
+        $plan = $this->getHydrationPlan($entityClass);
+
+        return $this->hydrateWithPlan($row, $plan, true);
+    }
+
+    public function hydrateAll(array $rows, string $entityClass): array
+    {
+        if (empty($rows)) {
+            return [];
+        }
+
+        $plan = $this->getHydrationPlan($entityClass);
+        $entities = [];
+
+        foreach ($rows as $row) {
+            $entities[] = $this->hydrateWithPlan($row, $plan, true);
+        }
+
+        return $entities;
+    }
+
+    /**
+     * Hydrates a single row using a pre-computed HydrationPlan.
+     */
+    private function hydrateWithPlan(array $row, HydrationPlan $plan, bool $convertCharset): object
+    {
+        if ($convertCharset && $this->connectionManager !== null) {
+            $row = $this->connectionManager->convertResultRow($row);
+        }
 
         $entity = null;
 
         // Check Identity Map first if available
-        if ($this->identityMap !== null) {
-            $existingEntity = $this->resolveFromIdentityMap($row, $metadata);
+        if ($this->identityMap !== null && !empty($plan->idColumns)) {
+            $existingEntity = $this->resolveFromIdentityMapWithPlan($row, $plan);
             if ($existingEntity !== null) {
-                if ($existingEntity instanceof \SybaseORM\Proxy\LazyLoadingProxy && !$existingEntity->__isInitialized()) {
+                if ($existingEntity instanceof LazyLoadingProxy && !$existingEntity->__isInitialized()) {
                     $entity = $existingEntity;
-                    // Prevent recursion or double fetching during hydration
                     $entity->__setInitializer(null);
                 } else {
                     return $existingEntity;
@@ -78,32 +132,31 @@ final class Hydrator implements HydratorInterface
         }
 
         if ($entity === null) {
-            // Create entity instance without calling constructor
-            $reflectionClass = $this->getReflectionClass($entityClass);
-            $entity = $reflectionClass->newInstanceWithoutConstructor();
-        } else {
-            $reflectionClass = $this->getReflectionClass($entityClass);
+            $entity = $plan->reflectionClass->newInstanceWithoutConstructor();
         }
 
-        // Hydrate mapped columns
-        $this->hydrateColumns($entity, $row, $metadata, $reflectionClass);
+        // Hydrate mapped columns using pre-resolved properties in plan
+        $this->hydrateColumnsWithPlan($entity, $row, $plan);
 
-        // Store in Identity Map IMMEDIATELY after columns are hydrated.
-        // This is critical for circular references: recursive calls to hydrate()
-        // (e.g. for eager relationships) will now find this instance in the map
-        // instead of creating new instances or proxies.
-        if ($this->identityMap !== null) {
-            $this->storeInIdentityMap($entity, $metadata, $reflectionClass);
+        // Store in Identity Map IMMEDIATELY after columns are hydrated
+        if ($this->identityMap !== null && !empty($plan->idColumns)) {
+            $this->storeInIdentityMapWithPlan($entity, $plan);
         }
 
         // Hydrate eager-loaded relationships
-        $this->hydrateEagerRelationships($entity, $row, $metadata, $reflectionClass);
+        if (!empty($plan->eagerRelationships)) {
+            $this->hydrateEagerRelationshipsWithPlan($entity, $row, $plan);
+        }
 
         // Hydrate lazy-loaded ManyToOne/OneToOne as Proxies
-        $this->hydrateLazyToOneRelationships($entity, $row, $metadata, $reflectionClass);
+        if (!empty($plan->lazyToOneRelationships)) {
+            $this->hydrateLazyToOneRelationshipsWithPlan($entity, $row, $plan);
+        }
 
         // Wrap to-many relationship arrays in PersistentCollection
-        $this->wrapCollectionRelationships($entity, $metadata, $reflectionClass);
+        if (!empty($plan->collectionRelationships)) {
+            $this->wrapCollectionRelationshipsWithPlan($entity, $plan);
+        }
 
         // Register as clean in UnitOfWork so dirty checking works on subsequent save()
         if ($this->unitOfWork !== null) {
@@ -114,288 +167,144 @@ final class Hydrator implements HydratorInterface
     }
 
     /**
-     * Hydrates lazy to-one relationships (ManyToOne/OneToOne) using Proxy Generator.
+     * Resolves an entity from the identity map using pre-resolved PK metadata in the plan.
      */
-    private function hydrateLazyToOneRelationships(
-        object $entity,
-        array $row,
-        ClassMetadata $metadata,
-        ReflectionClass $reflectionClass,
-    ): void {
-        foreach ($metadata->relationships as $relationship) {
-            if ($relationship->fetch !== 'LAZY') {
-                continue;
-            }
-
-            if ($relationship->type !== 'ManyToOne' && $relationship->type !== 'OneToOne') {
-                continue; // Collection loader procesa los OneToMany
-            }
-
-            // Interceptar el lado inverso del OneToOne (no tiene joinColumns en esta tabla)
-            if ($relationship->type === 'OneToOne' && $relationship->isInverseSide()) {
-                if ($this->entityManager === null) {
-                    continue;
-                }
-                // Al no tener FK local, debemos consultar la BD para saber si existe o debe ser null.
-                $inverseEntity = $this->entityManager->getRepository($relationship->targetEntity)->findOneBy([
-                    $relationship->mappedBy => $entity,
-                ]);
-                $this->setPropertyValue($entity, $relationship->propertyName, $inverseEntity, $reflectionClass);
-                continue;
-            }
-
-            // Construir la "identidad" o IDs de la base de datos a partir del diccionario de JoinColumn
-            $targetIdValues = [];
-            $hasValue = false;
-
-            $targetMeta = $this->metadataReader->getClassMetadata($relationship->targetEntity);
-
-            foreach ($relationship->joinColumns as $columnName => $referencedColumnName) {
-                $rawValue = $row[$columnName] ?? null;
-
-                // Si la DB devuelve NULL para una columna FK, la relación ManyToOne es asume no existente
-                if ($rawValue === null) {
-                    $targetIdValues = []; // Invalidar
-                    $hasValue = false;
-                    break;
-                }
-
-                $targetColumn = $targetMeta->getColumnByName($referencedColumnName);
-                $targetPropertyName = $targetColumn !== null ? $targetColumn->propertyName : $referencedColumnName;
-
-                // Asegurar tipo correcto para que el IdentityMap encuentre la coincidencia (evita nulls por desajuste de tipos)
-                $phpValue = ($targetColumn !== null)
-                    ? $this->typeCaster->toPhpValue($rawValue, $targetColumn->type)
-                    : $rawValue;
-
-                $targetIdValues[$targetPropertyName] = $phpValue;
-                $hasValue = true;
-            }
-
-            if (!$hasValue) {
-                continue; // Todo es null, la relación no existe en BD
-            }
-
-            // Si es PK simple, extraemos el valor, sino dejamos el array asociativo
-            $proxyId = count($targetIdValues) === 1 ? reset($targetIdValues) : $targetIdValues;
-
-            // PRIORIDAD 1: Verificar si ya existe en el IdentityMap (evita Proxies innecesarios y preserva identidad)
-            if ($this->identityMap !== null) {
-                $existing = $this->identityMap->get($relationship->targetEntity, $proxyId);
-                if ($existing !== null) {
-                    $this->setPropertyValue($entity, $relationship->propertyName, $existing, $reflectionClass);
-                    continue;
-                }
-            }
-
-            // PRIORIDAD 2: Crear un Proxy si tenemos las herramientas necesarias
-            if ($this->proxyGenerator === null || $this->entityManager === null) {
-                continue;
-            }
-
-            // Emplear el Factory para crear el proxy.
-            // Closure (Initializer) pedirá al EntityManager que obtenga el objeto real
-            // y copiará todas las propiedades al proxy.
-            $em = $this->entityManager;
-            $metaReader = $this->metadataReader;
-            $hydrator = $this;
-            $identityMap = $this->identityMap;
-            $initializer = function (object $proxy) use ($em, $relationship, $proxyId, $metaReader, $hydrator, $identityMap): void {
-                // Temporarily remove proxy from IdentityMap so find() doesn't return the proxy itself
-                if ($identityMap !== null) {
-                    $identityMap->remove($relationship->targetEntity, $proxyId);
-                }
-
-                // Load the real entity from DB
-                $real = $em->find($relationship->targetEntity, $proxyId);
-
-                // Restore proxy in IdentityMap
-                if ($identityMap !== null) {
-                    $identityMap->put($relationship->targetEntity, $proxyId, $proxy);
-                }
-
-                if ($real === null || $real === $proxy) {
-                    return;
-                }
-
-                // Copy all column values from real entity to proxy
-                $targetMeta = $metaReader->getClassMetadata($relationship->targetEntity);
-                $targetReflection = $hydrator->getReflectionClass($relationship->targetEntity);
-
-                foreach ($targetMeta->columns as $column) {
-                    if (str_contains($column->propertyName, '.')) {
-                        continue; // Skip embedded dot-notation
-                    }
-                    $prop = $targetReflection->getProperty($column->propertyName);
-                    $prop->setValue($proxy, $prop->getValue($real));
-                }
-
-                // Copy embedded objects
-                foreach ($targetMeta->embeddeds as $embedded) {
-                    $prop = $targetReflection->getProperty($embedded->propertyName);
-                    $prop->setValue($proxy, $prop->getValue($real));
-                }
-            };
-
-            // Crear el objeto Proxy real que actúa de señuelo en la propiedad
-            $proxyInstance = $this->proxyGenerator->createProxy(
-                $relationship->targetEntity,
-                $initializer
-            );
-
-            // Pre-poblar los identificadores primarios en el Proxy
-            // IMPORTANTE: Usar la reflexión de la clase base (targetEntity) para asegurar que se
-            // puedan asignar propiedades privadas de la clase padre en el Proxy.
-            $targetReflection = $this->getReflectionClass($relationship->targetEntity);
-            if (is_array($proxyId)) {
-                foreach ($proxyId as $propName => $propValue) {
-                    $this->setPropertyValue($proxyInstance, $propName, $propValue, $targetReflection);
-                }
-            } else {
-                $idCol = $targetMeta->getIdColumn();
-                if ($idCol !== null) {
-                    $this->setPropertyValue($proxyInstance, $idCol->propertyName, $proxyId, $targetReflection);
-                }
-            }
-
-            // Registrar el Proxy en el IdentityMap si no existía (doble chequeo por seguridad)
-            if ($this->identityMap !== null) {
-                $this->identityMap->put($relationship->targetEntity, $proxyId, $proxyInstance);
-            }
-
-            $this->setPropertyValue($entity, $relationship->propertyName, $proxyInstance, $reflectionClass);
-        }
-    }
-
-    public function hydrateAll(array $rows, string $entityClass): array
+    private function resolveFromIdentityMapWithPlan(array $row, HydrationPlan $plan): ?object
     {
-        $entities = [];
-        foreach ($rows as $row) {
-            $entities[] = $this->hydrate($row, $entityClass);
-        }
-
-        return $entities;
-    }
-
-    /**
-     * Checks the Identity Map for an existing entity matching the row's ID.
-     */
-    private function resolveFromIdentityMap(array $row, ClassMetadata $metadata): ?object
-    {
-        $idColumns = $metadata->getIdColumns();
-        if (empty($idColumns)) {
-            return null;
-        }
-
-        if (count($idColumns) === 1) {
-            // Single key: existing fast path
-            $idCol = $idColumns[0];
-            $idValue = $row[$idCol->columnName] ?? null;
+        if (count($plan->idColumns) === 1) {
+            $idCol = $plan->idColumns[0];
+            $idValue = $row[$idCol['columnName']] ?? null;
             if ($idValue === null) {
                 return null;
             }
-            $idValue = $this->typeCaster->toPhpValue($idValue, $idCol->type);
+            $idValue = $this->typeCaster->toPhpValue($idValue, $idCol['type']);
 
-            return $this->identityMap->get($metadata->entityClass, $idValue);
+            return $this->identityMap?->get($plan->metadata->entityClass, $idValue);
         }
 
-        // Composite key: build associative array
         $compositeId = [];
-        foreach ($idColumns as $idCol) {
-            $val = $row[$idCol->columnName] ?? null;
+        foreach ($plan->idColumns as $idCol) {
+            $val = $row[$idCol['columnName']] ?? null;
             if ($val === null) {
                 return null;
             }
-            $compositeId[$idCol->propertyName] = $this->typeCaster->toPhpValue($val, $idCol->type);
+            $compositeId[$idCol['propertyName']] = $this->typeCaster->toPhpValue($val, $idCol['type']);
         }
 
-        return $this->identityMap->get($metadata->entityClass, $compositeId);
+        return $this->identityMap?->get($plan->metadata->entityClass, $compositeId);
     }
 
     /**
-     * Hydrates the entity's mapped columns from the row data.
-     *
-     * @param ReflectionClass<object> $reflectionClass
+     * Stores an entity in the identity map using pre-resolved PK reflection properties in the plan.
      */
-    private function hydrateColumns(
+    private function storeInIdentityMapWithPlan(object $entity, HydrationPlan $plan): void
+    {
+        if (count($plan->idColumns) === 1) {
+            $idCol = $plan->idColumns[0];
+            if ($idCol['property'] !== null) {
+                $idValue = $idCol['property']->getValue($entity);
+                if ($idValue !== null) {
+                    $this->identityMap?->put($plan->metadata->entityClass, $idValue, $entity);
+                }
+            }
+
+            return;
+        }
+
+        $compositeId = [];
+        foreach ($plan->idColumns as $idCol) {
+            if ($idCol['property'] === null) {
+                return;
+            }
+            $val = $idCol['property']->getValue($entity);
+            if ($val === null) {
+                return;
+            }
+            $compositeId[$idCol['propertyName']] = $val;
+        }
+
+        $this->identityMap?->put($plan->metadata->entityClass, $compositeId, $entity);
+    }
+
+    /**
+     * Hydrates the entity's mapped columns from row data using the pre-computed plan.
+     */
+    private function hydrateColumnsWithPlan(
         object $entity,
         array $row,
-        ClassMetadata $metadata,
-        ReflectionClass $reflectionClass,
+        HydrationPlan $plan,
     ): void {
-        // Collect embedded property values grouped by embedded name
-        /** @var array<string, array<string, mixed>> */
         $embeddedValues = [];
 
         foreach ($row as $columnName => $rawValue) {
-            $column = $metadata->getColumnByName($columnName);
-            if ($column === null) {
+            $col = $plan->columnMap[$columnName] ?? null;
+            if ($col === null) {
                 continue;
             }
 
             $phpValue = ($rawValue !== null)
-                ? $this->typeCaster->toPhpValue($rawValue, $column->type)
+                ? $this->typeCaster->toPhpValue($rawValue, $col['type'])
                 : null;
 
-            // Check if this is an embedded property (dot notation: "address.street")
-            if (str_contains($column->propertyName, '.')) {
-                [$embeddedProp, $innerProp] = explode('.', $column->propertyName, 2);
-                $embeddedValues[$embeddedProp][$innerProp] = $phpValue;
-            } else {
-                $this->setPropertyValue($entity, $column->propertyName, $phpValue, $reflectionClass);
-            }
-        }
-
-        // Hydrate embedded objects
-        foreach ($metadata->embeddeds as $embedded) {
-            $values = $embeddedValues[$embedded->propertyName] ?? [];
-            if (empty($values)) {
-                continue;
-            }
-
-            // If all values are null, don't create the embedded object
-            $allNull = true;
-            foreach ($values as $v) {
-                if ($v !== null) {
-                    $allNull = false;
-                    break;
+            if ($col['isDate'] && $phpValue instanceof DateTimeInterface) {
+                if ($col['dateTargetType'] === DateTimeImmutable::class && $phpValue instanceof DateTime) {
+                    $phpValue = DateTimeImmutable::createFromInterface($phpValue);
+                } elseif ($col['dateTargetType'] === DateTime::class && $phpValue instanceof DateTimeImmutable) {
+                    $phpValue = DateTime::createFromInterface($phpValue);
                 }
             }
 
-            if ($allNull) {
-                continue;
+            if ($col['isEmbedded']) {
+                $embeddedValues[$col['embeddedProp']][$col['innerProp']] = $phpValue;
+            } elseif ($col['property'] !== null) {
+                $col['property']->setValue($entity, $phpValue);
             }
+        }
 
-            $embReflection = $this->getReflectionClass($embedded->class);
-            $embObject = $embReflection->newInstanceWithoutConstructor();
+        // Hydrate embedded objects if configured
+        if (!empty($plan->embeddedMap) && !empty($embeddedValues)) {
+            foreach ($plan->embeddedMap as $embPropName => $embMeta) {
+                $values = $embeddedValues[$embPropName] ?? [];
+                if (empty($values)) {
+                    continue;
+                }
 
-            foreach ($values as $innerProp => $value) {
-                $this->setPropertyValue($embObject, $innerProp, $value, $embReflection);
+                $allNull = true;
+                foreach ($values as $v) {
+                    if ($v !== null) {
+                        $allNull = false;
+                        break;
+                    }
+                }
+
+                if ($allNull) {
+                    continue;
+                }
+
+                $embObject = $embMeta['reflection']->newInstanceWithoutConstructor();
+                foreach ($values as $innerProp => $value) {
+                    $prop = $embMeta['innerProperties'][$innerProp] ?? null;
+                    if ($prop !== null) {
+                        $prop->setValue($embObject, $value);
+                    }
+                }
+
+                if ($embMeta['property'] !== null) {
+                    $embMeta['property']->setValue($entity, $embObject);
+                }
             }
-
-            $this->setPropertyValue($entity, $embedded->propertyName, $embObject, $reflectionClass);
         }
     }
 
     /**
      * Hydrates eager-loaded relationships from prefixed columns in the row.
-     *
-     * Eager-loaded relationship data is expected in the row with keys prefixed
-     * by the relationship property name followed by a dot, e.g. "profile.id", "profile.name".
-     *
-     * @param ReflectionClass<object> $reflectionClass
      */
-    private function hydrateEagerRelationships(
+    private function hydrateEagerRelationshipsWithPlan(
         object $entity,
         array $row,
-        ClassMetadata $metadata,
-        ReflectionClass $reflectionClass,
+        HydrationPlan $plan,
     ): void {
-        foreach ($metadata->relationships as $relationship) {
-            if ($relationship->fetch !== 'EAGER') {
-                continue;
-            }
-
+        foreach ($plan->eagerRelationships as $relationship) {
             $prefix = $relationship->propertyName . '.';
             $relatedRow = [];
 
@@ -409,7 +318,6 @@ final class Hydrator implements HydratorInterface
                 continue;
             }
 
-            // Check if all values are null (LEFT JOIN with no match)
             $allNull = true;
             foreach ($relatedRow as $value) {
                 if ($value !== null) {
@@ -422,48 +330,160 @@ final class Hydrator implements HydratorInterface
                 continue;
             }
 
-            // Hydrate the related entity (recursively uses Identity Map)
-            $relatedEntity = $this->hydrate($relatedRow, $relationship->targetEntity);
-            $this->setPropertyValue($entity, $relationship->propertyName, $relatedEntity, $reflectionClass);
+            // Hydrate related entity without re-converting charset (parent row already converted)
+            $relatedPlan = $this->getHydrationPlan($relationship->targetEntity);
+            $relatedEntity = $this->hydrateWithPlan($relatedRow, $relatedPlan, false);
+
+            $this->setPropertyValue($entity, $relationship->propertyName, $relatedEntity, $plan->reflectionClass);
+        }
+    }
+
+    /**
+     * Hydrates lazy to-one relationships (ManyToOne/OneToOne) using Proxy Generator.
+     */
+    private function hydrateLazyToOneRelationshipsWithPlan(
+        object $entity,
+        array $row,
+        HydrationPlan $plan,
+    ): void {
+        foreach ($plan->lazyToOneRelationships as $relationship) {
+            // Interceptar el lado inverso del OneToOne (no tiene joinColumns en esta tabla)
+            if ($relationship->type === 'OneToOne' && $relationship->isInverseSide()) {
+                if ($this->entityManager === null) {
+                    continue;
+                }
+                $inverseEntity = $this->entityManager->getRepository($relationship->targetEntity)->findOneBy([
+                    $relationship->mappedBy => $entity,
+                ]);
+                $this->setPropertyValue($entity, $relationship->propertyName, $inverseEntity, $plan->reflectionClass);
+                continue;
+            }
+
+            // Construir la "identidad" o IDs de la base de datos a partir del diccionario de JoinColumn
+            $targetIdValues = [];
+            $hasValue = false;
+
+            $targetPlan = $this->getHydrationPlan($relationship->targetEntity);
+
+            foreach ($relationship->joinColumns as $columnName => $referencedColumnName) {
+                $rawValue = $row[$columnName] ?? null;
+
+                if ($rawValue === null) {
+                    $targetIdValues = [];
+                    $hasValue = false;
+                    break;
+                }
+
+                $targetColumn = $targetPlan->metadata->getColumnByName($referencedColumnName);
+                $targetPropertyName = $targetColumn !== null ? $targetColumn->propertyName : $referencedColumnName;
+
+                $phpValue = ($targetColumn !== null)
+                    ? $this->typeCaster->toPhpValue($rawValue, $targetColumn->type)
+                    : $rawValue;
+
+                $targetIdValues[$targetPropertyName] = $phpValue;
+                $hasValue = true;
+            }
+
+            if (!$hasValue) {
+                continue;
+            }
+
+            $proxyId = count($targetIdValues) === 1 ? reset($targetIdValues) : $targetIdValues;
+
+            if ($this->identityMap !== null) {
+                $existing = $this->identityMap->get($relationship->targetEntity, $proxyId);
+                if ($existing !== null) {
+                    $this->setPropertyValue($entity, $relationship->propertyName, $existing, $plan->reflectionClass);
+                    continue;
+                }
+            }
+
+            if ($this->proxyGenerator === null || $this->entityManager === null) {
+                continue;
+            }
+
+            $em = $this->entityManager;
+            $metaReader = $this->metadataReader;
+            $hydrator = $this;
+            $identityMap = $this->identityMap;
+            $initializer = function (object $proxy) use ($em, $relationship, $proxyId, $metaReader, $hydrator, $identityMap): void {
+                if ($identityMap !== null) {
+                    $identityMap->remove($relationship->targetEntity, $proxyId);
+                }
+
+                $real = $em->find($relationship->targetEntity, $proxyId);
+
+                if ($identityMap !== null) {
+                    $identityMap->put($relationship->targetEntity, $proxyId, $proxy);
+                }
+
+                if ($real === null || $real === $proxy) {
+                    return;
+                }
+
+                $targetMeta = $metaReader->getClassMetadata($relationship->targetEntity);
+                $targetReflection = $hydrator->getReflectionClass($relationship->targetEntity);
+
+                foreach ($targetMeta->columns as $column) {
+                    if (str_contains($column->propertyName, '.')) {
+                        continue;
+                    }
+                    $prop = $targetReflection->getProperty($column->propertyName);
+                    $prop->setValue($proxy, $prop->getValue($real));
+                }
+
+                foreach ($targetMeta->embeddeds as $embedded) {
+                    $prop = $targetReflection->getProperty($embedded->propertyName);
+                    $prop->setValue($proxy, $prop->getValue($real));
+                }
+            };
+
+            $proxyInstance = $this->proxyGenerator->createProxy(
+                $relationship->targetEntity,
+                $initializer
+            );
+
+            $targetReflection = $this->getReflectionClass($relationship->targetEntity);
+            if (is_array($proxyId)) {
+                foreach ($proxyId as $propName => $propValue) {
+                    $this->setPropertyValue($proxyInstance, $propName, $propValue, $targetReflection);
+                }
+            } else {
+                $idCol = $targetPlan->metadata->getIdColumn();
+                if ($idCol !== null) {
+                    $this->setPropertyValue($proxyInstance, $idCol->propertyName, $proxyId, $targetReflection);
+                }
+            }
+
+            if ($this->identityMap !== null) {
+                $this->identityMap->put($relationship->targetEntity, $proxyId, $proxyInstance);
+            }
+
+            $this->setPropertyValue($entity, $relationship->propertyName, $proxyInstance, $plan->reflectionClass);
         }
     }
 
     /**
      * Wraps to-many relationship properties in PersistentCollection.
-     *
-     * For properties that are currently arrays, wraps them in PersistentCollection::fromArray().
-     * For properties that are null (lazy relationships), sets an empty PersistentCollection
-     * that could be initialized later with a loader.
-     *
-     * @param ReflectionClass<object> $reflectionClass
      */
-    private function wrapCollectionRelationships(
+    private function wrapCollectionRelationshipsWithPlan(
         object $entity,
-        ClassMetadata $metadata,
-        ReflectionClass $reflectionClass,
+        HydrationPlan $plan,
     ): void {
-        foreach ($metadata->relationships as $relationship) {
-            // Only wrap to-many relationships
-            if ($relationship->type !== 'OneToMany' && $relationship->type !== 'ManyToMany') {
-                continue;
-            }
-
-            $property = $this->getReflectionProperty($reflectionClass->getName(), $relationship->propertyName);
+        foreach ($plan->collectionRelationships as $relationship) {
+            $property = $this->getReflectionProperty($plan->reflectionClass->getName(), $relationship->propertyName);
             if ($property === null) {
                 continue;
             }
 
-            // Don't wrap if the property is typed as 'array' — Collection
-            // is not assignable to array-typed properties. Only wrap untyped or
-            // Collection-typed properties.
             $propertyType = $property->getType();
-            if ($propertyType instanceof \ReflectionNamedType && $propertyType->getName() === 'array') {
+            if ($propertyType instanceof ReflectionNamedType && $propertyType->getName() === 'array') {
                 continue;
             }
 
             $currentValue = $property->getValue($entity);
 
-            // If already a Collection, skip
             if ($currentValue instanceof \SybaseORM\Collection\Collection) {
                 continue;
             }
@@ -471,11 +491,10 @@ final class Hydrator implements HydratorInterface
             if (is_array($currentValue) && !empty($currentValue)) {
                 $collection = \SybaseORM\ORM\PersistentCollection::fromArray($currentValue);
             } elseif ($this->collectionLoader !== null) {
-                // Set up lazy loading — the collection will load on first access
                 $loader = $this->collectionLoader;
                 $ownerEntity = $entity;
                 $relPropName = $relationship->propertyName;
-                $ownerClass = $metadata->entityClass;
+                $ownerClass = $plan->metadata->entityClass;
 
                 $collection = new \SybaseORM\ORM\PersistentCollection(
                     function () use ($loader, $ownerClass, $relPropName, $ownerEntity): array {
@@ -483,7 +502,6 @@ final class Hydrator implements HydratorInterface
                     }
                 );
             } else {
-                // No loader available — set empty initialized collection
                 $collection = \SybaseORM\ORM\PersistentCollection::fromArray([]);
             }
 
@@ -492,40 +510,120 @@ final class Hydrator implements HydratorInterface
     }
 
     /**
-     * Stores the hydrated entity in the Identity Map.
+     * Pre-computes or retrieves a cached HydrationPlan for the entity class.
      */
-    private function storeInIdentityMap(
-        object $entity,
-        ClassMetadata $metadata,
-        ReflectionClass $reflectionClass,
-    ): void {
-        $idColumns = $metadata->getIdColumns();
-        if (empty($idColumns)) {
-            return;
+    public function getHydrationPlan(string $entityClass): HydrationPlan
+    {
+        if (isset($this->hydrationPlanCache[$entityClass])) {
+            return $this->hydrationPlanCache[$entityClass];
         }
 
-        if (count($idColumns) === 1) {
-            // Single key: existing fast path
-            $idCol = $idColumns[0];
-            $idValue = $this->getPropertyValue($entity, $idCol->propertyName, $reflectionClass);
-            if ($idValue === null) {
-                return;
+        $metadata = $this->metadataReader->getClassMetadata($entityClass);
+        $reflectionClass = $this->getReflectionClass($entityClass);
+
+        $columnMap = [];
+        foreach ($metadata->columns as $column) {
+            $isEmbedded = str_contains($column->propertyName, '.');
+            $embeddedProp = null;
+            $innerProp = null;
+            $property = null;
+            $isDate = false;
+            $dateTargetType = null;
+
+            if ($isEmbedded) {
+                [$embeddedProp, $innerProp] = explode('.', $column->propertyName, 2);
+            } else {
+                $property = $this->getReflectionProperty($entityClass, $column->propertyName);
+                if ($property !== null) {
+                    $type = $property->getType();
+                    if ($type instanceof ReflectionNamedType) {
+                        $typeName = $type->getName();
+                        if ($typeName === DateTimeImmutable::class || $typeName === DateTime::class || is_subclass_of($typeName, DateTimeInterface::class)) {
+                            $isDate = true;
+                            $dateTargetType = $typeName;
+                        }
+                    }
+                }
             }
-            $this->identityMap->put($metadata->entityClass, $idValue, $entity);
 
-            return;
+            $columnMap[$column->columnName] = [
+                'propertyName' => $column->propertyName,
+                'type' => $column->type,
+                'property' => $property,
+                'isDate' => $isDate,
+                'dateTargetType' => $dateTargetType,
+                'isEmbedded' => $isEmbedded,
+                'embeddedProp' => $embeddedProp,
+                'innerProp' => $innerProp,
+            ];
         }
 
-        // Composite key: build associative array
-        $compositeId = [];
-        foreach ($idColumns as $idCol) {
-            $val = $this->getPropertyValue($entity, $idCol->propertyName, $reflectionClass);
-            if ($val === null) {
-                return;
+        $embeddedMap = [];
+        foreach ($metadata->embeddeds as $embedded) {
+            $embReflection = $this->getReflectionClass($embedded->class);
+            $embProp = $this->getReflectionProperty($entityClass, $embedded->propertyName);
+            $innerProps = [];
+            foreach ($columnMap as $col) {
+                if ($col['isEmbedded'] && $col['embeddedProp'] === $embedded->propertyName && $col['innerProp'] !== null) {
+                    $innerProps[$col['innerProp']] = $this->getReflectionProperty($embedded->class, $col['innerProp']);
+                }
             }
-            $compositeId[$idCol->propertyName] = $val;
+
+            $embeddedMap[$embedded->propertyName] = [
+                'class' => $embedded->class,
+                'reflection' => $embReflection,
+                'property' => $embProp,
+                'innerProperties' => $innerProps,
+            ];
         }
-        $this->identityMap->put($metadata->entityClass, $compositeId, $entity);
+
+        $idColumns = [];
+        foreach ($metadata->getIdColumns() as $idCol) {
+            $idColumns[] = [
+                'columnName' => $idCol->columnName,
+                'propertyName' => $idCol->propertyName,
+                'type' => $idCol->type,
+                'property' => $this->getReflectionProperty($entityClass, $idCol->propertyName),
+            ];
+        }
+
+        $eagerRelationships = [];
+        $lazyToOneRelationships = [];
+        $collectionRelationships = [];
+
+        foreach ($metadata->relationships as $relationship) {
+            if ($relationship->fetch === 'EAGER') {
+                $eagerRelationships[] = $relationship;
+            }
+            if ($relationship->fetch === 'LAZY' && ($relationship->type === 'ManyToOne' || $relationship->type === 'OneToOne')) {
+                $lazyToOneRelationships[] = $relationship;
+            }
+            if ($relationship->type === 'OneToMany' || $relationship->type === 'ManyToMany') {
+                $collectionRelationships[] = $relationship;
+            }
+        }
+
+        $plan = new HydrationPlan(
+            metadata: $metadata,
+            reflectionClass: $reflectionClass,
+            columnMap: $columnMap,
+            embeddedMap: $embeddedMap,
+            idColumns: $idColumns,
+            eagerRelationships: $eagerRelationships,
+            lazyToOneRelationships: $lazyToOneRelationships,
+            collectionRelationships: $collectionRelationships,
+        );
+
+        if (count($this->hydrationPlanCache) >= self::HYDRATION_PLAN_CACHE_MAX) {
+            $oldestKey = array_key_first($this->hydrationPlanCache);
+            if ($oldestKey !== null) {
+                unset($this->hydrationPlanCache[$oldestKey]);
+            }
+        }
+
+        $this->hydrationPlanCache[$entityClass] = $plan;
+
+        return $plan;
     }
 
     /**
@@ -544,15 +642,14 @@ final class Hydrator implements HydratorInterface
             return;
         }
 
-        // Conversión inteligente de tipos de fecha según la declaración de la propiedad
-        if ($value instanceof \DateTimeInterface) {
+        if ($value instanceof DateTimeInterface) {
             $type = $property->getType();
-            if ($type instanceof \ReflectionNamedType) {
+            if ($type instanceof ReflectionNamedType) {
                 $typeName = $type->getName();
-                if ($typeName === \DateTimeImmutable::class && $value instanceof \DateTime) {
-                    $value = \DateTimeImmutable::createFromInterface($value);
-                } elseif ($typeName === \DateTime::class && $value instanceof \DateTimeImmutable) {
-                    $value = \DateTime::createFromInterface($value);
+                if ($typeName === DateTimeImmutable::class && $value instanceof DateTime) {
+                    $value = DateTimeImmutable::createFromInterface($value);
+                } elseif ($typeName === DateTime::class && $value instanceof DateTimeImmutable) {
+                    $value = DateTime::createFromInterface($value);
                 }
             }
         }
@@ -581,10 +678,9 @@ final class Hydrator implements HydratorInterface
     /**
      * Obtiene un ReflectionProperty cacheado para evitar recrearlo en cada hidratación.
      */
-    private function getReflectionProperty(string $className, string $propertyName): ?\ReflectionProperty
+    private function getReflectionProperty(string $className, string $propertyName): ?ReflectionProperty
     {
         if (!isset($this->reflectionPropertyCache[$className][$propertyName])) {
-            // Evict oldest class entry if cache is full
             if (count($this->reflectionPropertyCache) >= self::REFLECTION_PROPERTY_CACHE_MAX && !isset($this->reflectionPropertyCache[$className])) {
                 $oldestKey = array_key_first($this->reflectionPropertyCache);
                 if ($oldestKey !== null) {
@@ -623,10 +719,5 @@ final class Hydrator implements HydratorInterface
         }
 
         return $this->reflectionClassCache[$entityClass];
-    }
-
-    public function setEntityManager(EntityManagerInterface $entityManager): void
-    {
-        $this->entityManager = $entityManager;
     }
 }

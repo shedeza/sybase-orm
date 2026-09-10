@@ -76,9 +76,11 @@ final class EntityManager implements EntityManagerInterface
     ) {
         $this->oqlParser = new OqlParser();
 
-        // Configure lazy-loading for to-many relationships
+        // Configure lazy-loading and charset conversion for Hydrator
         if ($this->hydrator instanceof \SybaseORM\Hydrator\Hydrator) {
             $this->hydrator->setCollectionLoader($this->loadRelatedCollection(...));
+            $this->hydrator->setConnectionManager($this->connectionManager);
+            $this->hydrator->setEntityManager($this);
         }
     }
 
@@ -199,8 +201,6 @@ final class EntityManager implements EntityManagerInterface
             $stmt = $this->connectionManager->executeQuery($sql, $dbParams);
             $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
             $stmt->closeCursor();
-
-            $rows = array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
 
             return $this->hydrator->hydrateAll($rows, $targetEntity);
         }
@@ -380,8 +380,7 @@ final class EntityManager implements EntityManagerInterface
             return null;
         }
 
-        // Apply charset conversion (ISO-8859-1 → UTF-8)
-        $row = $this->connectionManager->convertResultRow($row);
+        // Hydrate and register (charset conversion handled inside Hydrator)
 
         // 4. Hydrate and register
         $entity = $this->hydrator->hydrate($row, $entityClass);
@@ -417,14 +416,22 @@ final class EntityManager implements EntityManagerInterface
             $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
             $stmt->closeCursor();
 
-            $rows = array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
-
             if ($mode === 'scalar') {
-                return array_map(fn(array $row) => reset($row) !== false ? reset($row) : null, $rows);
+                $scalars = [];
+                foreach ($rows as $row) {
+                    $val = reset($row);
+                    if ($val !== false && $val !== null) {
+                        $scalars[] = is_string($val) ? $this->connectionManager->convertResultRow(['v' => $val])['v'] : $val;
+                    } else {
+                        $scalars[] = null;
+                    }
+                }
+
+                return $scalars;
             }
 
-            if ($mode === 'array') {
-                return $rows;
+            if ($mode === 'array' || $entityClass === null) {
+                return array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
             }
 
             return $this->hydrator->hydrateAll($rows, $entityClass);
@@ -438,7 +445,6 @@ final class EntityManager implements EntityManagerInterface
         $prepared = $this->prepareQueryExecution($oql, $params);
         $sql = $prepared['sql'];
         $orderedParams = $prepared['params'];
-        $ast = $prepared['ast'];
 
         if ($limit !== null) {
             $sql = $this->dialect->applyPagination($sql, $limit, $offset);
@@ -448,25 +454,22 @@ final class EntityManager implements EntityManagerInterface
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         $stmt->closeCursor();
 
-        // Apply charset conversion (ISO-8859-1 → UTF-8) to result rows
-        $rows = array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
-
         // Auto-detect hydration mode: if AST contains FunctionCall, aliases, or multi-entity selects, default to HYDRATE_ARRAY
         $effectiveMode = $hydrationMode;
-        if ($hydrationMode === HydrationMode::HYDRATE_OBJECT && $this->shouldAutoDetectArrayMode($ast)) {
+        if ($hydrationMode === HydrationMode::HYDRATE_OBJECT && $prepared['auto_array_mode']) {
             $effectiveMode = HydrationMode::HYDRATE_ARRAY;
         }
 
-        // HYDRATE_ARRAY: return raw rows without hydration
+        // HYDRATE_ARRAY: return raw rows with charset conversion
         if ($effectiveMode === HydrationMode::HYDRATE_ARRAY) {
-            return $rows;
+            return array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
         }
 
-        // Determine entity class from the FROM clause
-        $entityClass = $this->resolveEntityFromAst($ast);
+        // Determine entity class from cached preparation metadata
+        $entityClass = $prepared['entity_class'];
 
         if ($entityClass === null) {
-            return $rows;
+            return array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
         }
 
         return $this->hydrator->hydrateAll($rows, $entityClass);
@@ -517,7 +520,6 @@ final class EntityManager implements EntityManagerInterface
         $prepared = $this->prepareQueryExecution($oql, $params);
         $sql = $prepared['sql'];
         $orderedParams = $prepared['params'];
-        $ast = $prepared['ast'];
 
         // Limit to 1 result
         $sql = $this->dialect->applyPagination($sql, 1);
@@ -530,23 +532,20 @@ final class EntityManager implements EntityManagerInterface
             return null;
         }
 
-        // Apply charset conversion (ISO-8859-1 → UTF-8)
-        $row = $this->connectionManager->convertResultRow($row);
-
         // Auto-detect hydration mode
         $effectiveMode = $hydrationMode;
-        if ($hydrationMode === HydrationMode::HYDRATE_OBJECT && $this->shouldAutoDetectArrayMode($ast)) {
+        if ($hydrationMode === HydrationMode::HYDRATE_OBJECT && $prepared['auto_array_mode']) {
             $effectiveMode = HydrationMode::HYDRATE_ARRAY;
         }
 
         if ($effectiveMode === HydrationMode::HYDRATE_ARRAY) {
-            return $row;
+            return $this->connectionManager->convertResultRow($row);
         }
 
-        $entityClass = $this->resolveEntityFromAst($ast);
+        $entityClass = $prepared['entity_class'];
 
         if ($entityClass === null) {
-            return $row;
+            return $this->connectionManager->convertResultRow($row);
         }
 
         return $this->hydrator->hydrate($row, $entityClass);
@@ -569,10 +568,12 @@ final class EntityManager implements EntityManagerInterface
             return null;
         }
 
-        // Apply charset conversion (ISO-8859-1 → UTF-8)
-        $row = $this->connectionManager->convertResultRow($row);
+        $val = reset($row);
+        if ($val === false || $val === null) {
+            return null;
+        }
 
-        return reset($row) !== false ? reset($row) : null;
+        return is_string($val) ? $this->connectionManager->convertResultRow(['v' => $val])['v'] : $val;
     }
 
     public function queryScalarAll(string $oql, array $params = [], ?int $limit = null, ?int $offset = null): array
@@ -589,9 +590,17 @@ final class EntityManager implements EntityManagerInterface
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         $stmt->closeCursor();
 
-        $rows = array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
+        $scalars = [];
+        foreach ($rows as $row) {
+            $val = reset($row);
+            if ($val !== false && $val !== null) {
+                $scalars[] = is_string($val) ? $this->connectionManager->convertResultRow(['v' => $val])['v'] : $val;
+            } else {
+                $scalars[] = null;
+            }
+        }
 
-        return array_map(fn(array $row) => reset($row) !== false ? reset($row) : null, $rows);
+        return $scalars;
     }
 
     public function queryOneOrFail(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): mixed
@@ -611,19 +620,41 @@ final class EntityManager implements EntityManagerInterface
     {
         $this->ensureEntitiesDiscovered();
 
-        $ast = $this->oqlParser->parse($oql);
+        if (isset($this->queryCache[$oql])) {
+            $cached = $this->queryCache[$oql];
+        } else {
+            $ast = $this->oqlParser->parse($oql);
 
-        if ($ast instanceof \SybaseORM\Query\AST\SelectStatement) {
-            throw new OqlParseException('executeUpdate() does not support SELECT statements. Use query() instead.');
+            if ($ast instanceof \SybaseORM\Query\AST\SelectStatement) {
+                throw new OqlParseException('executeUpdate() does not support SELECT statements. Use query() instead.');
+            }
+
+            if ($this->oqlTranslator === null) {
+                $this->ensureOqlTranslator();
+            }
+
+            $result = $this->oqlTranslator->translate($ast);
+
+            $cached = [
+                'sql' => $result['sql'],
+                'parameters' => $result['parameters'],
+                'ast' => $ast,
+                'auto_array_mode' => false,
+                'entity_class' => null,
+            ];
+
+            // LRU eviction
+            if (count($this->queryCache) >= self::QUERY_CACHE_MAX_SIZE) {
+                $oldestKey = array_key_first($this->queryCache);
+                if ($oldestKey !== null) {
+                    unset($this->queryCache[$oldestKey]);
+                }
+            }
+
+            $this->queryCache[$oql] = $cached;
         }
 
-        if ($this->oqlTranslator === null) {
-            $this->ensureOqlTranslator();
-        }
-
-        $result = $this->oqlTranslator->translate($ast);
-
-        [$sql, $orderedParams] = $this->expandNamedParameters($result['sql'], $result['parameters'], $params);
+        [$sql, $orderedParams] = $this->expandNamedParameters($cached['sql'], $cached['parameters'], $params);
 
         $this->logger?->debug('OQL→SQL', ['oql' => $oql, 'sql' => $sql, 'param_count' => count($orderedParams)]);
 
@@ -635,28 +666,24 @@ final class EntityManager implements EntityManagerInterface
         $prepared = $this->prepareQueryExecution($oql, $params);
         $sql = $prepared['sql'];
         $orderedParams = $prepared['params'];
-        $ast = $prepared['ast'];
 
         $stmt = $this->connectionManager->executeQuery($sql, $orderedParams);
 
         // Auto-detect hydration mode
         $effectiveMode = $hydrationMode;
-        if ($hydrationMode === HydrationMode::HYDRATE_OBJECT && $this->shouldAutoDetectArrayMode($ast)) {
+        if ($hydrationMode === HydrationMode::HYDRATE_OBJECT && $prepared['auto_array_mode']) {
             $effectiveMode = HydrationMode::HYDRATE_ARRAY;
         }
 
-        // Determine entity class from the FROM clause
+        // Determine entity class from cached preparation metadata
         $entityClass = ($effectiveMode === HydrationMode::HYDRATE_OBJECT)
-            ? $this->resolveEntityFromAst($ast)
+            ? $prepared['entity_class']
             : null;
 
         try {
             while (($row = $stmt->fetch(\PDO::FETCH_ASSOC)) !== false) {
-                // Apply charset conversion (ISO-8859-1 → UTF-8)
-                $row = $this->connectionManager->convertResultRow($row);
-
                 if ($effectiveMode === HydrationMode::HYDRATE_ARRAY || $entityClass === null) {
-                    yield $row;
+                    yield $this->connectionManager->convertResultRow($row);
                 } else {
                     yield $this->hydrator->hydrate($row, $entityClass);
                 }
@@ -668,24 +695,33 @@ final class EntityManager implements EntityManagerInterface
 
     /**
      * Prepares OQL for execution: parses, translates, and maps parameters.
+     * Caches the translated SQL, AST, parameter mapping, mode, and target entity class.
      *
-     * @return array{sql: string, params: list<mixed>, ast: object}
+     * @return array{sql: string, params: list<mixed>, ast: ?object, auto_array_mode: bool, entity_class: ?string}
      */
     private function prepareQueryExecution(string $oql, array $params): array
     {
         $this->ensureEntitiesDiscovered();
 
-        $ast = $this->oqlParser->parse($oql);
-
-        if ($this->oqlTranslator === null) {
-            $this->ensureOqlTranslator();
-        }
-
-        // Use cached translation if available (caches SQL template + parameter names)
+        // Use cached translation if available (caches SQL template + parameter names + mode + entityClass)
         if (isset($this->queryCache[$oql])) {
-            $result = $this->queryCache[$oql];
+            $cached = $this->queryCache[$oql];
         } else {
+            $ast = $this->oqlParser->parse($oql);
+
+            if ($this->oqlTranslator === null) {
+                $this->ensureOqlTranslator();
+            }
+
             $result = $this->oqlTranslator->translate($ast);
+
+            $cached = [
+                'sql' => $result['sql'],
+                'parameters' => $result['parameters'],
+                'ast' => $ast,
+                'auto_array_mode' => $this->shouldAutoDetectArrayMode($ast),
+                'entity_class' => $this->resolveEntityFromAst($ast),
+            ];
 
             // LRU eviction: remove oldest entry if cache is full
             if (count($this->queryCache) >= self::QUERY_CACHE_MAX_SIZE) {
@@ -695,14 +731,20 @@ final class EntityManager implements EntityManagerInterface
                 }
             }
 
-            $this->queryCache[$oql] = $result;
+            $this->queryCache[$oql] = $cached;
         }
 
-        [$sql, $orderedParams] = $this->expandNamedParameters($result['sql'], $result['parameters'], $params);
+        [$sql, $orderedParams] = $this->expandNamedParameters($cached['sql'], $cached['parameters'], $params);
 
         $this->logger?->debug('OQL→SQL', ['oql' => $oql, 'sql' => $sql, 'param_count' => count($orderedParams)]);
 
-        return ['sql' => $sql, 'params' => $orderedParams, 'ast' => $ast];
+        return [
+            'sql' => $sql,
+            'params' => $orderedParams,
+            'ast' => $cached['ast'] ?? null,
+            'auto_array_mode' => $cached['auto_array_mode'] ?? false,
+            'entity_class' => $cached['entity_class'] ?? null,
+        ];
     }
 
     /**
@@ -1081,7 +1123,7 @@ final class EntityManager implements EntityManagerInterface
             return null;
         }
 
-        $row = $this->connectionManager->convertResultRow($row);
+        // Hydrate and register (charset conversion handled inside Hydrator)
         $entity = $this->hydrator->hydrate($row, $entityClass);
         $this->unitOfWork->registerClean($entity);
 
