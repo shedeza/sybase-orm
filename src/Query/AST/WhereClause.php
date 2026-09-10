@@ -10,6 +10,6 @@ namespace SybaseORM\Query\AST;
 final class WhereClause
 {
     public function __construct(
-        public readonly Comparison|LogicalExpression|IsNullExpression|InExpression $condition,
+        public readonly Comparison|LogicalExpression|IsNullExpression|InExpression|BetweenExpression|ExistsExpression $condition,
     ) {}
 }

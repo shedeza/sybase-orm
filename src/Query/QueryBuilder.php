@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SybaseORM\Query;
 
 use SybaseORM\Dialect\DialectInterface;
+use SybaseORM\Metadata\MetadataReaderInterface;
 
 /**
  * Fluent query builder that generates parameterized SQL via a DialectInterface.
@@ -53,9 +54,23 @@ final class QueryBuilder implements QueryBuilderInterface
     /** @var string|null Entity class for hydration context */
     private ?string $entityClass = null;
 
+    /** @var MetadataReaderInterface|null Optional — required only for fromEntity() */
+    private ?MetadataReaderInterface $metadataReader = null;
+
     public function __construct(
         private readonly DialectInterface $dialect,
     ) {}
+
+    /**
+     * Injects the MetadataReader so that fromEntity() can resolve table names.
+     * EntityManager sets this automatically on QueryBuilders it creates.
+     */
+    public function setMetadataReader(MetadataReaderInterface $metadataReader): static
+    {
+        $this->metadataReader = $metadataReader;
+
+        return $this;
+    }
 
     public function reset(): static
     {
@@ -100,6 +115,39 @@ final class QueryBuilder implements QueryBuilderInterface
         $this->fromAlias = $alias;
 
         return $this;
+    }
+
+    /**
+     * MISS-06: Convenience method that sets the FROM clause from an entity FQCN.
+     *
+     * Resolves the entity to its qualified database table name via the MetadataReader,
+     * stores the entity class for hydration context, and sets a default alias of 'e'.
+     *
+     * Requires a MetadataReader to be injected first. When using EntityManager::createQueryBuilder(),
+     * this is done automatically. If using QueryBuilder standalone, call setMetadataReader() first.
+     *
+     * Example:
+     *   $qb->fromEntity(Producto::class)          // SELECT * FROM mydb..producto e
+     *   $qb->fromEntity(Producto::class, 'p')     // SELECT * FROM mydb..producto p
+     *
+     * @param class-string $entityClass Fully qualified entity class name
+     * @param string       $alias       Table alias (default: 'e')
+     * @throws \LogicException If no MetadataReader has been injected
+     */
+    public function fromEntity(string $entityClass, string $alias = 'e'): static
+    {
+        if ($this->metadataReader === null) {
+            throw new \LogicException(
+                'Cannot use fromEntity() without a MetadataReader. '
+                . 'Either use EntityManager::createQueryBuilder() which sets it automatically, '
+                . 'or call setMetadataReader() before fromEntity().',
+            );
+        }
+
+        $metadata = $this->metadataReader->getClassMetadata($entityClass);
+        $this->entityClass = $entityClass;
+
+        return $this->from($metadata->getQualifiedTableName(), $alias);
     }
 
     public function where(string $condition, array $params = []): static

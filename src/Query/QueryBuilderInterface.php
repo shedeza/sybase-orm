@@ -18,6 +18,22 @@ interface QueryBuilderInterface
     /** Defines the source table or entity for the query. */
     public function from(string $from, ?string $alias = null): static;
 
+    /**
+     * Resolves an entity FQCN to its qualified table name and sets the FROM clause.
+     * Requires a MetadataReader to be injected (done automatically by EntityManager::createQueryBuilder()).
+     *
+     * @param class-string $entityClass Fully qualified entity class name
+     * @param string       $alias       Table alias (default: 'e')
+     * @throws \LogicException If no MetadataReader has been set
+     */
+    public function fromEntity(string $entityClass, string $alias = 'e'): static;
+
+    /**
+     * Injects the MetadataReader needed for fromEntity() resolution.
+     * EntityManager sets this automatically; only needed for standalone usage.
+     */
+    public function setMetadataReader(\SybaseORM\Metadata\MetadataReaderInterface $metadataReader): static;
+
     /** Sets a WHERE condition with automatic parameterization. Replaces any previous WHERE conditions. Use andWhere()/orWhere() to append. */
     public function where(string $condition, array $params = []): static;
 

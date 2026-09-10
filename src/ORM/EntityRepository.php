@@ -131,7 +131,7 @@ class EntityRepository
     {
         [$conditions, $params] = $this->buildCriteriaConditions($criteria, 'p');
 
-        $oql = sprintf('SELECT e FROM %s e', $this->entityShortName);
+        $oql = sprintf('SELECT e FROM %s e', $this->entityClass);
 
         if (!empty($conditions)) {
             $oql .= ' WHERE ' . implode(' AND ', $conditions);
@@ -155,7 +155,7 @@ class EntityRepository
     {
         [$conditions, $params] = $this->buildCriteriaConditions($criteria, 'p');
 
-        $oql = sprintf('SELECT e FROM %s e', $this->entityShortName);
+        $oql = sprintf('SELECT e FROM %s e', $this->entityClass);
 
         if (!empty($conditions)) {
             $oql .= ' WHERE ' . implode(' AND ', $conditions);
@@ -216,7 +216,7 @@ class EntityRepository
     {
         [$conditions, $params] = $this->buildCriteriaConditions($criteria, 'c');
 
-        $oql = sprintf('SELECT COUNT(*) FROM %s e', $this->entityShortName);
+        $oql = sprintf('SELECT COUNT(*) FROM %s e', $this->entityClass);
 
         if (!empty($conditions)) {
             $oql .= ' WHERE ' . implode(' AND ', $conditions);
@@ -238,7 +238,7 @@ class EntityRepository
     {
         [$conditions, $params] = $this->buildCriteriaConditions($criteria, 'e');
 
-        $oql = sprintf('SELECT COUNT(*) FROM %s e', $this->entityShortName);
+        $oql = sprintf('SELECT COUNT(*) FROM %s e', $this->entityClass);
 
         if (!empty($conditions)) {
             $oql .= ' WHERE ' . implode(' AND ', $conditions);
@@ -356,8 +356,29 @@ class EntityRepository
         return $metadata->getQualifiedTableName();
     }
 
+    /**
+     * Returns the short (unqualified) class name of the entity.
+     *
+     * @deprecated This method is misleading and will be removed in a future version.
+     *             The ORM now uses fully qualified class names (FQCN) in all internal OQL
+     *             queries to avoid name collisions between entities in different namespaces.
+     *             Use getEntityClass() to get the FQCN, or getTableName() for the DB table.
+     *
+     * @see getEntityClass()
+     * @see getTableName()
+     */
     public function getEntityShortName(): string
     {
+        trigger_error(
+            sprintf(
+                '%s::getEntityShortName() is deprecated. Use getEntityClass() or getTableName() instead. '
+                . 'The ORM now uses FQCN internally; short names can cause ambiguity when two entities '
+                . 'share the same class name in different namespaces.',
+                static::class,
+            ),
+            E_USER_DEPRECATED,
+        );
+
         return $this->entityShortName;
     }
 

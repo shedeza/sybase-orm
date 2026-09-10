@@ -55,7 +55,10 @@ final class OqlParser
     /** @var string The original OQL string being parsed (for error messages) */
     private string $originalOql = '';
 
-    private const COMPARISON_OPERATORS = ['=', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', 'NOT LIKE'];
+    // RISK-04 fix: 'NOT LIKE' was listed here but was unreachable because the tokenizer
+    // splits it into two tokens (NOT, LIKE). It is now handled explicitly in
+    // parseSingleCondition() like NOT BETWEEN and NOT IN, so it is removed from this list.
+    private const COMPARISON_OPERATORS = ['=', '!=', '<>', '<', '>', '<=', '>=', 'LIKE'];
 
     private const AGGREGATE_FUNCTIONS = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'];
 
@@ -154,7 +157,7 @@ final class OqlParser
             // Multi-char operators
             if ($i + 1 < $length) {
                 $two = $oql[$i] . $oql[$i + 1];
-                if (in_array($two, ['!=', '<=', '>='], true)) {
+                if (in_array($two, ['!=', '<=', '>=', '<>'], true)) {
                     $this->tokens[] = $two;
                     $i += 2;
                     continue;
@@ -168,10 +171,10 @@ final class OqlParser
                 continue;
             }
 
-            // Dot-separated identifiers and keywords
-            if (ctype_alnum($oql[$i]) || $oql[$i] === '_' || $oql[$i] === '.') {
+            // Dot-separated and namespace-separated identifiers and keywords
+            if (ctype_alnum($oql[$i]) || $oql[$i] === '_' || $oql[$i] === '.' || $oql[$i] === '\\') {
                 $start = $i;
-                while ($i < $length && (ctype_alnum($oql[$i]) || $oql[$i] === '_' || $oql[$i] === '.')) {
+                while ($i < $length && (ctype_alnum($oql[$i]) || $oql[$i] === '_' || $oql[$i] === '.' || $oql[$i] === '\\')) {
                     $i++;
                 }
                 $this->tokens[] = substr($oql, $start, $i - $start);
@@ -652,6 +655,18 @@ final class OqlParser
             $values = $this->parseInValueList();
 
             return new InExpression($left, $values, negated: true);
+        }
+
+        // RISK-04 fix: Check for NOT LIKE before the generic operator block.
+        // The tokenizer produces two separate tokens (NOT, LIKE), so we must handle
+        // this two-token operator explicitly — exactly as NOT BETWEEN and NOT IN are handled.
+        if ($this->isAt('NOT') && $this->peek() !== null && strtoupper($this->peek()) === 'LIKE') {
+            $this->advance(); // consume NOT
+            $this->advance(); // consume LIKE
+
+            $right = $this->parseOperand();
+
+            return new Comparison($left, 'NOT LIKE', $right);
         }
 
         // Task 6.2: Check for IN
