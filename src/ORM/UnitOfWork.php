@@ -28,6 +28,9 @@ final class UnitOfWork implements UnitOfWorkInterface
     /** @var \SplObjectStorage<object, true> */
     private \SplObjectStorage $deletedEntities;
 
+    /** @var \SplObjectStorage<object, true> */
+    private \SplObjectStorage $restoredEntities;
+
     /** @var \SplObjectStorage<object, array<string, mixed>> */
     private \SplObjectStorage $entitySnapshots;
 
@@ -51,6 +54,7 @@ final class UnitOfWork implements UnitOfWorkInterface
     ) {
         $this->newEntities = new \SplObjectStorage();
         $this->deletedEntities = new \SplObjectStorage();
+        $this->restoredEntities = new \SplObjectStorage();
         $this->entitySnapshots = new \SplObjectStorage();
         $this->insertedEntities = new \SplObjectStorage();
     }
@@ -73,6 +77,13 @@ final class UnitOfWork implements UnitOfWorkInterface
     public function registerDeleted(object $entity): void
     {
         $this->deletedEntities->attach($entity);
+        $this->restoredEntities->detach($entity);
+    }
+
+    public function registerRestored(object $entity): void
+    {
+        $this->restoredEntities->attach($entity);
+        $this->deletedEntities->detach($entity);
     }
 
     public function registerClean(object $entity): void
@@ -140,6 +151,9 @@ final class UnitOfWork implements UnitOfWorkInterface
             // 6. Execute DELETEs for removed entities
             $this->executeDeletes();
 
+            // 7. Execute RESTOREs for restored soft-deleted entities
+            $this->executeRestores();
+
             if ($ownTransaction) {
                 $this->connectionManager->commit();
             }
@@ -147,6 +161,7 @@ final class UnitOfWork implements UnitOfWorkInterface
             // Clear tracked changes after successful commit
             $this->newEntities = new \SplObjectStorage();
             $this->deletedEntities = new \SplObjectStorage();
+            $this->restoredEntities = new \SplObjectStorage();
             $this->insertedEntities = new \SplObjectStorage();
         } catch (PersistenceException $e) {
             if ($ownTransaction) {
@@ -171,6 +186,7 @@ final class UnitOfWork implements UnitOfWorkInterface
     {
         $this->newEntities = new \SplObjectStorage();
         $this->deletedEntities = new \SplObjectStorage();
+        $this->restoredEntities = new \SplObjectStorage();
         $this->entitySnapshots = new \SplObjectStorage();
         $this->insertedEntities = new \SplObjectStorage();
         $this->identityMap->clear();
@@ -186,6 +202,7 @@ final class UnitOfWork implements UnitOfWorkInterface
         $this->entitySnapshots->detach($entity);
         $this->newEntities->detach($entity);
         $this->deletedEntities->detach($entity);
+        $this->restoredEntities->detach($entity);
         $this->insertedEntities->detach($entity);
     }
 
@@ -619,9 +636,12 @@ final class UnitOfWork implements UnitOfWorkInterface
 
             if ($metadata->softDeleteColumn !== null) {
                 // Perform Soft Delete: UPDATE table SET deleted_at = GETDATE() WHERE ...
+                // BUG-02 fix: getQualifiedTableName() already returns the fully qualified
+                // name (e.g. mydb..products). Do NOT wrap it with quoteIdentifier(), which
+                // would produce invalid SQL like [mydb..products].
                 $sql = sprintf(
                     'UPDATE %s SET %s = GETDATE() WHERE %s',
-                    $this->dialect->quoteIdentifier($metadata->getQualifiedTableName()),
+                    $metadata->getQualifiedTableName(),
                     $this->dialect->quoteIdentifier($metadata->softDeleteColumn),
                     $whereClause,
                 );
@@ -902,11 +922,18 @@ final class UnitOfWork implements UnitOfWorkInterface
             // Exclude the current entity itself (for updates)
             $idColumns = $metadata->getIdColumns();
             foreach ($idColumns as $idCol) {
-                $idProp = $this->getReflectionProperty($entity::class, $idCol->propertyName);
-                $idValue = $idProp->getValue($entity);
-                if ($idValue !== null) {
+                // RISK-03: Use the original snapshot ID, because the PK might have been changed
+                // in the current entity. If we exclude the new PK, we won't exclude the original row.
+                $originalId = $this->entitySnapshots[$entity][$idCol->propertyName] ?? null;
+
+                if ($originalId === null) {
+                    $idProp = $this->getReflectionProperty($entity::class, $idCol->propertyName);
+                    $originalId = $idProp->getValue($entity);
+                }
+
+                if ($originalId !== null) {
                     $conditions[] = $this->dialect->quoteIdentifier($idCol->columnName) . ' != ?';
-                    $values[] = $this->typeCaster->toDatabaseValue($idValue, $idCol->type);
+                    $values[] = $this->typeCaster->toDatabaseValue($originalId, $idCol->type);
                 }
             }
 
@@ -945,6 +972,32 @@ final class UnitOfWork implements UnitOfWorkInterface
     }
 
     /**
+     * Executes RESTORE statements for entities that were soft-deleted.
+     */
+    private function executeRestores(): void
+    {
+        foreach ($this->restoredEntities as $entity) {
+            $metadata = $this->metadataReader->getClassMetadata($entity::class);
+            if ($metadata->softDeleteColumn === null) {
+                // Cannot restore an entity without soft-delete capabilities
+                continue;
+            }
+
+            [$whereClause, $whereValues] = $this->buildCompositeWhereClause($metadata, $entity);
+
+            $sql = sprintf(
+                'UPDATE %s SET %s = NULL WHERE %s',
+                $metadata->getQualifiedTableName(),
+                $this->dialect->quoteIdentifier($metadata->softDeleteColumn),
+                $whereClause,
+            );
+
+            $this->connectionManager->executeStatement($sql, $whereValues);
+        }
+    }
+
+    /**
+     * Finds related entities for cascading operations.
      * Extracts entities from a relationship value (handles arrays, PersistentCollection, single objects).
      *
      * @return object[]

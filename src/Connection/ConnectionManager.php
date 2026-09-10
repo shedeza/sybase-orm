@@ -141,6 +141,15 @@ class ConnectionManager implements ConnectionManagerInterface
             return $stmt;
         } catch (\PDOException $e) {
             $this->handlePdoException($e);
+        } catch (\Throwable $e) {
+            // BUG-03 fix: catch all Throwable (e.g. InvalidArgumentException from bindParams)
+            // so the method always either returns or throws, satisfying static analysis
+            // and preventing PHP fatal "function did not return a value" errors.
+            throw new PersistenceException(
+                'Query failed: ' . $e->getMessage(),
+                (int) $e->getCode(),
+                $e,
+            );
         }
     }
 
@@ -456,7 +465,11 @@ class ConnectionManager implements ConnectionManagerInterface
     private function normalizeExpandValues(array $value): array
     {
         foreach ($value as $item) {
-            if (is_array($item) || is_object($item)) {
+            if (is_array($item)) {
+                // RISK-02: Prevent nested arrays which PDO cannot bind, throwing early.
+                throw new \InvalidArgumentException('Nested arrays are not supported in query parameters.');
+            }
+            if (is_object($item)) {
                 // Values are non-scalar — use keys as the actual values
                 /** @var list<scalar|null> */
                 return array_values(array_map(
@@ -506,6 +519,11 @@ class ConnectionManager implements ConnectionManagerInterface
      */
     private function convertToDatabase(string $value): string
     {
+        // RISK-01: Skip conversion for binary strings (null bytes) or invalid UTF-8
+        if (str_contains($value, "\0") || !mb_check_encoding($value, 'UTF-8')) {
+            return $value;
+        }
+
         $converted = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $value);
 
         if ($converted === false) {

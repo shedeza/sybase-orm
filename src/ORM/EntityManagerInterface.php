@@ -14,10 +14,13 @@ interface EntityManagerInterface
     /** Registers a new entity for insertion on the next flush. */
     public function persist(object $entity): void;
 
-    /** Marks an entity for deletion on the next flush. */
+    /** Marks an entity for deletion. */
     public function remove(object $entity): void;
 
-    /** Synchronizes all pending changes with the database. */
+    /** Restores a soft-deleted entity. */
+    public function restore(object $entity): void;
+
+    /** Flushes all changes (inserts, updates, deletes, restores) to the database. */
     public function flush(): void;
 
     /** Finds an entity by its primary key identifier. */
@@ -39,9 +42,18 @@ interface EntityManagerInterface
      * Executes an OQL query with second-level cache support.
      * Returns cached results if available, otherwise executes and caches.
      *
-     * @param int $ttl Cache TTL in seconds
+     * @param int      $ttl    Cache TTL in seconds
+     * @param int|null $limit  Maximum number of results (included in cache key)
+     * @param int|null $offset Result offset for pagination (included in cache key)
      */
-    public function queryCached(string $oql, array $params = [], int $ttl = 3600, int $hydrationMode = HydrationMode::HYDRATE_OBJECT): array;
+    public function queryCached(
+        string $oql,
+        array $params = [],
+        int $ttl = 3600,
+        int $hydrationMode = HydrationMode::HYDRATE_OBJECT,
+        ?int $limit = null,
+        ?int $offset = null,
+    ): array;
 
     /** Executes an OQL query and returns a single result or null. */
     public function queryOne(string $oql, array $params = [], int $hydrationMode = HydrationMode::HYDRATE_OBJECT): mixed;

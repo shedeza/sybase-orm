@@ -9,13 +9,16 @@ namespace SybaseORM\ORM;
  */
 interface UnitOfWorkInterface
 {
-    /** Registers an entity as new (pending INSERT). */
+    /** Registers a new entity for insertion. */
     public function registerNew(object $entity): void;
 
-    /** Marks an entity for deletion (pending DELETE). */
+    /** Registers an entity for deletion. */
     public function registerDeleted(object $entity): void;
 
-    /** Takes a snapshot of the entity's current state for dirty checking. */
+    /** Registers an entity for restoration (SoftDelete). */
+    public function registerRestored(object $entity): void;
+
+    /** Registers an entity as clean (unmodified), taking a snapshot of its current state. */
     public function registerClean(object $entity): void;
 
     /** Executes all pending changes within a transaction. */

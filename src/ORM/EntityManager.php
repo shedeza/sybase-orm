@@ -98,7 +98,6 @@ final class EntityManager implements EntityManagerInterface
 
         $targetEntity = $relationship->targetEntity;
         $targetMeta = $this->metadataReader->getClassMetadata($targetEntity);
-        $targetShortName = $this->getReflectionClass($targetEntity)->getShortName();
 
         // 1. Relaciones mapeadas por Inversa (OneToMany, OneToOne)
         if ($relationship->mappedBy !== null) {
@@ -143,9 +142,11 @@ final class EntityManager implements EntityManagerInterface
                 $queryParams[$paramName] = $val;
             }
 
+            // BUG-01 fix: use FQCN ($targetEntity) instead of short name to avoid
+            // name collision when two entities share the same class name in different namespaces.
             $oql = sprintf(
                 'SELECT t FROM %s t WHERE %s',
-                $targetShortName,
+                $targetEntity,
                 implode(' AND ', $whereParts)
             );
 
@@ -211,6 +212,12 @@ final class EntityManager implements EntityManagerInterface
      * Registers known entity classes for OQL resolution.
      * Pre-computes the shortName → FQCN map to avoid Reflection on each query.
      *
+     * When two entity classes share the same short name (e.g. App\Entity\Main\Producto
+     * and App\Entity\Historico\Producto), only the last one wins in the shortName map.
+     * This is logged as a warning. OQL queries generated internally by the ORM always
+     * use the FQCN directly, so repositories are unaffected. However, hand-written OQL
+     * using short names will resolve to the last registered class for that short name.
+     *
      * @param string[] $entityClasses
      */
     public function setEntityClasses(array $entityClasses): void
@@ -219,8 +226,23 @@ final class EntityManager implements EntityManagerInterface
         $this->entityShortNameMap = [];
         $this->oqlTranslator = null;
         $this->entitiesDiscovered = true;
+
         foreach ($entityClasses as $fqcn) {
             $shortName = $this->getReflectionClass($fqcn)->getShortName();
+
+            // BUG-04: Detect short name collision and warn. ORM-internal OQL uses FQCN
+            // directly (BUG-01 fix), so repositories are safe. Hand-written OQL with
+            // short names will resolve to the last registered FQCN for that short name.
+            if (isset($this->entityShortNameMap[$shortName])) {
+                $this->logger?->warning(sprintf(
+                    'SybaseORM: Short name collision detected for "%s": "%s" will be shadowed by "%s". '
+                    . 'Use fully qualified class names (FQCN) in hand-written OQL queries to avoid ambiguity.',
+                    $shortName,
+                    $this->entityShortNameMap[$shortName],
+                    $fqcn,
+                ));
+            }
+
             $this->entityShortNameMap[$shortName] = $fqcn;
         }
     }
@@ -271,6 +293,15 @@ final class EntityManager implements EntityManagerInterface
     {
         $this->hookDispatcher->dispatch($entity, 'PreRemove');
         $this->unitOfWork->registerDeleted($entity);
+    }
+
+    public function restore(object $entity): void
+    {
+        // Add a pre-restore hook dispatch if it was defined, but we can reuse PrePersist
+        // or just let the user know they can use hooks. We will just dispatch PrePersist for now
+        // if they want to hook into restore, but ideally a PreRestore hook would be better.
+        // For now, let's keep it simple.
+        $this->unitOfWork->registerRestored($entity);
     }
 
     public function flush(): void
@@ -367,6 +398,9 @@ final class EntityManager implements EntityManagerInterface
         $qb = new QueryBuilder($this->dialect);
         $qb->from($metadata->getQualifiedTableName(), 'e');
 
+        // MISS-06: Inject MetadataReader so fromEntity() works on QBs created here.
+        $qb->setMetadataReader($this->metadataReader);
+
         // Wire executor so getResult()/getSingleResult()/getScalarResult()/etc. work
         $qb->setExecutor(function (string $sql, array $params, string $mode = 'hydrate') use ($entityClass, $metadata): array|int {
             // Resolve property names (e.propertyName) to column names (e.column_name)
@@ -450,10 +484,18 @@ final class EntityManager implements EntityManagerInterface
      * @param int    $hydrationMode Hydration mode
      * @return array Cached or fresh query results
      */
-    public function queryCached(string $oql, array $params = [], int $ttl = 3600, int $hydrationMode = HydrationMode::HYDRATE_OBJECT): array
-    {
-        // Build a deterministic cache key from OQL + params
-        $cacheKey = md5($oql . '|' . serialize($params) . '|' . $hydrationMode);
+    public function queryCached(
+        string $oql,
+        array $params = [],
+        int $ttl = 3600,
+        int $hydrationMode = HydrationMode::HYDRATE_OBJECT,
+        ?int $limit = null,
+        ?int $offset = null,
+    ): array {
+        // Build a deterministic cache key from OQL + params + pagination
+        // MISS-07 fix: include $limit and $offset in the cache key so different
+        // pages produce different cache entries instead of sharing the same one.
+        $cacheKey = md5($oql . '|' . serialize($params) . '|' . $hydrationMode . '|' . $limit . '|' . $offset);
 
         // Check second-level cache
         $cached = $this->cacheManager->getQueryResult($cacheKey);
@@ -461,8 +503,8 @@ final class EntityManager implements EntityManagerInterface
             return $cached;
         }
 
-        // Execute query normally
-        $result = $this->query($oql, $params, $hydrationMode);
+        // Execute query normally (forwarding pagination to query())
+        $result = $this->query($oql, $params, $hydrationMode, $limit, $offset);
 
         // Store in second-level cache
         $this->cacheManager->putQueryResult($cacheKey, $result, $ttl);
@@ -998,14 +1040,28 @@ final class EntityManager implements EntityManagerInterface
     public function findWithLock(string $entityClass, mixed $id, int $lockMode): ?object
     {
         $metadata = $this->metadataReader->getClassMetadata($entityClass);
-        $idColumn = $metadata->getIdColumn();
+        $idColumns = $metadata->getIdColumns();
 
-        if ($idColumn === null) {
+        if (empty($idColumns)) {
             return null;
         }
 
-        $whereClause = $this->dialect->quoteIdentifier($idColumn->columnName) . ' = ?';
-        $dbValues = [$this->typeCaster->toDatabaseValue($id, $idColumn->type)];
+        // BUG-06 fix: support both simple and composite primary keys.
+        if (is_array($id)) {
+            // Composite key
+            $conditions = [];
+            $dbValues = [];
+            foreach ($idColumns as $idCol) {
+                $conditions[] = $this->dialect->quoteIdentifier($idCol->columnName) . ' = ?';
+                $dbValues[] = $this->typeCaster->toDatabaseValue($id[$idCol->propertyName], $idCol->type);
+            }
+            $whereClause = implode(' AND ', $conditions);
+        } else {
+            // Simple key
+            $idColumn = $idColumns[0];
+            $whereClause = $this->dialect->quoteIdentifier($idColumn->columnName) . ' = ?';
+            $dbValues = [$this->typeCaster->toDatabaseValue($id, $idColumn->type)];
+        }
 
         $sql = $this->dialect->generateSelect(['*'], $metadata->getQualifiedTableName());
         $sql .= ' WHERE ' . $whereClause;
@@ -1078,10 +1134,24 @@ final class EntityManager implements EntityManagerInterface
         }
 
         $reflectionClass = $this->getReflectionClass($entity::class);
-        $idProp = $reflectionClass->getProperty($idColumns[0]->propertyName);
-        $id = $idProp->getValue($entity);
 
-        if ($id !== null) {
+        // BUG-06 fix: support composite primary keys in pessimistic locking.
+        if (count($idColumns) === 1) {
+            $idProp = $reflectionClass->getProperty($idColumns[0]->propertyName);
+            $id = $idProp->getValue($entity);
+            if ($id !== null) {
+                $this->findWithLock($entity::class, $id, $lockMode);
+            }
+        } else {
+            $id = [];
+            foreach ($idColumns as $idCol) {
+                $prop = $reflectionClass->getProperty($idCol->propertyName);
+                $val = $prop->getValue($entity);
+                if ($val === null) {
+                    return; // incomplete composite key — cannot lock
+                }
+                $id[$idCol->propertyName] = $val;
+            }
             $this->findWithLock($entity::class, $id, $lockMode);
         }
     }
@@ -1380,6 +1450,10 @@ final class EntityManager implements EntityManagerInterface
 
     /**
      * Resolves the entity FQCN from the OQL AST's FROM clause.
+     *
+     * The FROM clause may contain either a short name (e.g. "Producto") for
+     * backward-compatible hand-written OQL, or a FQCN (e.g. "App\Entity\Producto")
+     * as now emitted by EntityRepository's internal OQL builders.
      */
     private function resolveEntityFromAst(object $ast): ?string
     {
@@ -1387,16 +1461,18 @@ final class EntityManager implements EntityManagerInterface
             return null;
         }
 
-        $shortName = $ast->from->entityName;
+        // BUG-05: renamed from $shortName to $entityName — it can be a FQCN too.
+        $entityName = $ast->from->entityName;
 
-        // Check pre-computed shortName map (no Reflection needed)
-        if (isset($this->entityShortNameMap[$shortName])) {
-            return $this->entityShortNameMap[$shortName];
+        // If it looks like a FQCN (contains backslash), use directly — no map lookup needed.
+        // This is the primary path now that EntityRepository emits FQCN in OQL.
+        if (str_contains($entityName, '\\')) {
+            return $entityName;
         }
 
-        // If it looks like a FQCN, use directly
-        if (str_contains($shortName, '\\')) {
-            return $shortName;
+        // Fallback: look up short name in pre-computed map (for hand-written OQL).
+        if (isset($this->entityShortNameMap[$entityName])) {
+            return $this->entityShortNameMap[$entityName];
         }
 
         return null;

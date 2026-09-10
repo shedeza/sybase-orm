@@ -345,36 +345,70 @@ final class MigrationManager
         $upStatements = [];
         $downStatements = [];
 
-        // Detect new columns (exist in entity but not in DB)
+        // Detect new and modified columns
         foreach ($metadata->columns as $column) {
-            if (!in_array($column->columnName, $existingColumns, true)) {
+            $expectedDef = $this->buildColumnDefinition($column);
+
+            if (!isset($existingColumns[$column->columnName])) {
+                // New column
                 $upStatements[] = sprintf(
                     'ALTER TABLE %s ADD %s',
                     $this->dialect->quoteIdentifier($qualifiedName),
-                    $this->buildColumnDefinition($column)
+                    $expectedDef
                 );
                 $downStatements[] = sprintf(
                     'ALTER TABLE %s DROP %s',
                     $this->dialect->quoteIdentifier($qualifiedName),
                     $this->dialect->quoteIdentifier($column->columnName)
                 );
+            } else {
+                // Check for modifications
+                $dbCol = $existingColumns[$column->columnName];
+                $expectedType = $this->mapColumnType($column);
+                
+                // Very basic normalization for comparison
+                $dbTypeNormalized = strtolower(preg_replace('/\s+/', '', $dbCol['type_def']));
+                $expectedTypeNormalized = strtolower(preg_replace('/\s+/', '', $expectedType));
+                
+                $typeChanged = $dbTypeNormalized !== $expectedTypeNormalized;
+                $nullabilityChanged = $dbCol['nullable'] !== $column->nullable;
+
+                if ($typeChanged || $nullabilityChanged) {
+                    $upStatements[] = sprintf(
+                        'ALTER TABLE %s MODIFY %s',
+                        $this->dialect->quoteIdentifier($qualifiedName),
+                        $expectedDef
+                    );
+                    
+                    $downNullable = $dbCol['nullable'] ? 'NULL' : 'NOT NULL';
+                    $downStatements[] = sprintf(
+                        'ALTER TABLE %s MODIFY %s %s %s',
+                        $this->dialect->quoteIdentifier($qualifiedName),
+                        $this->dialect->quoteIdentifier($column->columnName),
+                        $dbCol['type_def'],
+                        $downNullable
+                    );
+                }
             }
         }
 
         // Detect removed columns (exist in DB but not in entity)
         $entityColumnNames = array_map(fn($c) => $c->columnName, $metadata->columns);
-        foreach ($existingColumns as $existingCol) {
-            if (!in_array($existingCol, $entityColumnNames, true)) {
+        foreach ($existingColumns as $colName => $dbCol) {
+            if (!in_array($colName, $entityColumnNames, true)) {
                 $upStatements[] = sprintf(
                     'ALTER TABLE %s DROP %s',
                     $this->dialect->quoteIdentifier($qualifiedName),
-                    $this->dialect->quoteIdentifier($existingCol)
+                    $this->dialect->quoteIdentifier($colName)
                 );
-                // Down: we can't fully reconstruct the column definition, so use a comment
+                // Down: reconstruct as much as possible
+                $downNullable = $dbCol['nullable'] ? 'NULL' : 'NOT NULL';
                 $downStatements[] = sprintf(
-                    '-- ALTER TABLE %s ADD %s (column definition unknown, was dropped)',
+                    'ALTER TABLE %s ADD %s %s %s',
                     $this->dialect->quoteIdentifier($qualifiedName),
-                    $this->dialect->quoteIdentifier($existingCol)
+                    $this->dialect->quoteIdentifier($colName),
+                    $dbCol['type_def'],
+                    $downNullable
                 );
             }
         }
@@ -383,20 +417,48 @@ final class MigrationManager
     }
 
     /**
-     * Gets existing column names for a table from the database.
+     * Gets existing column metadata for a table from the database.
      *
-     * @return string[]
+     * @return array<string, array{name: string, type_def: string, nullable: bool}>
      */
     private function getExistingColumns(string $tableName): array
     {
-        $stmt = $this->connection->executeQuery(
-            "SELECT c.name FROM syscolumns c JOIN sysobjects o ON c.id = o.id WHERE o.name = ? AND o.type = 'U'",
-            [$tableName]
-        );
+        // Query syscolumns and systypes to reconstruct the column definition
+        $sql = "
+            SELECT 
+                c.name, 
+                t.name as type_name, 
+                c.length, 
+                c.prec, 
+                c.scale, 
+                c.status
+            FROM syscolumns c 
+            JOIN sysobjects o ON c.id = o.id 
+            JOIN systypes t ON c.usertype = t.usertype
+            WHERE o.name = ? AND o.type = 'U'
+        ";
+
+        $stmt = $this->connection->executeQuery($sql, [$tableName]);
 
         $columns = [];
         while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-            $columns[] = $row['name'];
+            $typeDef = strtoupper($row['type_name']);
+            
+            // Append length or precision/scale for types that need it
+            if (in_array($typeDef, ['VARCHAR', 'CHAR', 'NVARCHAR', 'NCHAR', 'VARBINARY', 'BINARY'])) {
+                $typeDef .= '(' . $row['length'] . ')';
+            } elseif (in_array($typeDef, ['DECIMAL', 'NUMERIC'])) {
+                $typeDef .= '(' . $row['prec'] . ',' . $row['scale'] . ')';
+            }
+
+            // status & 8 means NULL allowed in Sybase ASE
+            $nullable = ($row['status'] & 8) === 8;
+
+            $columns[$row['name']] = [
+                'name' => $row['name'],
+                'type_def' => $typeDef,
+                'nullable' => $nullable,
+            ];
         }
         $stmt->closeCursor();
 

@@ -161,6 +161,13 @@ final class MetadataReader implements MetadataReaderInterface
                 // Read #[Embedded] properties
                 $embeddedMeta = $this->readEmbeddedMetadata($property);
                 if ($embeddedMeta !== null) {
+                    if ($columnMeta !== null) {
+                        throw new \SybaseORM\Exception\SybaseORMException(sprintf(
+                            'Property "%s" in class "%s" cannot be mapped as both #[Column] and #[Embedded]',
+                            $property->getName(),
+                            $property->getDeclaringClass()->getName()
+                        ));
+                    }
                     $embeddeds[] = $embeddedMeta;
                     // Expand embeddable columns into the parent entity's column list
                     foreach ($embeddedMeta->columns as $embCol) {
