@@ -188,7 +188,8 @@ final class ProxyGenerator
             if ($method->isStatic() || $method->isFinal()) {
                 continue;
             }
-            if ($method->getDeclaringClass()->getName() !== $reflection->getName()) {
+            $declaringClass = $method->getDeclaringClass();
+            if ($declaringClass->isInternal() || $declaringClass->getName() === LazyLoadingProxy::class) {
                 continue;
             }
 
