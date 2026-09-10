@@ -510,7 +510,13 @@ class ConnectionManager implements ConnectionManagerInterface
             return $row;
         }
 
-        return array_map(fn($v) => is_string($v) ? $this->convertFromDatabase($v) : $v, $row);
+        foreach ($row as $k => $v) {
+            if (is_string($v)) {
+                $row[$k] = $this->convertFromDatabase($v);
+            }
+        }
+
+        return $row;
     }
 
     /**

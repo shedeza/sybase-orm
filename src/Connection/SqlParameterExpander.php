@@ -55,12 +55,24 @@ final class SqlParameterExpander
             if ($char === "'") {
                 $result .= "'";
                 $i++;
-                while ($i < $length && $sql[$i] !== "'") {
+                while ($i < $length) {
+                    if ($sql[$i] === '\\' && $i + 1 < $length) {
+                        $result .= $sql[$i] . $sql[$i + 1];
+                        $i += 2;
+                        continue;
+                    }
+                    if ($sql[$i] === "'") {
+                        // Check for doubled quote (Sybase escape: '')
+                        if ($i + 1 < $length && $sql[$i + 1] === "'") {
+                            $result .= "''";
+                            $i += 2;
+                            continue;
+                        }
+                        $result .= "'";
+                        break;
+                    }
                     $result .= $sql[$i];
                     $i++;
-                }
-                if ($i < $length) {
-                    $result .= "'";
                 }
                 continue;
             }
