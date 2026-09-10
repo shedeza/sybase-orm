@@ -9,6 +9,7 @@ use SybaseORM\Dialect\DialectInterface;
 use SybaseORM\Exception\PersistenceException;
 use SybaseORM\Hook\HookDispatcher;
 use SybaseORM\Metadata\ClassMetadata;
+use SybaseORM\Metadata\ColumnMetadata;
 use SybaseORM\Metadata\MetadataReaderInterface;
 use SybaseORM\Type\TypeCasterInterface;
 
@@ -42,6 +43,19 @@ final class UnitOfWork implements UnitOfWorkInterface
 
     /** Maximum number of cached classes in reflection property cache */
     private const REFLECTION_CACHE_MAX = 256;
+
+    /**
+     * @var array<class-string, array{
+     *     sql: string,
+     *     extractors: list<array{propertyName: string, type: string}>,
+     *     identityColumnName: string|null,
+     *     idColumn: ?ColumnMetadata
+     * }> Caché de planes de INSERT precompilados por clase
+     */
+    private array $insertPlanCache = [];
+
+    /** Maximum number of cached plans in insert plan cache */
+    private const INSERT_PLAN_CACHE_MAX = 256;
 
     public function __construct(
         private readonly ConnectionManagerInterface $connectionManager,
@@ -448,57 +462,15 @@ final class UnitOfWork implements UnitOfWorkInterface
             $this->validateUniqueEntity($entity);
 
             $metadata = $this->metadataReader->getClassMetadata($entity::class);
-            $idColumn = $metadata->getIdColumn();
+            $plan = $this->getInsertPlan($entity::class, $metadata);
 
-            $columns = [];
-            $placeholders = [];
             $values = [];
-            $valueExpressions = [];
-            $identityColumnName = null;
-
-            foreach ($metadata->columns as $column) {
-                // Determine if this is an identity column to omit
-                if ($column->isId && $column->generatedValue !== null) {
-                    $identityColumnName = $column->columnName;
-                }
-
-                $columns[] = $column->columnName;
-                $placeholders[] = '?';
-
-                // Get SQL-wrapping expression for this column's type
-                $valueExpressions[] = $this->typeCaster->getDatabaseValueSQL('?', $column->type);
-
-                $phpValue = $this->getEntityPropertyValue($entity, $column->propertyName);
-                $values[] = $this->typeCaster->toDatabaseValue($phpValue, $column->type);
+            foreach ($plan['extractors'] as $extractor) {
+                $phpValue = $this->getEntityPropertyValue($entity, $extractor['propertyName']);
+                $values[] = $this->typeCaster->toDatabaseValue($phpValue, $extractor['type']);
             }
 
-            // Normalize value expressions: if expression equals '?', set to null (no wrapping needed)
-            $normalizedExpressions = array_map(
-                fn(string $expr) => $expr === '?' ? null : $expr,
-                $valueExpressions,
-            );
-            $hasWrapping = array_filter($normalizedExpressions, fn($e) => $e !== null);
-
-            // Filter out identity column values from the params array
-            if ($identityColumnName !== null) {
-                $filteredValues = [];
-                foreach ($columns as $i => $col) {
-                    if ($col !== $identityColumnName) {
-                        $filteredValues[] = $values[$i];
-                    }
-                }
-                $values = $filteredValues;
-            }
-
-            $sql = $this->dialect->generateInsert(
-                $metadata->getQualifiedTableName(),
-                $columns,
-                $placeholders,
-                $identityColumnName,
-                !empty($hasWrapping) ? $normalizedExpressions : null,
-            );
-
-            $this->connectionManager->executeStatement($sql, $values);
+            $this->connectionManager->executeStatement($plan['sql'], $values);
 
             // Mark as inserted and remove from newEntities immediately
             $inserted->attach($entity);
@@ -506,15 +478,15 @@ final class UnitOfWork implements UnitOfWorkInterface
             $this->newEntities->detach($entity);
 
             // Retrieve @@identity and set on entity
-            if ($identityColumnName !== null && $idColumn !== null) {
+            if ($plan['identityColumnName'] !== null && $plan['idColumn'] !== null) {
                 $identitySql = $this->dialect->getLastInsertIdSQL();
                 $stmt = $this->connectionManager->executeQuery($identitySql);
                 $row = $stmt->fetch(\PDO::FETCH_NUM);
                 $stmt->closeCursor();
 
                 if ($row !== false && isset($row[0])) {
-                    $generatedId = $this->typeCaster->toPhpValue($row[0], $idColumn->type);
-                    $refProp = $this->getReflectionProperty($entity::class, $idColumn->propertyName);
+                    $generatedId = $this->typeCaster->toPhpValue($row[0], $plan['idColumn']->type);
+                    $refProp = $this->getReflectionProperty($entity::class, $plan['idColumn']->propertyName);
                     $refProp->setValue($entity, $generatedId);
 
                     // Register in identity map
@@ -1054,22 +1026,99 @@ final class UnitOfWork implements UnitOfWorkInterface
     private function getEntityPropertyValue(object $entity, string $propertyName): mixed
     {
         if (!str_contains($propertyName, '.')) {
-            $refProp = $this->getReflectionProperty($entity::class, $propertyName);
+            $refProp = $this->reflectionCache[$entity::class][$propertyName]
+                ?? $this->getReflectionProperty($entity::class, $propertyName);
 
             return $refProp->getValue($entity);
         }
 
         // Dot notation: embedded property
         [$embeddedProp, $innerProp] = explode('.', $propertyName, 2);
-        $refProp = $this->getReflectionProperty($entity::class, $embeddedProp);
+        $refProp = $this->reflectionCache[$entity::class][$embeddedProp]
+            ?? $this->getReflectionProperty($entity::class, $embeddedProp);
         $embeddedObject = $refProp->getValue($entity);
 
         if ($embeddedObject === null) {
             return null;
         }
 
-        $innerRefProp = $this->getReflectionProperty($embeddedObject::class, $innerProp);
+        $innerRefProp = $this->reflectionCache[$embeddedObject::class][$innerProp]
+            ?? $this->getReflectionProperty($embeddedObject::class, $innerProp);
 
         return $innerRefProp->getValue($embeddedObject);
+    }
+
+    /**
+     * Pre-compiles and caches an INSERT plan for an entity class.
+     *
+     * @param class-string $className
+     * @return array{
+     *     sql: string,
+     *     extractors: list<array{propertyName: string, type: string}>,
+     *     identityColumnName: string|null,
+     *     idColumn: ?ColumnMetadata
+     * }
+     */
+    private function getInsertPlan(string $className, ClassMetadata $metadata): array
+    {
+        if (isset($this->insertPlanCache[$className])) {
+            return $this->insertPlanCache[$className];
+        }
+
+        if (count($this->insertPlanCache) >= self::INSERT_PLAN_CACHE_MAX) {
+            $oldestKey = array_key_first($this->insertPlanCache);
+            if ($oldestKey !== null) {
+                unset($this->insertPlanCache[$oldestKey]);
+            }
+        }
+
+        $idColumn = $metadata->getIdColumn();
+        $identityColumnName = null;
+        $columns = [];
+        $placeholders = [];
+        $valueExpressions = [];
+
+        foreach ($metadata->columns as $column) {
+            // Determine if this is an identity column to omit
+            if ($column->isId && $column->generatedValue !== null) {
+                $identityColumnName = $column->columnName;
+            }
+
+            $columns[] = $column->columnName;
+            $placeholders[] = '?';
+            $valueExpressions[] = $this->typeCaster->getDatabaseValueSQL('?', $column->type);
+        }
+
+        // Normalize value expressions: if expression equals '?', set to null (no wrapping needed)
+        $normalizedExpressions = array_map(
+            fn(string $expr) => $expr === '?' ? null : $expr,
+            $valueExpressions,
+        );
+        $hasWrapping = array_filter($normalizedExpressions, fn($e) => $e !== null);
+
+        $sql = $this->dialect->generateInsert(
+            $metadata->getQualifiedTableName(),
+            $columns,
+            $placeholders,
+            $identityColumnName,
+            !empty($hasWrapping) ? $normalizedExpressions : null,
+        );
+
+        $extractors = [];
+        foreach ($metadata->columns as $column) {
+            if ($column->columnName !== $identityColumnName) {
+                $extractors[] = [
+                    'propertyName' => $column->propertyName,
+                    'type' => $column->type,
+                ];
+            }
+        }
+
+        return $this->insertPlanCache[$className] = [
+            'sql' => $sql,
+            'extractors' => $extractors,
+            'identityColumnName' => $identityColumnName,
+            'idColumn' => $idColumn,
+        ];
     }
 }

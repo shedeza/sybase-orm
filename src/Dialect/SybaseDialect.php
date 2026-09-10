@@ -16,6 +16,11 @@ namespace SybaseORM\Dialect;
  */
 final class SybaseDialect implements DialectInterface
 {
+    /** @var array<string, string> Cache for quoted identifiers */
+    private array $quotedIdentifiersCache = [];
+
+    /** Maximum number of cached quoted identifiers */
+    private const QUOTED_CACHE_MAX = 512;
     /**
      * {@inheritdoc}
      *
@@ -155,6 +160,10 @@ final class SybaseDialect implements DialectInterface
      */
     public function quoteIdentifier(string $identifier): string
     {
+        if (isset($this->quotedIdentifiersCache[$identifier])) {
+            return $this->quotedIdentifiersCache[$identifier];
+        }
+
         // Don't double-quote already quoted identifiers
         if (str_starts_with($identifier, '[') && str_ends_with($identifier, ']')) {
             return $identifier;
@@ -164,10 +173,20 @@ final class SybaseDialect implements DialectInterface
         if (str_contains($identifier, '.')) {
             $parts = explode('.', $identifier, 2);
 
-            return $this->quoteSingleIdentifier($parts[0]) . '.' . $this->quoteSingleIdentifier($parts[1]);
+            $quoted = $this->quoteSingleIdentifier($parts[0]) . '.' . $this->quoteSingleIdentifier($parts[1]);
+        } else {
+            $quoted = $this->quoteSingleIdentifier($identifier);
         }
 
-        return $this->quoteSingleIdentifier($identifier);
+        // Bounded LRU eviction
+        if (count($this->quotedIdentifiersCache) >= self::QUOTED_CACHE_MAX) {
+            $oldestKey = array_key_first($this->quotedIdentifiersCache);
+            if ($oldestKey !== null) {
+                unset($this->quotedIdentifiersCache[$oldestKey]);
+            }
+        }
+
+        return $this->quotedIdentifiersCache[$identifier] = $quoted;
     }
 
     /**

@@ -524,6 +524,11 @@ class ConnectionManager implements ConnectionManagerInterface
             return $value;
         }
 
+        // Pure ASCII strings (bytes 0x00 to 0x7F) are identical in UTF-8 and ISO-8859-1
+        if ($value === '' || preg_match('/[\x80-\xff]/', $value) === 0) {
+            return $value;
+        }
+
         $converted = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $value);
 
         if ($converted === false) {
@@ -541,6 +546,12 @@ class ConnectionManager implements ConnectionManagerInterface
      */
     private function convertFromDatabase(string $value): string
     {
+        // Pure ASCII strings (bytes 0x00 to 0x7F) are identical in ISO-8859-1 and UTF-8.
+        // Skipping iconv avoids expensive C library calls for >90% of database fields.
+        if ($value === '' || preg_match('/[\x80-\xff]/', $value) === 0) {
+            return $value;
+        }
+
         $converted = @iconv('ISO-8859-1', 'UTF-8', $value);
 
         if ($converted === false) {

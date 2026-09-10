@@ -54,10 +54,24 @@ final class IdentityMap implements IdentityMapInterface
      */
     public static function deriveKey(mixed $id): string
     {
+        // Fast paths for most common scalar types
+        if (is_int($id)) {
+            return 'i:' . $id;
+        }
+
+        if (is_string($id)) {
+            return 's:' . $id;
+        }
+
         if (is_array($id)) {
             ksort($id);
 
-            return implode('|', array_map(fn($v) => self::typedValue($v), $id));
+            $parts = [];
+            foreach ($id as $v) {
+                $parts[] = self::typedValue($v);
+            }
+
+            return implode('|', $parts);
         }
 
         return self::typedValue($id);
