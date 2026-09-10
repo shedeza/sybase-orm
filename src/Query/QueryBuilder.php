@@ -538,6 +538,22 @@ final class QueryBuilder implements QueryBuilderInterface
         return $this->eagerRelations;
     }
 
+    /**
+     * Returns the current limit value, or null if not set.
+     */
+    public function getLimit(): ?int
+    {
+        return $this->limitValue;
+    }
+
+    /**
+     * Returns the current offset value, or null if not set.
+     */
+    public function getOffset(): ?int
+    {
+        return $this->offsetValue;
+    }
+
     // ── Private SQL-building helpers ────────────────────────────────
 
     private function buildSelectClause(): string
@@ -693,10 +709,16 @@ final class QueryBuilder implements QueryBuilderInterface
      */
     public function getSingleResult(): mixed
     {
+        $prevLimit = $this->limitValue;
         $this->limitValue = 1;
-        $results = $this->getResult();
 
-        return $results[0] ?? null;
+        try {
+            $results = $this->getResult();
+
+            return $results[0] ?? null;
+        } finally {
+            $this->limitValue = $prevLimit;
+        }
     }
 
     /**
@@ -728,10 +750,16 @@ final class QueryBuilder implements QueryBuilderInterface
      */
     public function getSingleScalarResult(): mixed
     {
+        $prevLimit = $this->limitValue;
         $this->limitValue = 1;
-        $results = $this->getScalarResult();
 
-        return $results[0] ?? null;
+        try {
+            $results = $this->getScalarResult();
+
+            return $results[0] ?? null;
+        } finally {
+            $this->limitValue = $prevLimit;
+        }
     }
 
     /**
@@ -765,16 +793,22 @@ final class QueryBuilder implements QueryBuilderInterface
      */
     public function getOneOrNullResult(): mixed
     {
+        $prevLimit = $this->limitValue;
         $this->limitValue = 2;
-        $results = $this->getResult();
 
-        if (count($results) > 1) {
-            throw new \OverflowException(
-                'getOneOrNullResult() expected 0 or 1 results, got more than 1.',
-            );
+        try {
+            $results = $this->getResult();
+
+            if (count($results) > 1) {
+                throw new \OverflowException(
+                    'getOneOrNullResult() expected 0 or 1 results, got more than 1.',
+                );
+            }
+
+            return $results[0] ?? null;
+        } finally {
+            $this->limitValue = $prevLimit;
         }
-
-        return $results[0] ?? null;
     }
 
     /**

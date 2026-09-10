@@ -189,6 +189,12 @@ interface QueryBuilderInterface
     /** Sets the first result offset (alias for offset). */
     public function setFirstResult(int $firstResult): static;
 
+    /** Returns the current limit value, or null if not set. */
+    public function getLimit(): ?int;
+
+    /** Returns the current offset value, or null if not set. */
+    public function getOffset(): ?int;
+
     /**
      * Returns $this for Doctrine API compatibility.
      * Allows: $qb->where(...)->getQuery()->getResult()
