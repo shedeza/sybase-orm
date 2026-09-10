@@ -31,21 +31,37 @@ final class TypeCaster implements TypeCasterInterface
     /** @var array<string, CustomTypeInterface> Instancias cacheadas de tipos personalizados */
     private array $customTypeInstances = [];
 
-    /** @var string[] Built-in type names */
+    /** @var array<string, true> Built-in type map for O(1) lookup */
     private const BUILTIN_TYPES = [
-        'bool', 'boolean',
-        'datetime',
-        'int', 'integer', 'tinyint', 'smallint', 'bigint',
-        'float', 'double', 'decimal', 'real', 'numeric',
-        'string', 'varchar', 'text',
+        'bool' => true,
+        'boolean' => true,
+        'datetime' => true,
+        'date' => true,
+        'time' => true,
+        'int' => true,
+        'integer' => true,
+        'tinyint' => true,
+        'smallint' => true,
+        'bigint' => true,
+        'float' => true,
+        'double' => true,
+        'decimal' => true,
+        'real' => true,
+        'numeric' => true,
+        'string' => true,
+        'varchar' => true,
+        'text' => true,
     ];
+
+    /** @var array<string, bool> In-memory cache for BackedEnum FQCN verification */
+    private static array $backedEnumCache = [];
 
     /**
      * Returns true if the given type name is a built-in type.
      */
     public function isBuiltinType(string $type): bool
     {
-        return in_array($type, self::BUILTIN_TYPES, true);
+        return isset(self::BUILTIN_TYPES[$type]);
     }
 
     /**
@@ -181,7 +197,7 @@ final class TypeCaster implements TypeCasterInterface
 
     private function isBackedEnumClass(string $type): bool
     {
-        return is_a($type, \BackedEnum::class, true);
+        return self::$backedEnumCache[$type] ??= (enum_exists($type) && is_a($type, \BackedEnum::class, true));
     }
 
     private function enumToDatabaseValue(mixed $value, string $type): int|string
@@ -336,6 +352,16 @@ final class TypeCaster implements TypeCasterInterface
 
             // Try standard datetime formats as fallback
             $dt = \DateTime::createFromFormat('Y-m-d H:i:s', $value, $tz);
+            if ($dt !== false) {
+                return $dt;
+            }
+
+            $dt = \DateTime::createFromFormat('Y-m-d', $value, $tz);
+            if ($dt !== false) {
+                return $dt;
+            }
+
+            $dt = \DateTime::createFromFormat('H:i:s', $value, $tz);
             if ($dt !== false) {
                 return $dt;
             }
