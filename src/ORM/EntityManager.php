@@ -430,7 +430,7 @@ final class EntityManager implements EntityManagerInterface
                 return $scalars;
             }
 
-            if ($mode === 'array' || $entityClass === null) {
+            if ($mode === 'array') {
                 return array_map(fn(array $row) => $this->connectionManager->convertResultRow($row), $rows);
             }
 

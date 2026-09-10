@@ -657,23 +657,6 @@ final class Hydrator implements HydratorInterface
         $property->setValue($entity, $value);
     }
 
-    /**
-     * Gets a property value from an entity using Reflection, even if private.
-     *
-     * @param ReflectionClass<object> $reflectionClass
-     */
-    private function getPropertyValue(
-        object $entity,
-        string $propertyName,
-        ReflectionClass $reflectionClass,
-    ): mixed {
-        $property = $this->getReflectionProperty($reflectionClass->getName(), $propertyName);
-        if ($property === null) {
-            return null;
-        }
-
-        return $property->getValue($entity);
-    }
 
     /**
      * Obtiene un ReflectionProperty cacheado para evitar recrearlo en cada hidratación.
