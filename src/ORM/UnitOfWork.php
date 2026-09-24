@@ -468,7 +468,13 @@ final class UnitOfWork implements UnitOfWorkInterface
                 $values[] = $this->typeCaster->toDatabaseValue($phpValue, $extractor['type']);
             }
 
-            $this->connectionManager->executeStatement($plan['sql'], $values);
+            $rowCount = $this->connectionManager->executeStatement($plan['sql'], $values);
+
+            if ($rowCount === -1) {
+                throw new PersistenceException(
+                    sprintf('Failed to insert entity %s: Sybase silently rejected the row (rowCount returned -1). Possible constraint violation (e.g., missing NOT NULL value).', get_class($entity))
+                );
+            }
 
             // Mark as inserted and remove from newEntities immediately
             $inserted->attach($entity);
