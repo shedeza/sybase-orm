@@ -51,10 +51,16 @@ final class SybaseDialect implements DialectInterface
         $start = $offset + 1;
         $end = $offset + $limit;
 
-        return sprintf(
-            'SELECT * FROM (SELECT ROW_NUMBER() OVER (%s) AS [__row_number], * FROM (%s) __inner) __paged WHERE [__row_number] BETWEEN %d AND %d',
-            $orderBy,
+        $injectedSql = preg_replace(
+            '/^(\s*SELECT\s+(?:DISTINCT\s+)?)/i',
+            '$1ROW_NUMBER() OVER (' . $orderBy . ') AS [__row_number], ',
             $sql,
+            1
+        );
+
+        return sprintf(
+            'SELECT * FROM (%s) __paged WHERE [__row_number] BETWEEN %d AND %d',
+            $injectedSql,
             $start,
             $end
         );
