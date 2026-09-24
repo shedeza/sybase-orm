@@ -52,7 +52,7 @@ final class SybaseDialect implements DialectInterface
         $end = $offset + $limit;
 
         return sprintf(
-            'SELECT * FROM (SELECT ROW_NUMBER() OVER (%s) AS [__row_number], __inner.* FROM (%s) __inner) __paged WHERE [__row_number] BETWEEN %d AND %d',
+            'SELECT * FROM (SELECT ROW_NUMBER() OVER (%s) AS [__row_number], * FROM (%s) __inner) __paged WHERE [__row_number] BETWEEN %d AND %d',
             $orderBy,
             $sql,
             $start,
