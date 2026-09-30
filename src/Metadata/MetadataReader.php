@@ -310,7 +310,7 @@ final class MetadataReader implements MetadataReaderInterface
             scale: $columnAttr->scale,
             isId: $isId,
             generatedValue: $generatedValueAttr?->strategy,
-            default: $columnAttr->default,
+            default: $columnAttr->default ?? null,
         );
     }
 
@@ -410,6 +410,7 @@ final class MetadataReader implements MetadataReaderInterface
                 length: $columnAttr->length,
                 precision: $columnAttr->precision,
                 scale: $columnAttr->scale,
+                default: $columnAttr->default ?? null,
             );
         }
 
