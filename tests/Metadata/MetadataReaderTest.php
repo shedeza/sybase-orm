@@ -37,6 +37,14 @@ final class MetadataReaderTest extends TestCase
 
         $this->reader->getClassMetadata(DummyCollisionEntity::class);
     }
+
+    public function testReadsDefaultPropertyOnColumnInPhp82(): void
+    {
+        // This will trigger a Warning on PHP 8.2+ if $default property is not defined
+        $meta = $this->reader->getClassMetadata(DummyEntityWithDefault::class);
+
+        $this->assertEquals('active', $meta->getColumn('status')->default);
+    }
 }
 
 #[Entity(table: 'dummy_table', schema: 'dbo')]
@@ -61,4 +69,11 @@ class DummyAddress
 {
     #[Column(name: 'city')]
     public string $city;
+}
+
+#[Entity(table: 'test_default_table')]
+class DummyEntityWithDefault
+{
+    #[Column(name: 'status', default: 'active')]
+    public string $status;
 }
